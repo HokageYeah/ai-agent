@@ -1,0 +1,709 @@
+"""
+工具调用网关 (Tool Calling Gateway)
+====================================
+
+本模块负责处理 LLM 的工具调用请求，统一不同供应商的工具调用格式。
+
+功能特点：
+1. 解析 LLM 的工具调用请求
+2. 参数验证和类型转换
+3. 执行工具调用并返回结果
+4. 支持 OpenAI function calling 格式
+5. 支持 Anthropic tool use 格式
+
+作者: AI Agent Team
+创建时间: 2026-02-12
+"""
+
+import json
+import asyncio
+from typing import Dict, List, Any, Optional, Callable
+from pydantic import ValidationError
+from loguru import logger
+from colorama import Fore, Style, Back
+from datetime import datetime
+from enum import Enum
+
+
+class ToolCallStatus(Enum):
+    """工具调用状态"""
+    SUCCESS = "success"
+    FAILURE = "failure"
+    NOT_FOUND = "not_found"
+    VALIDATION_ERROR = "validation_error"
+    TIMEOUT = "timeout"
+
+
+class ToolCall:
+    """
+    工具调用请求
+    
+    统一不同供应商的工具调用格式
+    """
+    
+    def __init__(
+        self,
+        call_id: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        raw_data: Dict[str, Any]
+    ):
+        """
+        初始化工具调用请求
+        
+        Args:
+            call_id: 调用 ID
+            tool_name: 工具名称
+            arguments: 工具参数
+            raw_data: 原始数据（用于调试）
+        """
+        self.call_id = call_id
+        self.tool_name = tool_name
+        self.arguments = arguments
+        self.raw_data = raw_data
+    
+    def __repr__(self) -> str:
+        """返回调用请求的字符串表示"""
+        return (
+            f"ToolCall(call_id={self.call_id}, "
+            f"tool_name={self.tool_name}, "
+            f"args={self.arguments})"
+        )
+
+
+class ToolCallResult:
+    """
+    工具调用结果
+    """
+    
+    def __init__(
+        self,
+        call_id: str,
+        tool_name: str,
+        status: ToolCallStatus,
+        result: Any = None,
+        error: Optional[str] = None,
+        execution_time_ms: float = 0.0
+    ):
+        """
+        初始化工具调用结果
+        
+        Args:
+            call_id: 调用 ID
+            tool_name: 工具名称
+            status: 调用状态
+            result: 执行结果
+            error: 错误信息
+            execution_time_ms: 执行时间（毫秒）
+        """
+        self.call_id = call_id
+        self.tool_name = tool_name
+        self.status = status
+        self.result = result
+        self.error = error
+        self.execution_time_ms = execution_time_ms
+        self.timestamp = datetime.now()
+    
+    def __repr__(self) -> str:
+        """返回结果的字符串表示"""
+        return (
+            f"ToolCallResult(call_id={self.call_id}, "
+            f"tool_name={self.tool_name}, "
+            f"status={self.status.value}, "
+            f"time={self.execution_time_ms:.2f}ms)"
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典格式（用于返回给 LLM）
+        
+        Returns:
+            字典格式的结果
+        """
+        if self.status == ToolCallStatus.SUCCESS:
+            return {
+                "role": "tool",
+                "tool_call_id": self.call_id,
+                "name": self.tool_name,
+                "content": json.dumps(self.result, ensure_ascii=False)
+            }
+        else:
+            return {
+                "role": "tool",
+                "tool_call_id": self.call_id,
+                "name": self.tool_name,
+                "content": f"Error: {self.error}"
+            }
+
+
+class ToolCallingGateway:
+    """
+    工具调用网关
+    
+    负责：
+    1. 解析 LLM 的工具调用请求（OpenAI/Anthropic 格式）
+    2. 参数验证
+    3. 执行工具调用
+    4. 返回结果
+    """
+    
+    def __init__(self):
+        """
+        初始化工具调用网关
+        """
+        # 工具注册表: name -> tool_instance
+        self._tools: Dict[str, Any] = {}
+        
+        # 工具模式注册表: name -> schema
+        self._tool_schemas: Dict[str, Dict[str, Any]] = {}
+        
+        # 执行超时时间（秒）
+        self._default_timeout = 30.0
+        
+        # 调用历史
+        self._call_history: List[ToolCallResult] = []
+        
+        # 统计信息
+        self._stats = {
+            "total_calls": 0,
+            "successful_calls": 0,
+            "failed_calls": 0
+        }
+        
+        logger.info(f"{Fore.CYAN}初始化工具调用网关 (ToolCallingGateway){Style.RESET_ALL}")
+    
+    def register_tool(self, name: str, tool_instance: Any, schema: Dict[str, Any]) -> None:
+        """
+        注册工具
+        
+        Args:
+            name: 工具名称
+            tool_instance: 工具实例
+            schema: 工具参数模式 (JSON Schema)
+        """
+        self._tools[name] = tool_instance
+        self._tool_schemas[name] = schema
+        
+        logger.info(
+            f"{Fore.GREEN}注册工具: {name}, 参数模式: {list(schema.get('properties', {}).keys())}{Style.RESET_ALL}"
+        )
+    
+    def unregister_tool(self, name: str) -> bool:
+        """
+        注销工具
+        
+        Args:
+            name: 工具名称
+            
+        Returns:
+            是否成功注销
+        """
+        if name in self._tools:
+            del self._tools[name]
+            del self._tool_schemas[name]
+            logger.info(f"{Fore.CYAN}注销工具: {name}{Style.RESET_ALL}")
+            return True
+        return False
+    
+    def get_tool(self, name: str) -> Optional[Any]:
+        """
+        获取工具实例
+        
+        Args:
+            name: 工具名称
+            
+        Returns:
+            工具实例，如果不存在返回 None
+        """
+        return self._tools.get(name)
+    
+    def get_available_tools(self) -> List[Dict[str, Any]]:
+        """
+        获取所有可用工具的模式列表
+        
+        Returns:
+            工具模式列表（用于传递给 LLM）
+        """
+        return list(self._tool_schemas.values())
+    
+    def set_timeout(self, timeout_seconds: float) -> None:
+        """
+        设置默认超时时间
+        
+        Args:
+            timeout_seconds: 超时时间（秒）
+        """
+        self._default_timeout = timeout_seconds
+        logger.debug(f"{Fore.BLUE}设置工具调用超时时间: {timeout_seconds}秒{Style.RESET_ALL}")
+    
+    async def execute_tool_calls(
+        self,
+        llm_response: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> List[ToolCallResult]:
+        """
+        执行 LLM 请求的工具调用
+        
+        Args:
+            llm_response: LLM 的响应
+            context: 额外上下文信息
+            
+        Returns:
+            工具调用结果列表
+        """
+        context = context or {}
+        
+        logger.info(f"{Fore.BLUE}开始执行工具调用{Style.RESET_ALL}")
+        
+        # 步骤 1: 解析工具调用请求
+        tool_calls = self._parse_tool_calls(llm_response)
+        
+        if not tool_calls:
+            logger.debug(f"{Fore.BLUE}没有检测到工具调用请求{Style.RESET_ALL}")
+            return []
+        
+        logger.info(
+            f"{Fore.BLUE}检测到 {len(tool_calls)} 个工具调用请求{Style.RESET_ALL}"
+        )
+        
+        # 步骤 2: 执行每个工具调用
+        results = []
+        for tool_call in tool_calls:
+            result = await self._execute_single_call(tool_call, context)
+            results.append(result)
+            
+            # 更新统计
+            self._stats["total_calls"] += 1
+            if result.status == ToolCallStatus.SUCCESS:
+                self._stats["successful_calls"] += 1
+            else:
+                self._stats["failed_calls"] += 1
+        
+        # 记录到历史
+        self._call_history.extend(results)
+        
+        # 只保留最近 100 条记录
+        if len(self._call_history) > 100:
+            self._call_history = self._call_history[-100:]
+        
+        # 打印统计
+        success_rate = self._stats["successful_calls"] / max(1, self._stats["total_calls"])
+        logger.info(
+            f"{Fore.GREEN}工具调用完成: "
+            f"总数={self._stats['total_calls']}, "
+            f"成功={self._stats['successful_calls']}, "
+            f"失败={self._stats['failed_calls']}, "
+            f"成功率={success_rate:.1%}{Style.RESET_ALL}"
+        )
+        
+        return results
+    
+    def _parse_tool_calls(self, llm_response: Dict[str, Any]) -> List[ToolCall]:
+        """
+        解析 LLM 响应中的工具调用请求
+        
+        支持 OpenAI 和 Anthropic 两种格式
+        
+        Args:
+            llm_response: LLM 响应
+            
+        Returns:
+            工具调用请求列表
+        """
+        tool_calls = []
+        
+        # OpenAI 格式: {"choices": [{"message": {"tool_calls": [...]}}]}
+        if "choices" in llm_response:
+            choice = llm_response["choices"][0]
+            message = choice.get("message", {})
+            openai_calls = message.get("tool_calls", [])
+            
+            for call in openai_calls:
+                tool_call = ToolCall(
+                    call_id=call.get("id", ""),
+                    tool_name=call.get("function", {}).get("name", ""),
+                    arguments=self._parse_arguments(call.get("function", {}).get("arguments", "{}")),
+                    raw_data=call
+                )
+                tool_calls.append(tool_call)
+        
+        # Anthropic 格式: {"content": [{"type": "tool_use", ...}]}
+        elif "content" in llm_response:
+            for block in llm_response["content"]:
+                if block.get("type") == "tool_use":
+                    tool_call = ToolCall(
+                        call_id=block.get("id", ""),
+                        tool_name=block.get("name", ""),
+                        arguments=block.get("input", {}),
+                        raw_data=block
+                    )
+                    tool_calls.append(tool_call)
+        
+        return tool_calls
+    
+    def _parse_arguments(self, arguments_str: str) -> Dict[str, Any]:
+        """
+        解析参数字符串
+        
+        Args:
+            arguments_str: JSON 格式的参数字符串
+            
+        Returns:
+            解析后的参数字典
+        """
+        try:
+            return json.loads(arguments_str)
+        except json.JSONDecodeError:
+            logger.warning(
+                f"{Fore.YELLOW}无法解析工具参数: {arguments_str[:100]}...{Style.RESET_ALL}"
+            )
+            return {}
+    
+    async def _execute_single_call(
+        self,
+        tool_call: ToolCall,
+        context: Dict[str, Any]
+    ) -> ToolCallResult:
+        """
+        执行单个工具调用
+        
+        Args:
+            tool_call: 工具调用请求
+            context: 上下文信息
+            
+        Returns:
+            工具调用结果
+        """
+        start_time = datetime.now()
+        
+        logger.info(
+            f"{Fore.BLUE}执行工具调用: {tool_call.tool_name} "
+            f"(call_id={tool_call.call_id}){Style.RESET_ALL}"
+        )
+        
+        # 步骤 1: 查找工具
+        tool = self.get_tool(tool_call.tool_name)
+        
+        if tool is None:
+            logger.warning(
+                f"{Fore.YELLOW}工具不存在: {tool_call.tool_name}{Style.RESET_ALL}"
+            )
+            
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.NOT_FOUND,
+                error=f"Tool not found: {tool_call.tool_name}",
+                execution_time_ms=elapsed_ms
+            )
+        
+        # 步骤 2: 参数验证
+        schema = self._tool_schemas.get(tool_call.tool_name)
+        validated_args = tool_call.arguments
+        
+        if schema:
+            validated_args = self._validate_arguments(
+                tool_call.tool_name,
+                tool_call.arguments,
+                schema
+            )
+            
+            if validated_args is None:
+                elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+                
+                return ToolCallResult(
+                    call_id=tool_call.call_id,
+                    tool_name=tool_call.tool_name,
+                    status=ToolCallStatus.VALIDATION_ERROR,
+                    error="Argument validation failed",
+                    execution_time_ms=elapsed_ms
+                )
+        
+        # 步骤 3: 执行工具
+        try:
+            # 检查工具是否有 execute 方法
+            if not hasattr(tool, "execute"):
+                raise AttributeError(f"Tool {tool_call.tool_name} has no 'execute' method")
+            
+            # 调用工具的 execute 方法
+            execute_func = getattr(tool, "execute")
+            
+            # 如果是异步函数，使用 await
+            if asyncio.iscoroutinefunction(execute_func):
+                result = await asyncio.wait_for(
+                    execute_func(validated_args),
+                    timeout=self._default_timeout
+                )
+            else:
+                result = await asyncio.to_thread(
+                    execute_func,
+                    validated_args
+                )
+            
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            
+            logger.info(
+                f"{Fore.GREEN}工具调用成功: {tool_call.tool_name}, "
+                f"耗时: {elapsed_ms:.2f}ms{Style.RESET_ALL}"
+            )
+            
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.SUCCESS,
+                result=result,
+                execution_time_ms=elapsed_ms
+            )
+            
+        except asyncio.TimeoutError:
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            
+            logger.error(
+                f"{Fore.RED}工具调用超时: {tool_call.tool_name} "
+                f"(>{self._default_timeout}s){Style.RESET_ALL}"
+            )
+            
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.TIMEOUT,
+                error=f"Tool execution timed out (> {self._default_timeout}s)",
+                execution_time_ms=elapsed_ms
+            )
+            
+        except ValidationError as e:
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            
+            logger.error(
+                f"{Fore.RED}参数验证失败: {tool_call.tool_name}, {e}{Style.RESET_ALL}"
+            )
+            
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.VALIDATION_ERROR,
+                error=f"Validation error: {str(e)}",
+                execution_time_ms=elapsed_ms
+            )
+            
+        except Exception as e:
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            
+            logger.error(
+                f"{Fore.RED}工具调用失败: {tool_call.tool_name}, {e}{Style.RESET_ALL}"
+            )
+            
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.FAILURE,
+                error=str(e),
+                execution_time_ms=elapsed_ms
+            )
+    
+    def _validate_arguments(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        schema: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        验证工具参数
+        
+        Args:
+            tool_name: 工具名称
+            arguments: 输入参数
+            schema: 参数模式
+            
+        Returns:
+            验证后的参数，如果验证失败返回 None
+        """
+        # 简化的参数验证
+        # 实际应用中可以使用 jsonschema 库进行完整验证
+        
+        required_fields = schema.get("required", [])
+        properties = schema.get("properties", {})
+        
+        # 检查必需字段
+        for field in required_fields:
+            if field not in arguments:
+                logger.warning(
+                    f"{Fore.YELLOW}缺少必需参数: {tool_name}.{field}{Style.RESET_ALL}"
+                )
+                return None
+        
+        # 简单的类型检查
+        for key, value in arguments.items():
+            if key in properties:
+                expected_type = properties[key].get("type")
+                if expected_type and not self._check_type(value, expected_type):
+                    logger.warning(
+                        f"{Fore.YELLOW}参数类型错误: {tool_name}.{key}, "
+                        f"expected {expected_type}, got {type(value).__name__}{Style.RESET_ALL}"
+                    )
+                    return None
+        
+        return arguments
+    
+    def _check_type(self, value: Any, expected_type: str) -> bool:
+        """
+        检查值类型是否匹配
+        
+        Args:
+            value: 要检查的值
+            expected_type: 期望的类型
+            
+        Returns:
+            是否匹配
+        """
+        type_mapping = {
+            "string": (str,),
+            "integer": (int,),
+            "number": (int, float),
+            "boolean": (bool,),
+            "array": (list, tuple),
+            "object": (dict,)
+        }
+        
+        expected_types = type_mapping.get(expected_type, (object,))
+        return isinstance(value, expected_types)
+    
+    def format_results_for_llm(self, results: List[ToolCallResult]) -> List[Dict[str, Any]]:
+        """
+        格式化工具调用结果，返回给 LLM 的格式
+        
+        Args:
+            results: 工具调用结果列表
+            
+        Returns:
+            格式化后的结果列表
+        """
+        formatted = []
+        
+        for result in results:
+            if result.status == ToolCallStatus.SUCCESS:
+                formatted.append({
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "name": result.tool_name,
+                    "content": json.dumps(result.result, ensure_ascii=False, indent=2)
+                })
+            else:
+                formatted.append({
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "name": result.tool_name,
+                    "content": f"Error: {result.error}"
+                })
+        
+        return formatted
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        获取统计信息
+        
+        Returns:
+            统计信息字典
+        """
+        total = self._stats["total_calls"]
+        return {
+            **self._stats,
+            "success_rate": self._stats["successful_calls"] / max(1, total),
+            "available_tools": list(self._tools.keys())
+        }
+    
+    def reset_stats(self) -> None:
+        """
+        重置统计信息
+        """
+        self._stats = {
+            "total_calls": 0,
+            "successful_calls": 0,
+            "failed_calls": 0
+        }
+        self._call_history.clear()
+        logger.info(f"{Fore.CYAN}工具调用网关统计信息已重置{Style.RESET_ALL}")
+
+
+# =============================================================================
+# 便捷函数
+# =============================================================================
+
+def create_tool_calling_gateway() -> ToolCallingGateway:
+    """
+    创建工具调用网关实例的便捷函数
+    
+    Returns:
+        新的 ToolCallingGateway 实例
+    """
+    return ToolCallingGateway()
+
+
+# =============================================================================
+# 测试代码
+# =============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    # 配置日志
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+               "<level>{message}</level>"
+    )
+    
+    # 测试 ToolCallingGateway
+    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Tool Calling Gateway 测试{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+    
+    gateway = create_tool_calling_gateway()
+    print(f"创建工具调用网关: {gateway}")
+    
+    # 测试解析 OpenAI 格式
+    openai_response = {
+        "choices": [{
+            "message": {
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "search",
+                            "arguments": '{"query": "天气"}'
+                        }
+                    }
+                ]
+            }
+        }]
+    }
+    
+    tool_calls = gateway._parse_tool_calls(openai_response)
+    print(f"解析 OpenAI 格式: {tool_calls}")
+    
+    # 测试解析 Anthropic 格式
+    anthropic_response = {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "call-2",
+                "name": "calculate",
+                "input": {"expression": "2 + 2"}
+            }
+        ]
+    }
+    
+    tool_calls = gateway._parse_tool_calls(anthropic_response)
+    print(f"解析 Anthropic 格式: {tool_calls}")
+    
+    # 测试统计
+    stats = gateway.get_stats()
+    print(f"统计信息: {stats}")
+    
+    print(f"\n{Fore.GREEN}测试完成!{Style.RESET_ALL}\n")

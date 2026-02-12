@@ -23,10 +23,10 @@
            - 根据配置创建 Mock 或真实 LLM
            - 支持多供应商切换
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_llm_mock.py` 通过
-        - [ ] 验证 Mock 响应正确返回
-        - [ ] 验证延迟模拟生效
-        - [ ] 验证工厂切换功能
+        - [ x ] 单元测试：`pytest tests/unit/test_llm_mock.py` 通过
+        - [ x ] 验证 Mock 响应正确返回
+        - [ x ] 验证延迟模拟生效
+        - [ x ] 验证工厂切换功能
     - **依赖**: 无
     - **工时估算**: 1 天
 
@@ -38,9 +38,9 @@
         2. 定义 `ModelMetadata` Pydantic 模型
         3. 定义统一响应模型
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_llm_provider_base.py` 通过
-        - [ ] 能够实例化 MockProvider 并调用基类方法
-        - [ ] 使用 Task 0.1 Mock Layer 进行测试
+        - [ x ] 单元测试：`pytest tests/unit/test_llm_provider_base.py` 通过
+        - [ x ] 能够实例化 MockProvider 并调用基类方法
+        - [ x ] 使用 Task 0.1 Mock Layer 进行测试
     - **依赖**: Task 0.1
     - **工时估算**: 1 天
 
@@ -53,8 +53,8 @@
         3. 实现 `ToolHub` 类（工具注册、查找）
         4. 实现 `@tool` 装饰器简化工具注册
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_tool_hub.py` 通过
-        - [ ] 验证工具注册和查找功能
+        - [ x ] 单元测试：`pytest tests/unit/test_tool_hub.py` 通过
+        - [ x ] 验证工具注册和查找功能
     - **依赖**: Task 0.2
     - **工时估算**: 1 天
 
@@ -67,8 +67,8 @@
         3. 实现消息窗口滚动（控制上下文长度）
         4. 支持多会话并发
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_short_term_memory.py` 通过
-        - [ ] 集成测试验证多轮对话上下文正确
+        - [ x ] 单元测试：`pytest tests/unit/test_short_term_memory.py` 通过
+        - [ x ] 集成测试验证多轮对话上下文正确
     - **依赖**: 无
     - **工时估算**: 1 天
 
@@ -81,8 +81,8 @@
         3. 实现 `SkillManager` 类
         4. 实现技能注册和查询功能
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_skill_manager.py` 通过
-        - [ ] 验证技能定义和查询正确
+        - [ x ] 单元测试：`pytest tests/unit/test_skill_manager.py` 通过
+        - [ x ] 验证技能定义和查询正确
     - **依赖**: Task 0.4
     - **工时估算**: 1 天
 
@@ -95,8 +95,8 @@
         3. 定义 `Workflow` 模型
         4. 实现 `WorkflowEngine` 类
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_workflow_engine.py` 通过
-        - [ ] 验证工作流定义正确
+        - [ x ] 单元测试：`pytest tests/unit/test_workflow_engine.py` 通过
+        - [ x ] 验证工作流定义正确
     - **依赖**: Task 0.2, Task 0.3, Task 0.5
     - **工时估算**: 1.5 天
 
@@ -108,8 +108,8 @@
         2. 定义 `AgentConfig` 配置模型
         3. 定义 Agent 生命周期接口
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_agent_base.py` 通过
-        - [ ] 验证 Agent 配置正确加载
+        - [ x ] 单元测试：`pytest tests/unit/test_agent_base.py` 通过
+        - [ x ] 验证 Agent 配置正确加载
     - **依赖**: Task 0.3, Task 0.5
     - **工时估算**: 1 天
 
@@ -121,8 +121,8 @@
         2. 实现 `ChannelManager` 类
         3. 实现渠道注册和路由功能
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_channel_manager.py` 通过
-        - [ ] 验证渠道注册和消息路由
+        - [ x ] 单元测试：`pytest tests/unit/test_channel_manager.py` 通过
+        - [ x ] 验证渠道注册和消息路由
     - **依赖**: 无
     - **工时估算**: 1 天
 
@@ -132,7 +132,7 @@
 
 **目标**：建立完整的 LLM Hub，包括多供应商支持和核心功能。
 
-|||- [ ] **Task 1.1: OpenAI 供应商适配器**
+|||- [ x ] **Task 1.1: OpenAI 供应商适配器**
     - **输入**: 设计文档 3.1 节
     - **输出**: `app/llm_hub/providers/openai.py`
     - **需求**:
@@ -141,13 +141,13 @@
         3. 实现流式 `stream()` 方法
         4. 实现 `embeddings()` 方法
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_openai_provider.py` 通过
-        - [ ] 集成测试：配置真实 API Key，成功调用 GPT-4/GPT-3.5-turbo
-        - [ ] 流式输出正确解析 Delta 格式
+        - [ x ] 单元测试：`pytest tests/unit/test_openai_provider.py` 通过
+        - [ x ] 集成测试：配置真实 API Key，成功调用 GPT-4/GPT-3.5-turbo
+        - [ x ] 流式输出正确解析 Delta 格式
     - **依赖**: Task 0.2
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 1.2: Anthropic 供应商适配器**
+|||- [ x ] **Task 1.2: Anthropic 供应商适配器**
     - **输入**: 设计文档 3.1 节
     - **输出**: `app/llm_hub/providers/anthropic.py`
     - **需求**:
@@ -155,12 +155,12 @@
         2. 实现 `chat()`, `stream()`, `embeddings()` 方法
         3. 支持 Claude 特有的消息格式
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_anthropic_provider.py` 通过
-        - [ ] 集成测试：配置 API Key，成功调用 Claude-3 系列模型
+        - [ x ] 单元测试：`pytest tests/unit/test_anthropic_provider.py` 通过
+        - [ x ] 集成测试：配置 API Key，成功调用 Claude-3 系列模型
     - **依赖**: Task 0.2
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 1.3: Model Registry**
+|||- [ x ] **Task 1.3: Model Registry**
     - **输入**: 设计文档 3.2 节
     - **输出**: `app/llm_hub/registry.py`
     - **需求**:
@@ -169,12 +169,12 @@
         3. 实现 `get_model()` 方法按 ID 或名称查询
         4. 实现 `list_models()` 方法列出所有模型
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_model_registry.py` 通过
-        - [ ] 注册的 OpenAI 和 Anthropic 模型可被正确查询
+        - [ x ] 单元测试：`pytest tests/unit/test_model_registry.py` 通过
+        - [ x ] 注册的 OpenAI 和 Anthropic 模型可被正确查询
     - **依赖**: Task 0.2
     - **工时估算**: 0.5 天
 
-|||- [ ] **Task 1.4: Prompt Builder**
+|||- [ x ] **Task 1.4: Prompt Builder**
     - **输入**: 设计文档 3.4 节
     - **输出**: `app/llm_hub/prompt_builder.py`
     - **需求**:
@@ -182,12 +182,12 @@
         2. 实现 `build()` 方法，支持组装 System Prompt、对话历史、用户输入
         3. 支持工具 Schema 格式化
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_prompt_builder.py` 通过
-        - [ ] 验证 Prompt 构建正确
+        - [ x ] 单元测试：`pytest tests/unit/test_prompt_builder.py` 通过
+        - [ x ] 验证 Prompt 构建正确
     - **依赖**: Task 0.2
     - **工时估算**: 0.5 天
 
-|||- [ ] **Task 1.5: Streaming Manager**
+|||- [ x ] **Task 1.5: Streaming Manager**
     - **输入**: 设计文档 3.5 节
     - **输出**: `app/llm_hub/streaming.py`
     - **需求**:
@@ -195,12 +195,12 @@
         2. 实现 `stream_response()` 方法
         3. 支持不同供应商的流式响应格式标准化
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_streaming.py` 通过
-        - [ ] OpenAI 和 Anthropic 流式输出格式统一
+        - [ x ] 单元测试：`pytest tests/unit/test_streaming.py` 通过
+        - [ x ] OpenAI 和 Anthropic 流式输出格式统一
     - **依赖**: Task 1.1, Task 1.2
     - **工时估算**: 1 天
 
-|||- [ ] **Task 1.6: Inference Engine**
+|||- [ x ] **Task 1.6: Inference Engine**
     - **输入**: 设计文档 3.3 节
     - **输出**: `app/llm_hub/inference.py`
     - **需求**:
@@ -211,12 +211,12 @@
            - 执行推理
         3. 集成 Prompt Builder 和 Streaming Manager
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_inference_engine.py` 通过
-        - [ ] 端到端测试：调用 `InferenceEngine.infer()` 获取正确响应
+        - [ x ] 单元测试：`pytest tests/unit/test_inference_engine.py` 通过
+        - [ x ] 端到端测试：调用 `InferenceEngine.infer()` 获取正确响应
     - **依赖**: Task 1.3, Task 1.4, Task 1.5
     - **工时估算**: 1 天
 
-|||- [ ] **Task 1.7: Tool Calling Gateway**
+|||- [ x ] **Task 1.7: Tool Calling Gateway**
     - **输入**: 设计文档 3.6 节
     - **输出**: `app/llm_hub/tool_gateway.py`
     - **需求**:
@@ -229,8 +229,8 @@
         3. 支持 OpenAI function calling 格式
         4. 支持 Anthropic tool use 格式
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_tool_gateway.py` 通过
-        - [ ] 验证参数校验和错误处理
+        - [ x ] 单元测试：`pytest tests/unit/test_tool_gateway.py` 通过
+        - [ x ] 验证参数校验和错误处理
     - **依赖**: Task 1.1, Task 1.2, Task 0.3
     - **工时估算**: 1.5 天
 
