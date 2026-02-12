@@ -149,10 +149,19 @@ class OpenAIProvider(LLMProvider):
                 **filtered_config
             )
             
+            # 检查响应
+            if response is None:
+                raise ValueError("API 返回空响应")
+            
+            # 安全获取 choices
+            choices = getattr(response, 'choices', None)
+            print('大模型回答：response:', response.model_dump())
+            if choices is None or len(choices) == 0:
+                logger.warning(f"{Fore.YELLOW}API 响应中没有 choices: {response}{Style.RESET_ALL}")
+            
             logger.info(
                 f"{Fore.GREEN}OpenAI 对话响应成功，"
-                f"响应ID: {response.id}, "
-                f"完成原因: {response.choices[0].finish_reason}{Style.RESET_ALL}"
+                f"响应ID: {response.id}{Style.RESET_ALL}"
             )
             
             # 将响应转换为字典格式返回
@@ -160,7 +169,7 @@ class OpenAIProvider(LLMProvider):
             
         except Exception as e:
             logger.error(
-                f"{Fore.RED}OpenAI 对话请求失败: {e}{Style.RESET_ALL}"
+                f"{Fore.RED}OpenAI 对话请求失败: {type(e).__name__}: {e}{Style.RESET_ALL}"
             )
             raise
     

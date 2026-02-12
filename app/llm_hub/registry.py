@@ -17,9 +17,17 @@ class ModelRegistry:
         defaults = [
             # OpenAI Models
             ModelMetadata(
-                model_id="gpt-4",
+                model_id="qwen3-max",
                 provider="openai",
-                model_name="GPT-4",
+                model_name="Qwen3 Max",
+                capabilities=["chat", "function_call"],
+                context_window=8192,
+                max_output_tokens=4096
+            ),
+            ModelMetadata(
+                model_id="deepseek-v3.2",
+                provider="openai",
+                model_name="DeepSeek V3.2",
                 capabilities=["chat", "function_call"],
                 context_window=8192,
                 max_output_tokens=4096
