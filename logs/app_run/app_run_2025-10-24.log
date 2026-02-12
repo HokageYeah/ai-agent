@@ -1,0 +1,62 @@
+2025-10-24 10:43:41 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - # request: b';\xa3"Y\x8b>7\xaf\xa3\xd0\xe5\xbe:\r\x97O\xd0\xde\xf9\x10' size: 20
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-10-24 10:43:41 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - [generated in 0.00583s] {}
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-10-24 10:43:41 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2025-10-24 10:43:42 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - # request: b'\x8f\x8d\x96[\x88yC\x13Rr\xbe\x88P\x96v\xd99\xc9y\x8a' size: 20
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-10-24 10:43:42 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - [generated in 0.00052s] {}
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - Started server process [61702]
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-10-24 10:43:42 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-10-24 10:43:50 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-10-24 10:43:50 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.

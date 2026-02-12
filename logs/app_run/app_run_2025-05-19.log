@@ -1,0 +1,690 @@
+2025-05-19 11:27:53 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - # request: b'J\xb9\xf7\xd7\xa2\x1c\xa72\xb1g\xe8=2\x9d\xe0\n\x84\x9c\x92\xfe' size: 20
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:27:53 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - [generated in 0.00075s] {}
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - Started server process [6414]
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:27:53 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:27:54 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:27:54 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:27:54 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:27:54 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55277 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:28:04 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:28:04 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:28:04 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:28:04 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55450 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:28:25 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:28:25 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:28:25 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:28:25 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55764 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:28:33 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:28:33 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55874 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 500
+2025-05-19 11:29:06 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:29:06 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:29:07 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:29:07 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56360 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:29:47 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:29:47 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:29:47 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:29:47 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56946 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:29:59 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:29:59 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:29:59 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:29:59 | INFO     | logging:callHandlers:1736 - 127.0.0.1:57149 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:30:31 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:30:31 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:30:32 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:30:32 | INFO     | logging:callHandlers:1736 - 127.0.0.1:57599 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:30:34 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:30:34 | INFO     | logging:callHandlers:1736 - 127.0.0.1:57599 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 500
+2025-05-19 11:34:23 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:34:23 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:34:38 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - # request: b'A\xe5\xb7\xe1\xc3O\xaaJ\xcd\xb6\xff\x0cskw\xf5x\xbfV~' size: 20
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:34:38 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - [generated in 0.00104s] {}
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - Started server process [8577]
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:34:38 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:37:18 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:37:18 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:37:18 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:37:18 | INFO     | logging:callHandlers:1736 - 127.0.0.1:63699 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:37:19 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:37:19 | INFO     | logging:callHandlers:1736 - 127.0.0.1:63699 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:37:20 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:37:20 | INFO     | logging:callHandlers:1736 - 127.0.0.1:63699 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:37:20 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:37:20 | INFO     | logging:callHandlers:1736 - 127.0.0.1:63699 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:37:56 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:37:56 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:37:57 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - # request: b'\xd8\x9cSE~\xef\xdaB\xd4\xc6w\xd8J\x8c$Q\x89\x119E' size: 20
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:37:57 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - [generated in 0.00047s] {}
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - Started server process [11139]
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:37:57 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:38:04 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:38:04 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:38:05 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - # request: b'\x1b\xeaL\xa8<\x07iQ\x7f>\x10\xc54\x14\x83\x17\xcfO\xed\xcc' size: 20
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:38:05 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - [generated in 0.00038s] {}
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - Started server process [11249]
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:38:05 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:38:11 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:38:11 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:38:11 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:38:12 | SUCCESS  | app.services.test_api:get_wx_hot_topics:25 - 成功获取 10 个热门话题
+2025-05-19 11:38:12 | INFO     | logging:callHandlers:1736 - 127.0.0.1:64484 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:38:13 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:38:13 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:38:13 | INFO     | logging:callHandlers:1736 - 127.0.0.1:64484 - "GET /api/v1/test/hot-topics HTTP/1.1" 500
+2025-05-19 11:38:14 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:38:14 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:38:14 | INFO     | logging:callHandlers:1736 - 127.0.0.1:64540 - "GET /api/v1/test/hot-topics HTTP/1.1" 500
+2025-05-19 11:38:37 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:38:37 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:38:38 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - # request: b'E\x87\xc3\x1c\xca\xd8c\xac!\xe6}\xa7:\xb0\xdfO\xac\xf1\x96B' size: 20
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:38:38 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - [generated in 0.00098s] {}
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - Started server process [11673]
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:38:38 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:38:44 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:38:44 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:38:46 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - # request: b'u\x9f\xefp\xb7|_\xca\xc8\xdc\xc4\xa8\x9a\xc7\x91E\xf8\xa3FK' size: 20
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:38:46 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - [generated in 0.00049s] {}
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - Started server process [11768]
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:38:46 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:38:49 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:38:49 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:38:49 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:38:49 | INFO     | logging:callHandlers:1736 - 127.0.0.1:65116 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:38:50 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:38:50 | INFO     | logging:callHandlers:1736 - 127.0.0.1:65116 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:38:51 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:38:51 | INFO     | logging:callHandlers:1736 - 127.0.0.1:65116 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:38:51 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:38:51 | INFO     | logging:callHandlers:1736 - 127.0.0.1:65116 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:38:57 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:38:57 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:38:58 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - # request: b'\x18n\x80\xb2\xab\xac4Y\'\x056\xc0\x03\xa6\x048\xda"\x1e\'' size: 20
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:38:58 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - [generated in 0.00106s] {}
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - Started server process [11930]
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:38:58 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:39:03 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:39:03 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:39:08 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - # request: b'\x13\xc3\xd4=\xf8\xb4\xea0\x1ax\xd9\xc6\xe4\t??\xe4a\xa4\x83' size: 20
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:39:08 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - [generated in 0.00066s] {}
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - Started server process [12054]
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:39:08 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:42:50 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:42:50 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:42:51 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:42:51 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:42:51 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - # request: b'\xe9\xfd\xe5m(\x0e\x98\x14(U\xc9\xc8_\\\xf7)\xfb\x00\xeat' size: 20
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:42:52 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - [generated in 0.00057s] {}
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - Started server process [14928]
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:42:52 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:43:09 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:43:10 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:43:11 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - # request: b'E\xed\x82\x97\x81\x89\xbd\xa5C`\xdbQ\xaf\x9b6\xb6\xc3:\xffl' size: 20
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:43:11 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - [generated in 0.00469s] {}
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - Started server process [15178]
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:43:11 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:43:35 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:43:35 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:43:35 | INFO     | logging:callHandlers:1736 - Application shutdown complete.
+2025-05-19 11:43:36 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:43:36 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:43:36 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - # request: b'\xbf\xf4!U\xe0\xd0xj;H\xa8\xdd\xe4\xe1\x1b\xf1\xd6h\xe2/' size: 20
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:43:37 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - [generated in 0.00134s] {}
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - Started server process [15526]
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:43:37 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:45:55 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:45:55 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:45:56 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:45:56 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:45:57 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:45:57 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:45:57 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:45:57 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:46:00 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:00 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:46:00 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:46:01 | SUCCESS  | app.services.test_api:get_wx_hot_topics:25 - 成功获取 10 个热门话题
+2025-05-19 11:46:01 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:02 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:02 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:02 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:02 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:02 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:02 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:03 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:03 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:03 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55328 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:21 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:46:21 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:46:22 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - # request: b'\xc8\xa8\x03\x17\x94wy\xea\x93\x19;\x97\x18\x97\xf0\xe4E\xca\x15\xf8' size: 20
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:46:22 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - [generated in 0.00042s] {}
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - Started server process [17644]
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:46:22 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:46:32 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:46:32 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:46:34 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - # request: b'\x17\xc4+\xfb\xde8\x98\x07\x15\x86\x96R\x84(\xb5\x19)$\xaaB' size: 20
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:46:34 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - [generated in 0.00086s] {}
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - Started server process [17794]
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:46:34 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:34 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:46:34 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:46:34 | SUCCESS  | app.services.test_api:get_wx_hot_topics:25 - 成功获取 10 个热门话题
+2025-05-19 11:46:34 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55920 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:35 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:35 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:35 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55920 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:35 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:35 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:35 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55920 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:36 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:36 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:36 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55920 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:36 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:46:36 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:46:36 | INFO     | logging:callHandlers:1736 - 127.0.0.1:55920 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:46:40 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:46:40 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:46:41 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - # request: b'\xb3m-\x06\xa1\n\xa6\x04\xed\x08\xa1\x0en\xf1Jb\x9b\xe3U\x91' size: 20
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:46:41 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - [generated in 0.00042s] {}
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - Started server process [17834]
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:46:41 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:46:47 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:46:47 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:46:48 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - # request: b'+\xfa\x84~\x1cC\xf1"c\x0bx\x0e\\\xe9\x00\xa7\xc1-\x1a\xcb' size: 20
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:46:48 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - [generated in 0.00188s] {}
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - Started server process [17856]
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:46:48 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:47:03 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:47:03 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:47:03 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:47:04 | SUCCESS  | app.services.test_api:get_wx_hot_topics:25 - 成功获取 10 个热门话题
+2025-05-19 11:47:04 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:47:05 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:47:05 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:47:05 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:47:06 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:47:06 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 1, 'cache_keys': [('app.services.test_api', 'get_wx_hot_topics', 10)]}
+2025-05-19 11:47:06 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:47:08 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:47:08 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:47:08 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:47:08 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:47:09 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:47:09 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:47:09 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:47:09 | INFO     | logging:callHandlers:1736 - 127.0.0.1:56432 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:49:58 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - # request: b'\xf6;[&\xda\xbaz4\xb3\x97\xec\x9e\xff\xbc<g3\x92\x1f\xa4' size: 20
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:49:58 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - [generated in 0.00058s] {}
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:49:58 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2025-05-19 11:49:59 | INFO     | app.core.logging_uru:setup_logging:84 - 日志系统初始化完成 - 使用 loguru
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - # request: b'\xcb\x8d\xe7X\xa7f\x93\x00\x9c\xe1G\xdb\xc8*\xf4\x1b=2\xad\x8b' size: 20
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2025-05-19 11:49:59 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - SELECT 1
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - [generated in 0.00729s] {}
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - Started server process [18959]
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2025-05-19 11:49:59 | INFO     | logging:callHandlers:1736 - Application startup complete.
+2025-05-19 11:50:08 | INFO     | app.api.endpoints.test_api:get_hot_topics:18 - API请求: 获取热门话题，数量: 10
+2025-05-19 11:50:08 | DEBUG    | app.api.endpoints.test_api:get_hot_topics:29 - 缓存信息: {'cache_name': 'wx_hot_topics', 'cache_size': 0, 'cache_keys': []}
+2025-05-19 11:50:08 | INFO     | app.services.test_api:get_wx_hot_topics:14 - 获取微信热门话题，数量: 10
+2025-05-19 11:50:09 | SUCCESS  | app.services.test_api:get_wx_hot_topics:25 - 成功获取 10 个热门话题
+2025-05-19 11:50:09 | INFO     | logging:callHandlers:1736 - 127.0.0.1:59228 - "GET /api/v1/test/hot-topics HTTP/1.1" 200
+2025-05-19 11:50:12 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:50:12 | DEBUG    | app.services.test_api:search_wx_accounts:40 - 搜索微信公众号，关键词: d23，限制: 5，缓存键: d23_5
+2025-05-19 11:50:12 | INFO     | app.services.test_api:search_wx_accounts:56 - 找到 5 个与 'd23' 相关的公众号
+2025-05-19 11:50:12 | INFO     | logging:callHandlers:1736 - 127.0.0.1:59228 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:50:13 | INFO     | app.api.endpoints.test_api:search_accounts:52 - API请求: 搜索公众号，关键词: d23，限制: 5
+2025-05-19 11:50:13 | INFO     | logging:callHandlers:1736 - 127.0.0.1:59228 - "GET /api/v1/test/search-accounts?keyword=d23 HTTP/1.1" 200
+2025-05-19 11:50:25 | INFO     | logging:callHandlers:1736 - Shutting down
+2025-05-19 11:50:25 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2025-05-19 11:50:25 | INFO     | logging:callHandlers:1736 - Application shutdown complete.
+2025-05-19 11:50:25 | INFO     | logging:callHandlers:1736 - Finished server process [18959]
