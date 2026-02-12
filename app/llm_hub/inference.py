@@ -66,7 +66,7 @@ class InferenceConfig:
         self.tools = tools or []
         self.provider = provider
         
-        logger.debug(
+        logger.info(
             f"{Fore.BLUE}创建推理配置: model={model}, stream={stream}, "
             f"temperature={temperature}{Style.RESET_ALL}"
         )
@@ -209,7 +209,7 @@ class InferenceEngine:
         
         try:
             # 步骤 1: 构建 Prompt
-            logger.debug(f"{Fore.BLUE}[{request_id}] 步骤 1/4: 构建 Prompt{Style.RESET_ALL}")
+            logger.info(f"{Fore.BLUE}[{request_id}] 步骤 1/4: 构建 Prompt{Style.RESET_ALL}")
             prompt_messages = self._prompt_builder.build(
                 messages=messages,
                 system_prompt=config.system_prompt,
@@ -218,7 +218,7 @@ class InferenceEngine:
             )
             
             # 步骤 2: 选择模型和供应商
-            logger.debug(f"{Fore.BLUE}[{request_id}] 步骤 2/4: 选择模型{Style.RESET_ALL}")
+            logger.info(f"{Fore.BLUE}[{request_id}] 步骤 2/4: 选择模型{Style.RESET_ALL}")
             model_info, provider = self._select_model(config)
             
             # 准备供应商配置
@@ -234,7 +234,7 @@ class InferenceEngine:
             provider_config = {k: v for k, v in provider_config.items() if v is not None}
             
             # 步骤 3: 执行推理
-            logger.debug(f"{Fore.BLUE}[{request_id}] 步骤 3/4: 执行推理 (供应商: {type(provider).__name__}){Style.RESET_ALL}")
+            logger.info(f"{Fore.BLUE}[{request_id}] 步骤 3/4: 执行推理 (供应商: {type(provider).__name__}){Style.RESET_ALL}")
             start_time = datetime.now()
             
             raw_response = await provider.chat(prompt_messages, provider_config)
@@ -245,7 +245,7 @@ class InferenceEngine:
             )
             
             # 步骤 4: 后处理结果
-            logger.debug(f"{Fore.BLUE}[{request_id}] 步骤 4/4: 后处理结果{Style.RESET_ALL}")
+            logger.info(f"{Fore.BLUE}[{request_id}] 步骤 4/4: 后处理结果{Style.RESET_ALL}")
             result = self._postprocess_result(raw_response, config, model_info)
             
             # 记录请求历史
@@ -362,9 +362,10 @@ class InferenceEngine:
         else:
             provider = self._provider
         
+        print('模型引擎选择模型config.model:', config.model)
         # 获取模型元数据
         model_metadata = self._model_registry.get_model(config.model)
-        
+        print('模型引擎选择模型model_metadata:', model_metadata)
         if model_metadata is None:
             logger.warning(
                 f"{Fore.YELLOW}模型 {config.model} 未在注册中心找到，使用默认模型{Style.RESET_ALL}"
@@ -379,7 +380,7 @@ class InferenceEngine:
                 max_output_tokens=4096
             )
         
-        logger.debug(
+        logger.info(
             f"{Fore.BLUE}选择模型: {model_metadata.model_id} (供应商: {model_metadata.provider}){Style.RESET_ALL}"
         )
         
@@ -422,7 +423,7 @@ class InferenceEngine:
             finish_reason=finish_reason
         )
         
-        logger.debug(
+        logger.info(
             f"{Fore.BLUE}后处理完成: content_len={len(content)}, "
             f"finish_reason={finish_reason}{Style.RESET_ALL}"
         )

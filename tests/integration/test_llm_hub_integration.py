@@ -469,11 +469,12 @@ async def test_inference_engine_openai(
         assert response is not None, "推理响应不应为空"
         
         #是否为空
-        检查内容 # 可能的原因：API 密钥无效、模型不支持、请求超限等
+        # 检查内容是否为空 # 可能的原因：API 密钥无效、模型不支持、请求超限等
         if response.content is None or response.content == "":
             # 虽然内容为空，但推理流程本身是成功的
             # 这通常是配置问题（如模型不支持），而不是代码问题
             print(f"{Fore.YELLOW}API 返回空响应，可能模型不支持。响应详情:{Style.RESET_ALL}")
+            logger.debug(f"  Raw response: {response.raw_response}")
             print(f"  Raw response: {response.raw_response}")
             result.add_pass("推理引擎执行完成（API 模型配置问题）")
         else:

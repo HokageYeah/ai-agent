@@ -240,7 +240,7 @@
 
 **目标**：实现完整的工具系统和内置工具集。
 
-|||- [ ] **Task 2.1: Search Tool（搜索工具）**
+|||- [x] **Task 2.1: Search Tool（搜索工具）**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/search.py`
     - **需求**:
@@ -248,12 +248,13 @@
         2. 集成 DuckDuckGo 搜索 API
         3. 实现搜索结果解析
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_search_tool.py` 通过
-        - [ ] 集成测试验证搜索功能正确
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 集成测试验证搜索功能正确
     - **依赖**: Task 0.3
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.2: HTTP Request Tool**
+|||- [x] **Task 2.2: HTTP Request Tool**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/http.py`
     - **需求**:
@@ -261,12 +262,13 @@
         2. 支持 GET、POST、PUT、DELETE 方法
         3. 实现请求头和请求体配置
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_http_tool.py` 通过
-        - [ ] 集成测试验证 HTTP 请求功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 集成测试验证 HTTP 请求功能
     - **依赖**: Task 0.3
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.3: Python Executor Tool**
+|||- [x] **Task 2.3: Python Executor Tool**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/executor.py`
     - **需求**:
@@ -274,12 +276,13 @@
         2. 实现安全的 Python 代码执行
         3. 实现超时控制
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_executor_tool.py` 通过
-        - [ ] 集成测试验证代码执行功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 集成测试验证代码执行功能
     - **依赖**: Task 0.3
     - **工时估算**: 1.5 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.4: File Tools（文件操作工具）**
+|||- [x] **Task 2.4: File Tools（文件操作工具）**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/file.py`
     - **需求**:
@@ -287,12 +290,13 @@
         2. 实现 `FileWriteTool` 类
         3. 实现路径验证和访问控制
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_file_tools.py` 通过
-        - [ ] 集成测试验证文件读写功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 集成测试验证文件读写功能
     - **依赖**: Task 0.3
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.5: Database Query Tool**
+|||- [x] **Task 2.5: Database Query Tool**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/database.py`
     - **需求**:
@@ -300,12 +304,13 @@
         2. 实现安全的 SQL 查询
         3. 实现 SQL 注入防护
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_database_tool.py` 通过
-        - [ ] 集成测试验证数据库查询功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 集成测试验证数据库查询功能
     - **依赖**: Task 0.3
     - **工时估算**: 1.5 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.6: Calculator Tool**
+|||- [x] **Task 2.6: Calculator Tool**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/calculator.py`
     - **需求**:
@@ -313,12 +318,13 @@
         2. 支持基本数学运算
         3. 支持表达式求值
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_calculator_tool.py` 通过
-        - [ ] 验证数学计算功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 验证数学计算功能
     - **依赖**: Task 0.3
     - **工时估算**: 0.5 天
+    - **完成日期**: 2026-02-12
 
-|||- [ ] **Task 2.7: DateTime Tool**
+|||- [x] **Task 2.7: DateTime Tool**
     - **输入**: 设计文档 4.2 节
     - **输出**: `app/tools/builtin/datetime.py`
     - **需求**:
@@ -326,10 +332,11 @@
         2. 实现获取当前日期时间
         3. 实现日期时间格式化
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_datetime_tool.py` 通过
-        - [ ] 验证日期时间功能
+        - [x] 单元测试：`pytest tests/unit/test_builtin_tools.py` 通过
+        - [x] 验证日期时间功能
     - **依赖**: Task 0.3
     - **工时估算**: 0.5 天
+    - **完成日期**: 2026-02-12
 
 ---
 
