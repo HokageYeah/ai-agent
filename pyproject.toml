@@ -19,11 +19,25 @@ dependencies = [
     "httpx>=0.25.0",
     "cachetools>=5.3.0",
     "loguru>=0.7.0",
+    "colorama (>=0.4.6,<0.5.0)",
 ]
 
 [tool.poetry]
-packages = [{include = "ai_agent", from = "src"}]
+packages = [{include = "app"}]
 
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+pytest-asyncio = "^0.21.0"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.pytest_asyncio]
+mode = "auto"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

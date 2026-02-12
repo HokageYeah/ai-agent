@@ -65,6 +65,10 @@
 │   ├── services/         # 业务逻辑服务
 │   │   └── wx_public.py # 微信公众号服务
 │   ├── __init__.py      # 包初始化文件
+│   ├── docs/             # 文档
+│   │   └── ai-agent-design.md # AI Agent 设计文档
+│   │   └── ai-agent-task.md # AI Agent 任务文档
+|   |── utils/            # 工具函数
 │   └── main.py          # 应用入口
 ├── logs/                 # 日志文件目录
 ├── .env                  # 环境变量配置

@@ -8,7 +8,7 @@
 
 **目标**：建立 AI Agent 的基础能力层，包括 LLM Mock 测试基础设施、供应商抽象、工具系统和记忆管理。
 
-|||- [ ] **Task 0.1: LLM Mock Layer（测试基础设施）**
+|||- [x] **Task 0.1: LLM Mock Layer（测试基础设施）**
     - **输入**: 测试需求、设计文档 LLM Hub 接口
     - **输出**: `app/core/llm_mock.py`, `app/core/llm_factory.py`
     - **需求**:
@@ -30,7 +30,7 @@
     - **依赖**: 无
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.2: LLM Hub 核心抽象**
+|||- [x] **Task 0.2: LLM Hub 核心抽象**
     - **输入**: 设计文档 3.1-3.3 节
     - **输出**: `app/llm_hub/providers/base.py`
     - **需求**:
@@ -44,7 +44,7 @@
     - **依赖**: Task 0.1
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.3: Tool Hub 核心**
+|||- [x] **Task 0.3: Tool Hub 核心**
     - **输入**: 设计文档第 4 章
     - **输出**: `app/tools/base.py`, `app/tools/hub.py`
     - **需求**:
@@ -58,7 +58,7 @@
     - **依赖**: Task 0.2
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.4: Short Term Memory**
+|||- [x] **Task 0.4: Short Term Memory**
     - **输入**: 设计文档第 5 章
     - **输出**: `app/memory/short_term.py`
     - **需求**:
@@ -72,7 +72,7 @@
     - **依赖**: 无
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.5: Skill System 核心**
+|||- [x] **Task 0.5: Skill System 核心**
     - **输入**: 设计文档第 6 章
     - **输出**: `app/skills/base.py`, `app/skills/manager.py`
     - **需求**:
@@ -86,7 +86,7 @@
     - **依赖**: Task 0.4
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.6: Workflow System 核心**
+|||- [x] **Task 0.6: Workflow System 核心**
     - **输入**: 设计文档第 7 章
     - **输出**: `app/workflows/nodes.py`, `app/workflows/engine.py`
     - **需求**:
@@ -100,7 +100,7 @@
     - **依赖**: Task 0.2, Task 0.3, Task 0.5
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 0.7: Agent System 核心**
+|||- [x] **Task 0.7: Agent System 核心**
     - **输入**: 设计文档第 8 章
     - **输出**: `app/agents/base.py`
     - **需求**:
@@ -113,7 +113,7 @@
     - **依赖**: Task 0.3, Task 0.5
     - **工时估算**: 1 天
 
-|||- [ ] **Task 0.8: Channel System 核心**
+|||- [x] **Task 0.8: Channel System 核心**
     - **输入**: 设计文档第 12 章
     - **输出**: `app/channels/base.py`, `app/channels/manager.py`
     - **需求**:
