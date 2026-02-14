@@ -271,7 +271,7 @@ class TestFileReadTool:
     @pytest.fixture
     def temp_file(self):
         """创建临时测试文件"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
             f.write("测试文件内容\n第二行内容")
             temp_path = f.name
         
@@ -454,7 +454,7 @@ class TestFileWriteTool:
         assert result["success"] is True
         
         # 验证内容
-        with open(temp_file_path, 'r') as f:
+        with open(temp_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         assert "第一行" in content
         assert "第二行" in content

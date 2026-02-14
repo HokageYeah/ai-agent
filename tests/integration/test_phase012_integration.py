@@ -133,11 +133,25 @@ async def test_phase0_core(result: TestResult):
         # 创建 Mock LLM
         mock_llm = MockLLM()
 
-        # 直接测试 chat 方法
+        # 测试 chat 方法
         response = await mock_llm.chat([{"role": "user", "content": "测试"}], {})
-        assert response["success"]
-        assert "content" in response
-
+        
+        # 验证响应格式 (MockLLM 应该返回符合 OpenAI 格式的响应)
+        assert response is not None, "响应不应为空"
+        
+        # 检查是否有content字段(可能在不同位置)
+        has_content = False
+        if isinstance(response, dict):
+            # 检查顶层content
+            if "content" in response:
+                has_content = True
+            # 检查OpenAI choices格式
+            elif "choices" in response and len(response["choices"]) > 0:
+                if "message" in response["choices"][0]:
+                    has_content = "content" in response["choices"][0]["message"]
+        
+        assert has_content, f"响应中没有找到content字段: {response}"
+        
         result.add_pass("LLM Mock Layer", "Mock LLM 响应正常")
 
     except Exception as e:
@@ -427,21 +441,45 @@ async def test_phase1_llm_hub(result: TestResult, use_real_api: bool = False, pr
     print(f"{Fore.YELLOW}--- 5. 推理引擎 ---{Style.RESET_ALL}\n")
 
     try:
-        from app.llm_hub.inference import InferenceEngine
+        from app.llm_hub.inference import InferenceEngine, InferenceConfig
         from app.core.llm_mock import MockLLM
+        from app.llm_hub.registry import ModelRegistry, ModelMetadata
 
-        # 创建 Mock LLM
+        # 创建 Mock LLM (作为 Provider)
         mock_llm = MockLLM()
 
-        # 创建推理引擎
-        engine = InferenceEngine(llm=mock_llm)
+        # 创建模型注册中心并注册Mock模型
+        registry = ModelRegistry()
+        registry.register_model(ModelMetadata(
+            model_id="mock-model",
+            provider="mock",
+            model_name="Mock LLM",
+            capabilities=["chat", "streaming"],
+            context_window=4096,
+            max_output_tokens=2048,
+            is_available=True
+        ))
+
+        # 创建推理引擎 (使用正确的参数: provider + model_registry)
+        engine = InferenceEngine(
+            provider=mock_llm,
+            model_registry=registry
+        )
 
         # 执行推理
         messages = [{"role": "user", "content": "测试消息"}]
-        result_infer = await engine.infer(messages=messages, config={})
+        result_infer = await engine.infer(
+            messages=messages,
+            config=InferenceConfig(
+                model="mock-model",
+                stream=False
+            )
+        )
 
-        assert result_infer["success"]
-        assert "content" in result_infer
+        # 验证结果 (InferenceResult对象)
+        assert result_infer is not None, "推理结果不应为空"
+        assert hasattr(result_infer, 'content'), "结果应该有content属性"
+        assert result_infer.content is not None, "content不应为空"
 
         result.add_pass("推理引擎（Mock）", "Mock 模式下推理功能正常")
 
@@ -528,7 +566,10 @@ async def test_real_openai_inference(result: TestResult):
         stream_chunks = []
         async for chunk in engine.infer_stream(
             messages=messages,
-            config={"model": model, "stream": True}
+            config=InferenceConfig(
+                model=model,
+                stream=True
+            )
         ):
             stream_chunks.append(chunk)
 
@@ -917,7 +958,7 @@ async def test_openai_tool_calling(result: TestResult):
 
     try:
         from app.llm_hub.providers.openai import OpenAIProvider
-        from app.llm_hub.inference import InferenceEngine
+        from app.llm_hub.inference import InferenceEngine, InferenceConfig
         from app.llm_hub.registry import ModelRegistry, ModelMetadata
         from app.llm_hub.tool_gateway import ToolCallingGateway
         from app.tools import ToolHub, CalculatorTool, DateTimeTool
@@ -974,20 +1015,43 @@ async def test_openai_tool_calling(result: TestResult):
         ]
 
         # 获取工具 Schema
-        tools = gateway.get_available_tools()
+        tools_schema = gateway.get_available_tools()
+
+        # 转换为 OpenAI 格式
+        openai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["parameters"]
+                }
+            }
+            for tool in tools_schema
+        ]
 
         # 调用推理引擎
         response = await engine.infer(
             messages=messages,
-            config={"model": model, "tools": tools}
+            config=InferenceConfig(
+                model=model,
+                tools=openai_tools
+            )
         )
 
-        if response and hasattr(response, 'content') and response.content:
-            content = response.content
-            print(f"{Fore.GREEN}响应: {content[:200]}...{Style.RESET_ALL}")
-            result.add_pass("OpenAI 工具调用", f"成功获取响应，工具调用功能正常")
+        # 检查响应 - 可能是文本响应，也可能是工具调用
+        if response:
+            if hasattr(response, 'finish_reason') and response.finish_reason == 'tool_calls':
+                print(f"{Fore.GREEN}模型返回了工具调用请求{Style.RESET_ALL}")
+                result.add_pass("OpenAI 工具调用", "模型成功识别并请求工具调用")
+            elif hasattr(response, 'content') and response.content:
+                content = response.content
+                print(f"{Fore.GREEN}响应: {content[:200]}...{Style.RESET_ALL}")
+                result.add_pass("OpenAI 工具调用", f"成功获取文本响应")
+            else:
+                result.add_fail("OpenAI 工具调用", f"响应格式异常: {response}")
         else:
-            result.add_fail("OpenAI 工具调用", f"响应为空或异常: {response}")
+            result.add_fail("OpenAI 工具调用", "未收到响应")
 
     except Exception as e:
         result.add_fail("OpenAI 工具调用", str(e))
@@ -1009,7 +1073,7 @@ async def test_anthropic_tool_calling(result: TestResult):
 
     try:
         from app.llm_hub.providers.anthropic import AnthropicProvider
-        from app.llm_hub.inference import InferenceEngine
+        from app.llm_hub.inference import InferenceEngine, InferenceConfig
         from app.llm_hub.registry import ModelRegistry, ModelMetadata
         from app.llm_hub.tool_gateway import ToolCallingGateway
         from app.tools import ToolHub, CalculatorTool, DateTimeTool
@@ -1065,12 +1129,25 @@ async def test_anthropic_tool_calling(result: TestResult):
         ]
 
         # 获取工具 Schema
-        tools = gateway.get_available_tools()
+        tools_schema = gateway.get_available_tools()
+        
+        # 转换为 Anthropic 格式
+        anthropic_tools = [
+            {
+                "name": tool["name"],
+                "description": tool["description"],
+                "input_schema": tool["parameters"]
+            }
+            for tool in tools_schema
+        ]
 
         # 调用推理引擎
         response = await engine.infer(
             messages=messages,
-            config={"model": model, "tools": tools}
+            config=InferenceConfig(
+                model=model,
+                tools=anthropic_tools
+            )
         )
 
         if response and hasattr(response, 'content') and response.content:
@@ -1166,19 +1243,47 @@ async def test_end_to_end_integration(result: TestResult, use_real_api: bool = F
         # ----- 3. 推理引擎集成测试 -----
         print(f"{Fore.YELLOW}--- 3. 推理引擎集成测试 ---{Style.RESET_ALL}\n")
 
-        from app.llm_hub.inference import InferenceEngine
+        from app.llm_hub.inference import InferenceEngine, InferenceConfig
         from app.core.llm_mock import MockLLM
+        from app.llm_hub.registry import ModelRegistry, ModelMetadata
 
+        # 创建 Mock LLM
         mock_llm = MockLLM()
-        engine = InferenceEngine(llm=mock_llm)
+        
+        # 创建模型注册中心并注册Mock模型
+        e2e_registry = ModelRegistry()
+        e2e_registry.register_model(ModelMetadata(
+            model_id="mock-model",
+            provider="mock",
+            model_name="Mock LLM",
+            capabilities=["chat", "streaming"],
+            context_window=4096,
+            max_output_tokens=2048,
+            is_available=True
+        ))
+        
+        # 创建推理引擎 (使用正确的参数)
+        engine = InferenceEngine(
+            provider=mock_llm,
+            model_registry=e2e_registry
+        )
 
         messages = [
             {"role": "system", "content": "你是一个有帮助的助手。"},
             {"role": "user", "content": "这是一条测试消息"}
         ]
 
-        result_infer = await engine.infer(messages=messages, config={})
-        assert result_infer["success"]
+        result_infer = await engine.infer(
+            messages=messages,
+            config=InferenceConfig(
+                model="mock-model",
+                stream=False
+            )
+        )
+        
+        # 验证结果
+        assert result_infer is not None
+        assert hasattr(result_infer, 'content')
 
         result.add_pass("推理引擎集成", "集成模式下推理功能正常")
 
@@ -1252,7 +1357,7 @@ async def test_real_api_e2e(result: TestResult, tool_hub: 'ToolHub', provider: s
         return
 
     try:
-        from app.llm_hub.inference import InferenceEngine
+        from app.llm_hub.inference import InferenceEngine, InferenceConfig
         from app.llm_hub.registry import ModelRegistry, ModelMetadata
         from app.memory.short_term import ShortTermMemory
 
@@ -1297,7 +1402,7 @@ async def test_real_api_e2e(result: TestResult, tool_hub: 'ToolHub', provider: s
         print(f"{Fore.YELLOW}正在调用 {provider.upper()} API...{Style.RESET_ALL}")
         response = await engine.infer(
             messages=conversation_history,
-            config={"model": model}
+            config=InferenceConfig(model=model)
         )
 
         # 4. 处理响应
@@ -1317,7 +1422,7 @@ async def test_real_api_e2e(result: TestResult, tool_hub: 'ToolHub', provider: s
         print(f"{Fore.BLUE}用户: {user_message2['content']}{Style.RESET_ALL}")
         response2 = await engine.infer(
             messages=conversation_history,
-            config={"model": model}
+            config=InferenceConfig(model=model)
         )
 
         if response2 and hasattr(response2, 'content') and response2.content:
@@ -1367,6 +1472,7 @@ def print_configuration(use_real_api: bool, provider: str):
 async def main():
     """主测试函数"""
     # 解析命令行参数
+    # argparse 是 Python 的标准库，用于解析命令行参数
     parser = argparse.ArgumentParser(
         description="AI Agent 阶段零、一、二集成测试",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1417,6 +1523,9 @@ async def main():
     print(f"\n{Fore.CYAN}{'='*70}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}AI Agent 阶段零、一、二 完整集成测试{Style.RESET_ALL}")
     print(f"{Fore.CYAN}测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}测试模式: {'真实 API' if use_real_api else 'Mock'}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}使用的 LLM 提供商: {provider.upper()}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}跳过 Mock 测试: {'是' if skip_mock else '否'}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}{'='*70}{Style.RESET_ALL}")
 
     # 显示配置
@@ -1455,5 +1564,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    # 运行测试
     exit_code = asyncio.run(main())
+    # 退出
     sys.exit(exit_code)

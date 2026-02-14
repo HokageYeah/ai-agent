@@ -445,12 +445,21 @@ class InferenceEngine:
             if "choices" in raw_response:
                 choice = raw_response["choices"][0]
                 if "message" in choice:
+                    # 如果message是字符串，直接返回
+                    if isinstance(choice["message"], str):
+                        return choice["message"]    
                     return choice["message"].get("content", "")
                 elif "delta" in choice:
+                    # 如果delta是字符串，直接返回
+                    if isinstance(choice["delta"], str):
+                        return choice["delta"]      
                     return choice["delta"].get("content", "")
             
             # Anthropic 格式
             if "content" in raw_response:
+                # 如果content是字符串，直接返回
+                if isinstance(raw_response["content"], str):
+                    return raw_response["content"]      
                 blocks = raw_response["content"]
                 for block in blocks:
                     if block.get("type") == "text":

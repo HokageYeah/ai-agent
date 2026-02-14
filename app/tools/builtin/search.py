@@ -51,6 +51,7 @@ class SearchTool(Tool):
         self._description = "执行网络搜索，查找相关信息。支持多关键词查询，返回结构化的搜索结果。"
         # DuckDuckGo Instant Answer API 端点
         self._api_url = "https://api.duckduckgo.com/"
+        # self._api_url = "https://api.qwant.com/api/search/text"
         logger.info("[SearchTool] 网络搜索工具初始化完成")
     
     @property
