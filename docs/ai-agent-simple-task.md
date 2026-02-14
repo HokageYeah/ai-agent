@@ -344,7 +344,7 @@
 
 **目标**：实现技能库和工作流模板。
 
-|||- [ ] **Task 3.1: Data Analysis Skill**
+|||- [x] **Task 3.1: Data Analysis Skill**
     - **输入**: 设计文档 6.2 节
     - **输出**: `app/skills/library/data_analysis.py`
     - **需求**:
@@ -352,12 +352,13 @@
         2. 实现 Prompt 模板
         3. 配置所需工具
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_skills.py` 通过
-        - [ ] 验证技能定义正确
+        - [x] 单元测试：`pytest tests/unit/test_skills.py` 通过
+        - [x] 验证技能定义正确
     - **依赖**: Task 0.5
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-15
 
-|||- [ ] **Task 3.2: Code Generation Skill**
+|||- [x] **Task 3.2: Code Generation Skill**
     - **输入**: 设计文档 6.2 节
     - **输出**: `app/skills/library/code_generation.py`
     - **需求**:
@@ -365,22 +366,24 @@
         2. 实现 Prompt 模板
         3. 配置所需工具
     - **验收标准**:
-        - [ ] 验证技能定义正确
+        - [x] 验证技能定义正确
     - **依赖**: Task 0.5
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-15
 
-|||- [ ] **Task 3.3: Text Writing Skill**
+|||- [x] **Task 3.3: Text Writing Skill**
     - **输入**: 设计文档 6.2 节
     - **输出**: `app/skills/library/text_writing.py`
     - **需求**:
         1. 实现 `TEXT_WRITING_SKILL` 技能
         2. 实现 Prompt 模板
     - **验收标准**:
-        - [ ] 验证技能定义正确
+        - [x] 验证技能定义正确
     - **依赖**: Task 0.5
     - **工时估算**: 0.5 天
+    - **完成日期**: 2026-02-15
 
-|||- [ ] **Task 3.4: Translation Skill**
+|||- [x] **Task 3.4: Translation Skill**
     - **输入**: 设计文档 6.2 节
     - **输出**: `app/skills/library/translation.py`
     - **需求**:
@@ -388,11 +391,12 @@
         2. 实现 Prompt 模板
         3. 支持多语言
     - **验收标准**:
-        - [ ] 验证技能定义正确
+        - [x] 验证技能定义正确
     - **依赖**: Task 0.5
     - **工时估算**: 0.5 天
+    - **完成日期**: 2026-02-15
 
-|||- [ ] **Task 3.5: Intent Routing Workflow**
+|||- [x] **Task 3.5: Intent Routing Workflow**
     - **输入**: 设计文档 7.3 节
     - **输出**: `app/workflows/templates/intent_routing.py`
     - **需求**:
@@ -400,8 +404,8 @@
         2. 实现意图分类节点
         3. 实现条件路由节点
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_workflow_templates.py` 通过
-        - [ ] 验证工作流定义正确
+        - [x] 单元测试：`pytest tests/unit/test_workflow_templates.py` 通过
+        - [x] 验证工作流定义正确
     - **依赖**: Task 0.6
     - **工时估算**: 1 天
 
