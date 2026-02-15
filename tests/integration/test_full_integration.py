@@ -545,6 +545,14 @@ async def test_end_to_end_agent_workflow(result: TestResult, use_real_api: bool 
         )
         
         print(f"{Fore.GREEN}✓ 计划创建成功，共{len(plan.steps)}个步骤{Style.RESET_ALL}")
+        import json
+        # 打印计划
+        for index, step in enumerate(plan.steps):
+            # 将整体计划转换成json打印
+            # plan_json = json.dumps(plan, default=lambda o: o.__dict__, indent=4)
+            # print(f"{Fore.CYAN}整体计划: {plan_json}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}计划执行动作action{index + 1}: {step.action}{Style.RESET_ALL}")   
+            print(f"{Fore.CYAN}计划执行参数params{index + 1}: {step.params}{Style.RESET_ALL}")   
         print(f"{Fore.CYAN}推理: {plan.reasoning}{Style.RESET_ALL}\n")
         
         # 5. 执行计划
