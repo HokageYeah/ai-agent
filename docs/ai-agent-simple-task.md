@@ -415,7 +415,7 @@
 
 **目标**：实现具备规划、执行、反思能力的智能体系统，包括子 Agent 协作。
 
-|||- [ ] **Task 4.1: Planning Engine**
+|||- [x] **Task 4.1: Planning Engine**
     - **输入**: 设计文档 8.3 节
     - **输出**: `app/agents/planning.py`
     - **需求**:
@@ -424,12 +424,12 @@
         3. 设计通用的 Planning Prompt 模板
         4. 支持 JSON 格式计划输出
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_planning_engine.py` 通过
-        - [ ] 验证复杂任务能生成合理的执行步骤
+        - [x] 单元测试：`pytest tests/unit/test_planning_engine.py` 通过
+        - [x] 验证复杂任务能生成合理的执行步骤
     - **依赖**: Task 0.7, Task 1.6
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 4.2: Execution Engine**
+|||- [x] **Task 4.2: Execution Engine**
     - **输入**: 设计文档 8.4 节
     - **输出**: `app/agents/execution.py`
     - **需求**:
@@ -438,12 +438,12 @@
         3. 实现工具调用执行
         4. 实现错误处理
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_execution_engine.py` 通过
-        - [ ] 验证执行过程中的错误恢复
+        - [x] 单元测试：`pytest tests/unit/test_execution_engine.py` 通过
+        - [x] 验证执行过程中的错误恢复
     - **依赖**: Task 4.1, Task 0.3
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 4.3: Reflection Engine**
+|||- [x] **Task 4.3: Reflection Engine**
     - **输入**: 设计文档 8.5 节
     - **输出**: `app/agents/reflection.py`
     - **需求**:
@@ -452,12 +452,12 @@
         3. 实现重新规划触发逻辑
         4. 实现结果总结生成
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_reflection_engine.py` 通过
-        - [ ] 验证失败场景下的反思和重试
+        - [x] 单元测试：`pytest tests/unit/test_reflection_engine.py` 通过
+        - [x] 验证失败场景下的反思和重试
     - **依赖**: Task 4.2
     - **工时估算**: 1 天
 
-|||- [ ] **Task 4.4: Child Agent Manager**
+|||- [x] **Task 4.4: Child Agent Manager**
     - **输入**: 设计文档 8.6 节
     - **输出**: `app/agents/child_agent_manager.py`
     - **需求**:
@@ -465,12 +465,12 @@
         2. 实现任务委派方法
         3. 实现结果整合
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_child_agent_manager.py` 通过
-        - [ ] 验证子 Agent 任务委派
+        - [x] 单元测试：`pytest tests/unit/test_child_agent_manager.py` 通过
+        - [x] 验证子 Agent 任务委派
     - **依赖**: Task 0.7
     - **工时估算**: 1 天
 
-|||- [ ] **Task 4.5: Agent Library**
+|||- [x] **Task 4.5: Agent Library**
     - **输入**: 设计文档 8.7 节
     - **输出**: `app/agents/library/`
     - **需求**:
@@ -478,8 +478,8 @@
         2. 实现 `OrderAgent` 子 Agent
         3. 实现 `RefundAgent` 子 Agent
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_agent_library.py` 通过
-        - [ ] 验证各 Agent 正确配置和执行
+        - [x] 单元测试：`pytest tests/unit/test_agent_library.py` 通过
+        - [x] 验证各 Agent 正确配置和执行
     - **依赖**: Task 4.1, Task 4.2, Task 4.3, Task 4.4
     - **工时估算**: 1.5 天
 

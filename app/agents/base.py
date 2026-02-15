@@ -1,13 +1,22 @@
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 from enum import Enum
+import os
 
 class AgentConfig(BaseModel):
     """
     Agent 配置模型
+    
+    默认模型配置从环境变量 DEFAULT_MODEL 读取
     """
-    planning_model: str = Field("gpt-4", description="规划使用的模型")
-    execution_model: str = Field("gpt-3.5-turbo", description="执行使用的模型")
+    planning_model: str = Field(
+        default_factory=lambda: os.getenv("DEFAULT_MODEL", "gpt-3.5-turbo"),
+        description="规划使用的模型"
+    )
+    execution_model: str = Field(
+        default_factory=lambda: os.getenv("DEFAULT_MODEL", "gpt-3.5-turbo"),
+        description="执行使用的模型"
+    )
     max_iterations: int = Field(10, description="最大反思迭代次数")
     timeout_seconds: int = Field(60, description="执行超时时间")
 

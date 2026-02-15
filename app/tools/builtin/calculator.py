@@ -205,6 +205,7 @@ class CalculatorTool(Tool):
         """
         expr = expression.lower()
         
+        print(f"准备表达式: {expr}")
         # 替换常量
         for name, value in self._CONSTANTS.items():
             # 使用正则替换完整的单词
@@ -214,6 +215,7 @@ class CalculatorTool(Tool):
         # 替换函数（保留函数名，eval 会调用对应的函数）
         # 不需要额外处理，因为函数已经在 _SAFE_FUNCTIONS 中
         
+        print(f"准备好的表达式: {expr}")
         return expr
     
     def _safe_eval(self, expression: str, 
