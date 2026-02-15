@@ -126,6 +126,25 @@ class ExecutionEngine:
                 # 如果是 final_answer，直接返回
                 if step.action == "final_answer":
                     final_result = step.params.get("content", "")
+                    
+                    # 鲁棒性增强：如果 final_answer 为空，尝试收集之前步骤的结果
+                    if not final_result and step_results:
+                        logger.warning(
+                            f"{Fore.YELLOW}final_answer 为空，尝试使用之前步骤的结果{Style.RESET_ALL}"
+                        )
+                        # 收集所有非空的步骤结果
+                        results = []
+                        for res in step_results:
+                            if res.get("success") and res.get("result"):
+                                action = res.get("action", "unknown")
+                                val = str(res.get("result"))
+                                results.append(f"[{action}]: {val}")
+                        
+                        if results:
+                            final_result = "自动聚合的执行结果：\n" + "\n".join(results)
+                        else:
+                            final_result = "执行完成，但没有产生具体结果。"
+
                     logger.info(
                         f"{Fore.GREEN}执行完成，获得最终答案{Style.RESET_ALL}"
                     )
@@ -182,7 +201,7 @@ class ExecutionEngine:
             if step.action == "tool":
                 return await self._execute_tool(step)
             elif step.action == "skill":
-                return await self._execute_skill(step, context)
+                return await self._execute_skill(step, context, agent)
             elif step.action == "delegate":
                 return await self._delegate_to_agent(step)
             elif step.action == "final_answer":
@@ -261,7 +280,8 @@ class ExecutionEngine:
     async def _execute_skill(
         self,
         step: PlanStep,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        agent: Optional[Agent] = None
     ) -> Dict[str, Any]:
         """
         执行技能调用
@@ -292,13 +312,55 @@ class ExecutionEngine:
         
         # 执行技能（通过 LLM）
         try:
-            # 构建 Prompt
-            prompt = skill.prompt_template.format(**params)
+            # 1. 准备参数，添加默认值以增强鲁棒性
+            safe_params = params.copy()
+            
+            # 通用回退逻辑：如果缺 topic 用 content，反之亦然
+            if "topic" not in safe_params and "content" in safe_params:
+                safe_params["topic"] = safe_params["content"]
+            if "content" not in safe_params and "topic" in safe_params:
+                safe_params["content"] = safe_params["topic"]
+                
+            # 针对 text_writing 技能的特定默认值
+            if skill_id == "text_writing":
+                if "topic" not in safe_params:
+                    safe_params["topic"] = "未指定主题"
+                if "content_type" not in safe_params:
+                    safe_params["content_type"] = "一般文本"
+                if "style" not in safe_params:
+                    safe_params["style"] = "清晰自然"
+                if "word_count" not in safe_params:
+                    safe_params["word_count"] = "适中"
+
+            # 2. 构建 Prompt
+            try:
+                prompt = skill.prompt_template.format(**safe_params)
+            except KeyError as e:
+                logger.warning(
+                    f"{Fore.YELLOW}技能 Prompt 格式化缺少参数: {e}，使用通用 Prompt{Style.RESET_ALL}"
+                )
+                # 兜底 Prompt
+                prompt_params_str = "\n".join([f"{k}: {v}" for k, v in params.items()])
+                prompt = f"""请执行技能"{skill.name}"的任务。
+                
+任务描述:
+{skill.description}
+
+输入参数:
+{prompt_params_str}
+
+请直接输出执行结果。
+"""
             
             from app.llm_hub.inference import InferenceConfig
             
+            # 优先使用 agent 配置的模型，否则回退到默认
+            model = "gpt-3.5-turbo"
+            if agent and agent.agent_config:
+                model = agent.agent_config.execution_model
+                
             config = InferenceConfig(
-                model="gpt-3.5-turbo",
+                model=model,
                 temperature=0.7
             )
             

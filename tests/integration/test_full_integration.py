@@ -617,17 +617,23 @@ async def test_end_to_end_agent_workflow(result: TestResult, use_real_api: bool 
         print(f"{Fore.GREEN}✓ 对话上下文已更新，共{len(context)}条消息{Style.RESET_ALL}\n")
         
         # 最终验证
+        print(f"{Fore.YELLOW}DEBUG: 开始最终验证，use_real_api={use_real_api}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}DEBUG: exec_result.success={exec_result.success}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}DEBUG: reflection_result.success={reflection_result.success}{Style.RESET_ALL}")
+        
         assert exec_result.success is True
         
         # 真实 API 模式下，LLM 可能会智能判断任务未完全完成（因为没有真实数据库）
         # 这是正常的反思结果，说明反思引擎工作正常
         if use_real_api:
             # 真实 API 模式：验证反思引擎正常工作即可
+            print(f"{Fore.CYAN}进入真实 API 模式分支{Style.RESET_ALL}")
             assert reflection_result is not None
             print(f"{Fore.CYAN}真实 API 模式：LLM 反思结果 - success={reflection_result.success}, needs_replanning={reflection_result.needs_replanning}{Style.RESET_ALL}")
             print(f"{Fore.CYAN}说明：真实 LLM 可能判断任务未完成是正常的（因测试环境无真实数据）{Style.RESET_ALL}\n")
         else:
             # Mock 模式：验证预期的成功结果
+            print(f"{Fore.CYAN}进入 Mock 模式分支{Style.RESET_ALL}")
             assert reflection_result.success is True
         
         result.add_pass("端到端 Agent 工作流", "成功完成客服系统订单查询场景")

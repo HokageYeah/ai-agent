@@ -489,7 +489,7 @@
 
 **目标**：实现 LangGraph 集成、Chat Service、Automation Service 和 Channel 适配器。
 
-|||- [ ] **Task 5.1: LangGraph Agent Executor**
+|||- [x] **Task 5.1: LangGraph Agent Executor**
     - **输入**: 设计文档第 9 章
     - **输出**: `app/agents/langgraph_executor.py`
     - **需求**:
@@ -498,12 +498,12 @@
         3. 实现状态图构建（plan -> execute -> reflect）
         4. 实现条件边和状态转换
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_langgraph_executor.py` 通过
-        - [ ] 验证 StateGraph 正确执行 Agent 生命周期
+        - [x] 单元测试：`pytest tests/unit/test_langgraph_executor.py` 通过
+        - [x] 验证 StateGraph 正确执行 Agent 生命周期
     - **依赖**: Task 4.1, Task 4.2, Task 4.3
     - **工时估算**: 2 天
 
-|||- [ ] **Task 5.2: Chat Service**
+|||- [x] **Task 5.2: Chat Service**
     - **输入**: 设计文档第 10 章
     - **输出**: `app/services/chat_service.py`
     - **需求**:
@@ -512,12 +512,12 @@
         3. 实现流式响应生成
         4. 集成 Memory System
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_chat_service.py` 通过
-        - [ ] 集成测试验证对话功能正确
+        - [x] 单元测试：`pytest tests/unit/test_chat_service.py` 通过
+        - [x] 集成测试验证对话功能正确
     - **依赖**: Task 1.6, Task 0.4
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 5.3: Automation Service**
+|||- [x] **Task 5.3: Automation Service**
     - **输入**: 设计文档第 11 章
     - **输出**: `app/services/automation_service.py`
     - **需求**:
@@ -526,31 +526,31 @@
         3. 实现 `report_generation()` 方法
         4. 实现 `code_generation()` 方法
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_automation_service.py` 通过
-        - [ ] 集成测试验证自动化功能
+        - [x] 单元测试：`pytest tests/unit/test_automation_service.py` 通过
+        - [x] 集成测试验证自动化功能
     - **依赖**: Task 0.5, Task 1.6
     - **工时估算**: 1.5 天
 
-|||- [ ] **Task 5.4: REST API Channel Adapter**
+|||- [x] **Task 5.4: REST API Channel Adapter**
     - **输入**: 设计文档 12.2 节
     - **输出**: `app/channels/adapters/rest_api.py`
     - **需求**:
         1. 实现 `RESTAPIAdapter` 类
         2. 实现消息接收和发送
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_rest_api_adapter.py` 通过
-        - [ ] 集成测试验证 API 适配
+        - [x] 单元测试：`pytest tests/unit/test_rest_api_adapter.py` 通过
+        - [x] 集成测试验证 API 适配
     - **依赖**: Task 0.8
     - **工时估算**: 1 天
 
-|||- [ ] **Task 5.5: Web Chat Channel Adapter**
+|||- [x] **Task 5.5: Web Chat Channel Adapter**
     - **输入**: 设计文档 12.3 节
     - **输出**: `app/channels/adapters/web_chat.py`
     - **需求**:
         1. 实现 `WebChatAdapter` 类
         2. 支持 WebSocket 消息传递
     - **验收标准**:
-        - [ ] 单元测试：`pytest tests/unit/test_web_chat_adapter.py` 通过
+        - [x] 单元测试：`pytest tests/unit/test_web_chat_adapter.py` 通过
     - **依赖**: Task 0.8
     - **工时估算**: 1 天
 
