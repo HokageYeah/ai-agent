@@ -1,0 +1,62 @@
+2026-02-17 20:12:24 | ERROR    | logging:callHandlers:1736 - sqlalchemy数据库连接失败: Invalid SQLite URL: sqlite://root:***@localhost:3306/wxpublic?charset=utf8mb4
+Valid SQLite URL forms are:
+ sqlite:///:memory: (or, sqlite://)
+ sqlite:///relative/path/to/file.db
+ sqlite:////absolute/path/to/file.db
+2026-02-17 20:23:11 | ERROR    | logging:callHandlers:1736 - sqlalchemy数据库连接失败: Invalid SQLite URL: sqlite://root:***@localhost:3306/wxpublic?charset=utf8mb4
+Valid SQLite URL forms are:
+ sqlite:///:memory: (or, sqlite://)
+ sqlite:///relative/path/to/file.db
+ sqlite:////absolute/path/to/file.db
+2026-02-17 20:24:50 | ERROR    | logging:callHandlers:1736 - sqlalchemy数据库连接失败: Invalid SQLite URL: sqlite://root:***@localhost:3306/wxpublic?charset=utf8mb4
+Valid SQLite URL forms are:
+ sqlite:///:memory: (or, sqlite://)
+ sqlite:///relative/path/to/file.db
+ sqlite:////absolute/path/to/file.db
+2026-02-17 20:38:26 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:38:26 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:39:09 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:39:09 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:45:26 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:45:26 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:45:56 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:45:56 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:47:04 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:47:04 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:58:02 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:58:02 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-17 20:59:58 | ERROR    | logging:callHandlers:1736 - Traceback (most recent call last):
+  File "C:\Users\HokageYeah\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\HokageYeah\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\HokageYeah\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 194, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\HokageYeah\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\HokageYeah\AppData\Local\pypoetry\Cache\virtualenvs\ai-agent-_opEWcLA-py3.13\Lib\site-packages\starlette\routing.py", line 701, in lifespan
+    await receive()
+  File "C:\Users\HokageYeah\AppData\Local\pypoetry\Cache\virtualenvs\ai-agent-_opEWcLA-py3.13\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HokageYeah\AppData\Local\Programs\Python\Python313\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+2026-02-17 21:07:28 | ERROR    | app.api.endpoints.agents:get_agent:227 - [31mAgent 不存在: nonexistent_agent_id[0m
+2026-02-17 21:08:11 | ERROR    | app.api.endpoints.agents:get_agent:227 - [31mAgent 不存在: nonexistent_agent_id[0m
+2026-02-17 21:16:18 | ERROR    | app.api.endpoints.agents:get_agent:227 - [31mAgent 不存在: nonexistent_agent_id[0m
+2026-02-17 21:16:34 | ERROR    | app.api.endpoints.agents:get_agent:227 - [31mAgent 不存在: nonexistent_agent_id[0m

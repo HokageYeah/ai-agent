@@ -53,9 +53,9 @@ app.add_middleware(ResponseValidatorMiddleware)
 # 添加路由
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
-# 创建数据库连接池
-print('database.connect()3')
-database.connect()
+# 创建数据库连接池 # 数据库连接暂时不需要
+# print('database.connect()3')
+# database.connect()
 
 @app.get("/")
 async def root():

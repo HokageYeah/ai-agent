@@ -52,6 +52,22 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: Optional[int] = 3600
     DB_POOL_TIMEOUT: Optional[int] = 30
 
+    # LLM 相关配置
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None
+    DEFAULT_MODEL: Optional[str] = "gpt-3.5-turbo"
+    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_BASE_URL: Optional[str] = None
+    DEFAULT_ANTHROPIC_MODEL: Optional[str] = "claude-3-sonnet-20240229"
+    
+    # 其他第三方服务配置
+    N8N_WEBHOOK_URL: Optional[str] = None
+    ACCESS_KEY_ID: Optional[str] = None
+    ACCESS_KEY_SECRET: Optional[str] = None
+    BUCKET_NAME: Optional[str] = None
+    REGION: Optional[str] = None
+    ENDPOINT: Optional[str] = None
+
     # @field_validator("DATABASE_URL")
     # def validate_database_url(cls, v: Optional[str]) -> Any:
     #     print('DATABASE_URL---', v)
@@ -63,6 +79,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "allow"  # 允许额外字段
 
 
 settings = Settings()

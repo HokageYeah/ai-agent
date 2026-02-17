@@ -78,7 +78,11 @@ def setup_logging() -> None:
     # 设置第三方库的日志级别
     # 这种方式不会覆盖之前的处理器，只是为特定模块设置日志级别
     for module in ["uvicorn", "uvicorn.access", "uvicorn.error", "httpx", "httpcore"]:
-        logger.level(module, logging.WARNING)  # 使用 logging.WARNING 整数常量而不是字符串
+        try:
+            logger.level(module, logging.WARNING)  # 使用 logging.WARNING 整数常量而不是字符串
+        except TypeError:
+            # 级别已存在，跳过
+            pass
     
     # 日志初始化完成信息
     logger.info("日志系统初始化完成 - 使用 loguru")

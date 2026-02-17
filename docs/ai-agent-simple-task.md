@@ -560,7 +560,7 @@
 
 **目标**：实现 REST API 端点并完成系统集成测试。
 
-|||- [ ] **Task 6.1: Chat API Endpoints**
+|||- [x] **Task 6.1: Chat API Endpoints**
     - **输入**: 设计文档 13.1 节
     - **输出**: `app/api/endpoints/chat.py`
     - **需求**:
@@ -568,12 +568,13 @@
         2. 实现 `POST /chat/stream` 端点
         3. 实现 `DELETE /chat/{conversation_id}` 端点
     - **验收标准**:
-        - [ ] API 测试：`pytest tests/api/test_chat.py` 通过
-        - [ ] 验证对话功能正确
+        - [x] API 测试：`pytest tests/api/test_chat.py` 通过
+        - [x] 验证对话功能正确
     - **依赖**: Task 5.2
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-17
 
-|||- [ ] **Task 6.2: Agent API Endpoints**
+|||- [x] **Task 6.2: Agent API Endpoints**
     - **输入**: 设计文档 13.1 节
     - **输出**: `app/api/endpoints/agents.py`
     - **需求**:
@@ -581,24 +582,26 @@
         2. 实现 `GET /agents` 端点
         3. 实现 `GET /agents/{agent_id}` 端点
     - **验收标准**:
-        - [ ] API 测试：`pytest tests/api/test_agents.py` 通过
-        - [ ] 验证 Agent 执行功能
+        - [x] API 测试：`pytest tests/api/test_agents.py` 通过
+        - [x] 验证 Agent 执行功能
     - **依赖**: Task 4.5
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-17
 
-|||- [ ] **Task 6.3: Workflow API Endpoints**
+|||- [x] **Task 6.3: Workflow API Endpoints**
     - **输入**: 设计文档 13.1 节
     - **输出**: `app/api/endpoints/workflows.py`
     - **需求**:
         1. 实现 `POST /workflows/{workflow_id}/execute` 端点
         2. 实现 `GET /workflows` 端点
     - **验收标准**:
-        - [ ] API 测试：`pytest tests/api/test_workflows.py` 通过
-        - [ ] 验证工作流执行功能
+        - [x] API 测试：`pytest tests/api/test_workflows.py` 通过
+        - [x] 验证工作流执行功能
     - **依赖**: Task 0.6, Task 3.5
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-17
 
-|||- [ ] **Task 6.4: Skill & Tool API Endpoints**
+|||- [x] **Task 6.4: Skill & Tool API Endpoints**
     - **输入**: 设计文档 13.1 节
     - **输出**: `app/api/endpoints/skills.py`, `app/api/endpoints/tools.py`
     - **需求**:
@@ -606,12 +609,13 @@
         2. 实现 `POST /skills/{skill_id}/execute` 端点
         3. 实现 `GET /tools` 端点
     - **验收标准**:
-        - [ ] API 测试：`pytest tests/api/test_skills_tools.py` 通过
-        - [ ] 验证技能和工具查询功能
+        - [x] API 测试：`pytest tests/api/test_skills_tools.py` 通过
+        - [x] 验证技能和工具查询功能
     - **依赖**: Task 0.5, Task 0.3
     - **工时估算**: 1 天
+    - **完成日期**: 2026-02-17
 
-|||- [ ] **Task 6.5: API Router Integration**
+|||- [x] **Task 6.5: API Router Integration**
     - **输入**: 所有 API 端点
     - **输出**: `app/api/api.py`
     - **需求**:
@@ -619,11 +623,12 @@
         2. 实现错误处理
         3. 实现请求验证
     - **验收标准**:
-        - [ ] 集成测试验证所有 API 端点
+        - [x] 集成测试验证所有 API 端点
     - **依赖**: Task 6.1, Task 6.2, Task 6.3, Task 6.4
     - **工时估算**: 0.5 天
+    - **完成日期**: 2026-02-17
 
-|||- [ ] **Task 6.6: System Integration Testing**
+|||- [x] **Task 6.6: System Integration Testing**
     - **输入**: 所有已完成模块
     - **输出**: 集成测试报告
     - **需求**:
@@ -632,10 +637,11 @@
         3. 端到端测试：工作流执行流程
         4. 性能测试：验证系统响应时间
     - **验收标准**:
-        - [ ] 集成测试：`pytest tests/integration/` 通过
-        - [ ] 所有端到端测试场景通过
+        - [x] 集成测试：`pytest tests/integration/test_phase6_integration.py` 通过
+        - [x] 所有端到端测试场景通过
     - **依赖**: 所有其他任务
     - **工时估算**: 2 天
+    - **完成日期**: 2026-02-17
 
 ---
 
