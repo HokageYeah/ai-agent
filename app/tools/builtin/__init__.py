@@ -32,4 +32,46 @@ __all__ = [
     "DatabaseQueryTool",
     "CalculatorTool",
     "DateTimeTool",
+    "register_all_builtin_tools",
 ]
+
+
+def register_all_builtin_tools(tool_hub) -> None:
+    """
+    将所有内置工具注册到 ToolHub 中
+    
+    这是一个便捷函数，供 API 端点等模块在初始化时调用，
+    一次性将所有内置工具注册到工具中心，无需逐个手动注册。
+    
+    Args:
+        tool_hub: ToolHub 实例，用于接收工具注册
+        
+    使用示例：
+        from app.tools.hub import ToolHub
+        from app.tools.builtin import register_all_builtin_tools
+        
+        tool_hub = ToolHub()
+        register_all_builtin_tools(tool_hub)
+    """
+    from loguru import logger
+    from colorama import Fore, Style
+    
+    # NOTE: 按照工具类别逐一实例化并注册，方便追踪注册状态
+    builtin_tools = [
+        SearchTool(),
+        HTTPRequestTool(),
+        PythonExecutorTool(),
+        FileReadTool(),
+        FileWriteTool(),
+        DatabaseQueryTool(),
+        CalculatorTool(),
+        DateTimeTool(),
+    ]
+    
+    for tool in builtin_tools:
+        tool_hub.register_tool(tool)
+        logger.debug(f"{Fore.GREEN}已注册内置工具: {tool.name}{Style.RESET_ALL}")
+    
+    logger.info(
+        f"{Fore.GREEN}所有内置工具注册完成，共注册 {len(builtin_tools)} 个工具{Style.RESET_ALL}"
+    )

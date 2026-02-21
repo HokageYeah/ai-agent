@@ -128,7 +128,23 @@ async def execute_skill(
             raise HTTPException(status_code=404, detail=f"技能不存在: {skill_id}")
         
         # 创建执行上下文
-        inference_engine = InferenceEngine()
+        # NOTE: InferenceEngine 需要 provider 和 model_registry 两个必填参数
+        # 与 agents.py 和 chat.py 保持一致的初始化方式
+        from app.llm_hub.providers.openai import OpenAIProvider
+        from app.llm_hub.registry import ModelRegistry
+        from app.core.config import settings
+        
+        provider = OpenAIProvider(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL
+        )
+        model_registry = ModelRegistry()
+        inference_engine = InferenceEngine(
+            provider=provider,
+            model_registry=model_registry
+        )
+        logger.info(f"{Fore.CYAN}技能执行 - 已创建 InferenceEngine{Style.RESET_ALL}")
+        
         tool_hub = ToolHub()
         
         # 注册所有内置工具

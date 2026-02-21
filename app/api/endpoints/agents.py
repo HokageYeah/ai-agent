@@ -69,8 +69,30 @@ def get_agent_executor() -> LangGraphAgentExecutor:
     if _agent_executor is None:
         logger.info(f"{Fore.BLUE}初始化 LangGraphAgentExecutor...{Style.RESET_ALL}")
         
-        # 创建依赖组件
-        inference_engine = InferenceEngine()
+        # NOTE: InferenceEngine 需要 provider 和 model_registry 两个必填参数
+        # 参照 chat.py 的做法，先创建 OpenAIProvider 和 ModelRegistry，再传入 InferenceEngine
+        from app.llm_hub.providers.openai import OpenAIProvider
+        from app.llm_hub.registry import ModelRegistry
+        from app.core.config import settings
+        
+        # 创建默认 LLM Provider（使用 OpenAI 兼容接口）
+        provider = OpenAIProvider(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL
+        )
+        logger.info(f"{Fore.CYAN}已创建 OpenAIProvider（base_url={settings.OPENAI_BASE_URL}）{Style.RESET_ALL}")
+        
+        # 创建模型注册中心
+        model_registry = ModelRegistry()
+        logger.info(f"{Fore.CYAN}已创建 ModelRegistry{Style.RESET_ALL}")
+        
+        # 创建推理引擎（需要 provider 和 model_registry 两个必填参数）
+        inference_engine = InferenceEngine(
+            provider=provider,
+            model_registry=model_registry
+        )
+        logger.info(f"{Fore.CYAN}已创建 InferenceEngine{Style.RESET_ALL}")
+        
         tool_hub = ToolHub()
         skill_manager = SkillManager()
         
