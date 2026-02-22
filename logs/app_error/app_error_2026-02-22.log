@@ -1,0 +1,4 @@
+2026-02-22 10:07:41 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-22 10:12:27 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-22 10:17:15 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-22 10:18:46 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m

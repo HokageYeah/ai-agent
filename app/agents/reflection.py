@@ -119,8 +119,8 @@ class ReflectionEngine:
                 config=config
             )
             
-            # 解析反思结果
-            reflection = self._parse_reflection(response.content)
+            # NOTE: 将 execution_result 传入解析方法，用于当 LLM 输出无效时的智能兜底
+            reflection = self._parse_reflection(response.content, execution_result)
             
             logger.info(
                 f"{Fore.GREEN}反思完成: success={reflection.success}, "
@@ -130,14 +130,16 @@ class ReflectionEngine:
             return reflection
             
         except Exception as e:
-            logger.error(f"{Fore.RED}反思失败: {e}{Style.RESET_ALL}")
+            logger.error(f"{Fore.RED}反思失败（LLM 调用异常）: {e}{Style.RESET_ALL}")
             
-            # 返回一个保守的反思结果
+            # NOTE: 当 LLM 调用本身失败时，以执行结果为准：
+            #       - 执行成功 → success=True, needs_replanning=False（避免无效重试）
+            #       - 执行失败 → success=False, needs_replanning=True（允许重试）
             return ReflectionResult(
                 success=execution_result.success,
                 needs_replanning=not execution_result.success,
-                feedback=f"反思失败: {str(e)}",
-                summary="由于反思失败，无法生成总结"
+                feedback=f"反思 LLM 调用异常: {str(e)}",
+                summary=f"执行{'成功' if execution_result.success else '失败'}（反思无法完成）"
             )
     
     def _build_reflection_prompt(
@@ -197,17 +199,21 @@ class ReflectionEngine:
         
         return prompt
     
-    def _parse_reflection(self, llm_output: str) -> ReflectionResult:
+    def _parse_reflection(self, llm_output: str, execution_result=None) -> ReflectionResult:
         """
         解析 LLM 返回的反思结果
         
         Args:
             llm_output: LLM 输出的文本
+            execution_result: 执行结果（可选），用于 JSON 解析失败时的智能兜底
             
         Returns:
             ReflectionResult: 解析后的反思结果
         """
         logger.debug(f"{Fore.CYAN}解析 LLM 输出为反思结果{Style.RESET_ALL}")
+        
+        # NOTE: 提前从 execution_result 提取执行状态，用于各种 fallback 场景
+        exec_success = execution_result.success if execution_result else False
         
         try:
             # 尝试提取 JSON
@@ -241,11 +247,14 @@ class ReflectionEngine:
             logger.error(f"{Fore.RED}JSON 解析失败: {e}{Style.RESET_ALL}")
             logger.error(f"{Fore.RED}LLM 输出: {llm_output[:200]}...{Style.RESET_ALL}")
             
-            # 返回一个保守的结果
+            # NOTE: JSON 解析失败时以执行结果为准：
+            #       - 执行成功 → needs_replanning=False（无需重试）
+            #       - 执行失败 → needs_replanning=True（允许重试）
+            # 这样能避免因 LLM 输出格式问题导致已成功的执行被无限重试
             return ReflectionResult(
-                success=False,
-                needs_replanning=True,
-                feedback="无法解析反思结果",
+                success=exec_success,
+                needs_replanning=not exec_success,
+                feedback="LLM 反思输出格式无效（非 JSON）",
                 summary=llm_output[:200] if llm_output else "无法生成总结"
             )
         
@@ -253,8 +262,8 @@ class ReflectionEngine:
             logger.error(f"{Fore.RED}解析反思结果时发生错误: {e}{Style.RESET_ALL}")
             
             return ReflectionResult(
-                success=False,
-                needs_replanning=True,
+                success=exec_success,
+                needs_replanning=not exec_success,
                 feedback=f"解析错误: {str(e)}",
                 summary="解析失败"
             )

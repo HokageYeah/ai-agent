@@ -149,15 +149,27 @@ class OpenAIProvider(LLMProvider):
                 **filtered_config
             )
             
-            # 检查响应
+            # 检查响应是否为空
             if response is None:
                 raise ValueError("API 返回空响应")
             
+            print('大模型回答：response:', response.model_dump())
+            
             # 安全获取 choices
             choices = getattr(response, 'choices', None)
-            print('大模型回答：response:', response.model_dump())
+            
+            # NOTE: 当 API 返回错误响应时（如 status=435 Model not support），
+            #       choices 会是 None。此时必须抛出异常，而不是静默返回错误响应，
+            #       否则上层调用方（Planning/Reflection）会尝试解析错误信息为 JSON
             if choices is None or len(choices) == 0:
-                logger.warning(f"{Fore.YELLOW}API 响应中没有 choices: {response}{Style.RESET_ALL}")
+                # 提取错误详情（如果有）
+                status_code = getattr(response, 'status', None)
+                error_msg = getattr(response, 'msg', None) or getattr(response, 'error', None)
+                detail = f"status={status_code}, msg={error_msg}" if status_code else str(response)
+                logger.error(
+                    f"{Fore.RED}API 返回错误，无有效回复内容: {detail}{Style.RESET_ALL}"
+                )
+                raise ValueError(f"API 返回错误，无法获取回复内容: {detail}")
             
             logger.info(
                 f"{Fore.GREEN}OpenAI 对话响应成功，"

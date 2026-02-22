@@ -5,12 +5,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.exceptions import ResponseValidationError
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.core.config import settings
+from loguru import logger
+
 # 自定义HTTP异常处理器
 async def http_exception_handler(request: Request, exc: HTTPException):
     """
     统一处理HTTP异常，转换为指定格式
     """
-    print('http_exception_handler----exc----', exc)
+    logger.warning(f"触发 HTTP 异常处理器: {exc.detail}")
     # 检查是否已包含自定义格式
     if isinstance(exc.detail, dict) and 'platform' in exc.detail and 'ret' in exc.detail:
         return JSONResponse(
@@ -49,10 +51,10 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
     统一处理请求参数异常，转换为指定格式
     支持query参数和body参数的异常处理
     """
-    print('request_validation_error_handler----exc----', exc)
+    logger.debug(f"触发请求参数验证异常处理器: {exc}")
     # 提示缺少哪个参数
     missing_fields = exc.errors()
-    print('missing_fields----', missing_fields)
+    logger.debug(f"缺失的具体字段信息: {missing_fields}")
     
     # 处理不同类型的参数错误
     missing_field_names = []
@@ -78,7 +80,7 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
                 missing_field_names.append(error['loc'][0])
     
     missing_field_names_str = ', '.join(missing_field_names)
-    print('missing_field_names_str----', missing_field_names_str)
+    logger.warning(f"请求参数验证失败，缺少的字段名称拼接结果: {missing_field_names_str}")
     
     # 获取请求信息
     request_method = request.method
@@ -126,7 +128,7 @@ async def response_validation_error_handler(request: Request, exc: ResponseValid
         "ret": ["SUCCESS::请求成功"],
         "v": settings.VERSION
     }
-    print('response_validation_error_handler----original_response----', original_response)
+    logger.debug(f"原始响应内容: {original_response}")
     # 检查原始响应是否为字典类型
     if isinstance(original_response, dict):
         # 检查字典中是否包含符合ApiResponseData模型要求的字段

@@ -706,3 +706,20 @@ For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/er
 2026-02-21 10:26:49 | ERROR    | app.agents.langgraph_executor:execute:386 - [31mAgent 任务执行失败: Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
 For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/GRAPH_RECURSION_LIMIT[0m
 2026-02-21 10:26:49 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 16:47:18 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 16:49:55 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 16:54:15 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:01:30 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:01:58 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:02:31 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:05:15 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:14:18 | ERROR    | app.llm_hub.providers.openai:chat:169 - [31mAPI 返回错误，无有效回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:18 | ERROR    | app.llm_hub.providers.openai:chat:183 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:18 | ERROR    | app.llm_hub.inference:infer:262 - [31m[req-000001] 推理请求失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:18 | ERROR    | app.services.chat_service:chat:137 - [31m对话处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:18 | ERROR    | app.api.endpoints.chat:chat:123 - [31m对话请求处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:29 | ERROR    | app.api.endpoints.agents:get_agent:249 - [31mAgent 不存在: nonexistent_agent_xyz[0m
+2026-02-21 17:14:31 | ERROR    | app.llm_hub.providers.openai:chat:169 - [31mAPI 返回错误，无有效回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:31 | ERROR    | app.llm_hub.providers.openai:chat:183 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:31 | ERROR    | app.llm_hub.inference:infer:262 - [31m[req-000001] 推理请求失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-21 17:14:31 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m

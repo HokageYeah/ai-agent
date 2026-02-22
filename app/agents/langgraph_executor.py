@@ -278,7 +278,14 @@ class LangGraphAgentExecutor:
         """
         条件边判断
         
-        决定是继续迭代还是结束执行
+        决定是继续迭代还是结束执行。
+        
+        判断逻辑（按优先级）：
+        1. 达到最大迭代次数 → 强制结束
+        2. 执行结果本身已成功（final_result.success=True）且无有效反思 → 直接结束
+        3. 反思结果显示成功（reflection.success=True）→ 结束
+        4. 反思结果要求重规划（reflection.needs_replanning=True）→ 继续
+        5. 其他情况 → 默认结束
         
         Args:
             state: 当前状态
@@ -294,37 +301,56 @@ class LangGraphAgentExecutor:
             f"迭代次数: {iterations}/{self.max_iterations}{Style.RESET_ALL}"
         )
         
-        # 检查是否达到最大迭代次数
+        # ── 1. 检查是否达到最大迭代次数 ──
         if iterations >= self.max_iterations:
             logger.info(
-                f"{Fore.YELLOW}[Should Continue] 达到最大迭代次数，结束执行{Style.RESET_ALL}"
+                f"{Fore.YELLOW}[Should Continue] 已达最大迭代次数 {self.max_iterations}，强制结束{Style.RESET_ALL}"
             )
             return "end"
         
-        # 检查是否有反思结果
+        # ── 2. 执行成功但没有有效反思结果 → 直接结束（避免因反思 LLM 失败而无限循环）──
+        # NOTE: final_result 中的 success 字段来自 ExecutionResult.success
+        #       当 execution 本已成功（有 final_answer），反思 LLM 调用失败只是锦上添花，
+        #       不应该让整个任务因此无限重试。
+        if final_result and final_result.get("success", False) and "reflection" not in final_result:
+            logger.info(
+                f"{Fore.GREEN}[Should Continue] 执行已成功且无有效反思结果，直接结束{Style.RESET_ALL}"
+            )
+            return "end"
+        
+        # ── 3. 检查是否有反思结果 ──
         if not final_result or "reflection" not in final_result:
             logger.warning(
-                f"{Fore.YELLOW}[Should Continue] 没有反思结果，结束执行{Style.RESET_ALL}"
+                f"{Fore.YELLOW}[Should Continue] 没有执行结果或反思结果，结束执行{Style.RESET_ALL}"
             )
             return "end"
         
         reflection = final_result["reflection"]
         
-        # 检查任务是否成功完成
+        # ── 4. 反思结果显示任务成功 → 结束 ──
         if reflection.get("success", False):
             logger.info(
-                f"{Fore.GREEN}[Should Continue] 任务成功完成，结束执行{Style.RESET_ALL}"
+                f"{Fore.GREEN}[Should Continue] 反思判定任务成功完成，结束执行{Style.RESET_ALL}"
             )
             return "end"
         
-        # 检查是否需要重新规划
+        # ── 5. 反思结果要求执行成功但标记需要重规划时，检查底层执行是否已成功 ──
+        # HACK: 防止因反思 LLM 误判而无限重试已经成功执行的计划
+        if final_result.get("success", False) and reflection.get("needs_replanning", False):
+            logger.warning(
+                f"{Fore.YELLOW}[Should Continue] 执行已成功但反思要求重规划，"
+                f"直接结束以避免无效重试{Style.RESET_ALL}"
+            )
+            return "end"
+        
+        # ── 6. 反思结果要求重规划 → 继续 ──
         if reflection.get("needs_replanning", False):
             logger.info(
                 f"{Fore.CYAN}[Should Continue] 需要重新规划，继续迭代{Style.RESET_ALL}"
             )
             return "continue"
         
-        # 默认结束
+        # ── 7. 默认结束 ──
         logger.info(
             f"{Fore.YELLOW}[Should Continue] 默认结束执行{Style.RESET_ALL}"
         )
@@ -364,10 +390,19 @@ class LangGraphAgentExecutor:
                 "agent": agent
             }
             
-            # 执行状态图
-            logger.info(f"{Fore.BLUE}开始执行状态图...{Style.RESET_ALL}")
+            # NOTE: LangGraph 默认 recursion_limit=25，每次 plan→execute→reflect 算 3 步
+            # 若 max_iterations=10，则需要至少 10×3=30 步，因此需要显式设置更大的限制。
+            # 这里设置为 max_iterations*4+10，留有充足的余量。
+            recursion_limit = self.max_iterations * 4 + 10
+            logger.info(
+                f"{Fore.BLUE}开始执行状态图，recursion_limit={recursion_limit}，"
+                f"max_iterations={self.max_iterations}{Style.RESET_ALL}"
+            )
             
-            final_state = await self.graph.ainvoke(initial_state)
+            final_state = await self.graph.ainvoke(
+                initial_state,
+                config={"recursion_limit": recursion_limit}
+            )
             
             logger.info(f"{Fore.GREEN}Agent 任务执行完成{Style.RESET_ALL}")
             logger.info(

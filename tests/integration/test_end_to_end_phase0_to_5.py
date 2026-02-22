@@ -297,23 +297,38 @@ async def test_langgraph_agent(result: TestResult, llm_hub, model_name: str):
 
 
 async def main():
-    """主函数"""
+    """
+    主函数：程序的入口点。
+    负责解析命令行参数，初始化日志，配置 LLM 供应商及模型设置，并按顺序执行测试场景。
+    """
+    # 初始化日志记录器，方便控制台查看彩色输出与详细调用栈
+    setup_logging()
+    
     parser = argparse.ArgumentParser(description="AI Agent Phase 0-5 End-to-End Integration Test")
-    parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM Provider")
-    parser.add_argument("--model", help="Override default model")
+    parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM Provider (LLM 提供商)")
+    parser.add_argument("--model", help="Override default model (覆盖默认模型)")
     
     args = parser.parse_args()
     
     provider = args.provider
-    # 默认模型设置
+    
+    # 默认模型设置逻辑：首先看命令行参数，如果未指定则检查环境变量配置，最后降级到硬编码默认值
     if args.model:
         model = args.model
+        logger.info(f"使用通过命令行参数指定的模型: {model}")
     else:
-        model = "gpt-3.5-turbo" if provider == "openai" else "claude-3-haiku-20240307"
+        if provider == "openai":
+            # 尝试获取 .env 中的 DEFAULT_MODEL
+            model = os.getenv("DEFAULT_MODEL", "gpt-3.5-turbo")
+            logger.info(f"使用 OpenAI 供应商，选择模型: {model} (来源: 环境变量或默认设置)")
+        else:
+            # 尝试获取 .env 中的 DEFAULT_ANTHROPIC_MODEL
+            model = os.getenv("DEFAULT_ANTHROPIC_MODEL", "qwen3-max")
+            logger.info(f"使用 Anthropic 供应商，选择模型: {model} (来源: 环境变量或默认设置)")
         
-    print(f"{Fore.CYAN}开始全流程端到端集成测试{Style.RESET_ALL}")
-    print(f"Provider: {provider}")
-    print(f"Model: {model}")
+    logger.info(f"{Fore.CYAN}开始全流程端到端集成测试{Style.RESET_ALL}")
+    logger.info(f"当前 Provider (提供商): {provider}")
+    logger.info(f"当前 Model (模型): {model}")
     
     result = TestResult()
     

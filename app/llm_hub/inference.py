@@ -441,8 +441,21 @@ class InferenceEngine:
             提取的文本内容
         """
         try:
+            # NOTE: 首先检测 API 错误响应（如第三方代理返回的错误码）
+            #       当 choices=None 且有错误状态码时，说明 API 调用失败
+            #       必须抛出异常，而不是把错误信息当作 LLM 内容返回
+            if raw_response.get("choices") is None:
+                status_code = raw_response.get("status")
+                error_msg = raw_response.get("msg") or raw_response.get("error")
+                if status_code is not None or error_msg is not None:
+                    detail = f"status={status_code}, msg={error_msg}"
+                    logger.error(
+                        f"{Fore.RED}检测到 API 错误响应，拒绝将错误信息当作内容: {detail}{Style.RESET_ALL}"
+                    )
+                    raise ValueError(f"API 错误响应: {detail}")
+            
             # OpenAI 格式
-            if "choices" in raw_response:
+            if "choices" in raw_response and raw_response["choices"] is not None:
                 choice = raw_response["choices"][0]
                 if "message" in choice:
                     # 如果message是字符串，直接返回
@@ -468,6 +481,9 @@ class InferenceEngine:
             # 其他格式，尝试通用提取
             return str(raw_response)
             
+        except ValueError:
+            # 明确的 API 错误，直接向上抛出，不需要 fallback
+            raise
         except Exception as e:
             logger.warning(f"{Fore.YELLOW}提取内容失败: {e}，返回原始响应{Style.RESET_ALL}")
             return str(raw_response)
