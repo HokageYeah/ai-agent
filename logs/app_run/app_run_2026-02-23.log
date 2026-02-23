@@ -4598,3 +4598,97 @@ messages.5
 2026-02-23 21:42:35 | INFO     | app.tools.builtin:register_all_builtin_tools:75 - [32m所有内置工具注册完成，共注册 8 个工具[0m
 2026-02-23 21:42:35 | WARNING  | app.middleware.exception_handlers:http_exception_handler:15 - 触发 HTTP 异常处理器: 技能执行失败: 'framework'
 2026-02-23 21:42:35 | INFO     | logging:callHandlers:1736 - 127.0.0.1:58686 - "POST /api/v1/skills/code_generation/execute HTTP/1.1" 500
+2026-02-23 21:43:24 | INFO     | app.api.endpoints.skills:execute_skill:121 - [36m接收到技能执行请求 - Skill ID: code_generation[0m
+2026-02-23 21:43:24 | INFO     | app.llm_hub.providers.openai:__init__:61 - [36m初始化 OpenAI 供应商适配器，基础URL: https://apis.iflow.cn/v1[0m
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.providers.openai:__init__:79 - [34mOpenAI 异步客户端创建完成[0m
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: qwen3-max (openai)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: deepseek-v3.2 (openai)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-4-turbo (openai)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-3.5-turbo (openai)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-opus-20240229 (anthropic)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-sonnet-20240229 (anthropic)
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-haiku-20240307 (anthropic)
+2026-02-23 21:43:25 | INFO     | app.llm_hub.registry:_initialize_default_models:81 - [36mInitialized ModelRegistry with 7 default models[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:__init__:154 - [36m初始化 PromptBuilder: PromptBuilder[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.streaming:__init__:81 - [36m初始化流式输出管理器 (StreamingManager)[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:__init__:158 - [36m初始化 StreamingManager: StreamingManager[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:__init__:167 - [32m推理引擎初始化完成，默认供应商: OpenAIProvider[0m
+2026-02-23 21:43:25 | INFO     | app.api.endpoints.skills:execute_skill:146 - [36m技能执行 - 已创建 InferenceEngine[0m
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.search:__init__:55 - [SearchTool] 网络搜索工具初始化完成
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.http:__init__:78 - [HTTPRequestTool] HTTP 请求工具初始化完成
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.executor:__init__:115 - [PythonExecutorTool] Python 代码执行工具初始化完成
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin.file:__init__:75 - [BaseFileTool] 初始化完成，允许目录: ['D:\\敲敲代码\\项目代码合集\\AI Agent项目\\ai-agent', 'C:\\Users\\HOKAGE~1\\AppData\\Local\\Temp']
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.file:__init__:207 - [FileReadTool] 文件读取工具初始化完成
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin.file:__init__:75 - [BaseFileTool] 初始化完成，允许目录: ['D:\\敲敲代码\\项目代码合集\\AI Agent项目\\ai-agent', 'C:\\Users\\HOKAGE~1\\AppData\\Local\\Temp']
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.file:__init__:497 - [FileWriteTool] 文件写入工具初始化完成
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.database:__init__:98 - [DatabaseQueryTool] 已创建共享内存数据库连接
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.database:__init__:100 - [DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: :memory:
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-02-23 21:43:25 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: search[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: http_request[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: python_executor[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: file_read[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: file_write[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: database_query[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: calculator[0m
+2026-02-23 21:43:25 | DEBUG    | app.tools.builtin:register_all_builtin_tools:73 - [32m已注册内置工具: datetime[0m
+2026-02-23 21:43:25 | INFO     | app.tools.builtin:register_all_builtin_tools:75 - [32m所有内置工具注册完成，共注册 8 个工具[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:__init__:69 - [34m创建推理配置: model=qwen3-max, stream=False, temperature=0.7[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:infer:205 - [34m[req-000001] 开始推理请求: model=qwen3-max, stream=False, messages_count=1[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:infer:212 - [34m[req-000001] 步骤 1/4: 构建 Prompt[0m
+2026-02-23 21:43:25 | DEBUG    | app.llm_hub.prompt_builder:build:30 - [34mBuilding prompt with 1 messages[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:infer:221 - [34m[req-000001] 步骤 2/4: 选择模型[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:_select_model:383 - [34m选择模型: qwen3-max (供应商: openai)[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.inference:infer:237 - [34m[req-000001] 步骤 3/4: 执行推理 (供应商: OpenAIProvider)[0m
+2026-02-23 21:43:25 | INFO     | app.llm_hub.providers.openai:chat:129 - [34m发送对话请求到 OpenAI，模型: qwen3-max, 温度: 0.7, 消息数: 1[0m
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - Request options: {'method': 'post', 'url': '/chat/completions', 'files': None, 'idempotency_key': 'stainless-python-retry-2a7c6c89-d998-435a-bb0e-b3c0ffdeaaf3', 'content': None, 'json_data': {'messages': [{'role': 'user', 'content': '你是一个资深的软件开发专家。请根据以下需求生成代码:\n\n需求描述:\n生成一个求质数的代码\n\n技术规格:\n- 编程语言: python\n- 框架/库: None\n\n代码要求:\n1. 代码符合最佳实践 - 遵循该语言的编码规范和惯例\n2. 包含必要的注释 - 添加清晰的中文注释说明关键逻辑\n3. 处理边界情况 - 考虑异常情况和边界条件\n4. 代码可读性强 - 使用有意义的变量名和函数名\n5. 提供使用示例 - 展示如何使用生成的代码\n\n请生成完整、可运行的代码，并在代码后附上简要说明。\n如果是 Python 代码，可以使用 python_executor 工具验证代码的正确性。\n'}], 'model': 'qwen3-max', 'max_tokens': 4096, 'stream': False, 'temperature': 0.7}}
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - Sending HTTP Request: POST https://apis.iflow.cn/v1/chat/completions
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - connect_tcp.started host='127.0.0.1' port=10808 local_address=None timeout=5.0 socket_options=None
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000029A17400A70>
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - send_request_headers.started request=<Request [b'CONNECT']>
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - send_request_headers.complete
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - send_request_body.started request=<Request [b'CONNECT']>
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - send_request_body.complete
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - receive_response_headers.started request=<Request [b'CONNECT']>
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'Connection established', [])
+2026-02-23 21:43:25 | DEBUG    | logging:callHandlers:1736 - start_tls.started ssl_context=<ssl.SSLContext object at 0x0000029A17386BA0> server_hostname='apis.iflow.cn' timeout=5.0
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000029A174857B0>
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - send_request_headers.started request=<Request [b'POST']>
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - send_request_headers.complete
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - send_request_body.started request=<Request [b'POST']>
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - send_request_body.complete
+2026-02-23 21:43:26 | DEBUG    | logging:callHandlers:1736 - receive_response_headers.started request=<Request [b'POST']>
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'', [(b'Date', b'Mon, 23 Feb 2026 13:44:10 GMT'), (b'Content-Type', b'application/json;charset=UTF-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'Tengine'), (b'Vary', b'Accept-Encoding'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, PUT, PATCH, DELETE, OPTIONS'), (b'Access-Control-Allow-Headers', b'Authorization, Content-Type, x-biz-info, EagleEye-UserData, _csrf, priority'), (b'Vary', b'Origin'), (b'Vary', b'Access-Control-Request-Method'), (b'Vary', b'Access-Control-Request-Headers'), (b'Content-Encoding', b'gzip'), (b'Ups-Target-Key', b'apis.iflow.cn.vipserver'), (b'X-protocol', b'HTTP/1.1'), (b'EagleEye-TraceId', b'2133ef1617718542039246960e1035'), (b'Strict-Transport-Security', b'max-age=0'), (b's-brt', b'46138'), (b's-rt', b'46140')])
+2026-02-23 21:44:12 | INFO     | logging:callHandlers:1736 - HTTP Request: POST https://apis.iflow.cn/v1/chat/completions "HTTP/1.1 200 "
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - receive_response_body.started request=<Request [b'POST']>
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - receive_response_body.complete
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - response_closed.started
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - response_closed.complete
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - HTTP Response: POST https://apis.iflow.cn/v1/chat/completions "200 " Headers([('date', 'Mon, 23 Feb 2026 13:44:10 GMT'), ('content-type', 'application/json;charset=UTF-8'), ('transfer-encoding', 'chunked'), ('connection', 'keep-alive'), ('server', 'Tengine'), ('vary', 'Accept-Encoding'), ('access-control-allow-origin', '*'), ('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS'), ('access-control-allow-headers', 'Authorization, Content-Type, x-biz-info, EagleEye-UserData, _csrf, priority'), ('vary', 'Origin'), ('vary', 'Access-Control-Request-Method'), ('vary', 'Access-Control-Request-Headers'), ('content-encoding', 'gzip'), ('ups-target-key', 'apis.iflow.cn.vipserver'), ('x-protocol', 'HTTP/1.1'), ('eagleeye-traceid', '2133ef1617718542039246960e1035'), ('strict-transport-security', 'max-age=0'), ('s-brt', '46138'), ('s-rt', '46140')])
+2026-02-23 21:44:12 | DEBUG    | logging:callHandlers:1736 - request_id: None
+2026-02-23 21:44:12 | INFO     | app.llm_hub.providers.openai:chat:174 - [32mOpenAI 对话响应成功，响应ID: chatcmpl-b290e25c-8118-9bfe-91d0-e05ae01bde90[0m
+2026-02-23 21:44:12 | INFO     | app.llm_hub.inference:infer:243 - [32m[req-000001] 推理完成，耗时: 46258.02ms[0m
+2026-02-23 21:44:12 | INFO     | app.llm_hub.inference:infer:248 - [34m[req-000001] 步骤 4/4: 后处理结果[0m
+2026-02-23 21:44:12 | INFO     | app.llm_hub.inference:_postprocess_result:426 - [34m后处理完成: content_len=3927, finish_reason=stop[0m
+2026-02-23 21:44:12 | INFO     | app.llm_hub.inference:infer:254 - [32m[req-000001] 推理请求成功完成，结果长度: 3927 字符[0m
+2026-02-23 21:44:12 | INFO     | app.api.endpoints.skills:execute_skill:166 - [32m技能执行成功[0m
+2026-02-23 21:44:12 | INFO     | logging:callHandlers:1736 - 127.0.0.1:58731 - "POST /api/v1/skills/code_generation/execute HTTP/1.1" 200
+2026-02-23 21:44:30 | INFO     | app.api.endpoints.workflows:list_workflows:144 - [36m列出所有工作流[0m
+2026-02-23 21:44:30 | INFO     | app.api.endpoints.workflows:list_workflows:160 - [32m成功列出 1 个工作流[0m
+2026-02-23 21:44:30 | INFO     | logging:callHandlers:1736 - 127.0.0.1:58792 - "GET /api/v1/workflows HTTP/1.1" 200
+2026-02-23 21:44:37 | INFO     | app.api.endpoints.workflows:get_workflow_engine:45 - [34m初始化 WorkflowEngine...[0m
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:__init__:17 - [34mWorkflowEngine initialized.[0m
+2026-02-23 21:44:37 | INFO     | app.api.endpoints.workflows:get_workflow_engine:47 - [32mWorkflowEngine 初始化完成[0m
+2026-02-23 21:44:37 | INFO     | app.api.endpoints.workflows:execute_workflow:91 - [36m接收到工作流执行请求 - Workflow ID: intent_routing[0m
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:30 - Starting execution of workflow: [36m意图路由工作流 (intent_routing)[0m
+2026-02-23 21:44:37 | DEBUG    | app.workflows.engine:execute:63 - Execution order: ['classify_intent', 'route_decision', 'data_skill', 'code_skill', 'translate_skill', 'chat_skill']
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mclassify_intent[0m (NodeType.LLM_CALL)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mroute_decision[0m (NodeType.CONDITION)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mdata_skill[0m (NodeType.SKILL_CALL)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mcode_skill[0m (NodeType.SKILL_CALL)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mtranslate_skill[0m (NodeType.SKILL_CALL)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:71 - Executing node: [33mchat_skill[0m (NodeType.SKILL_CALL)
+2026-02-23 21:44:37 | INFO     | app.workflows.engine:execute:80 - [32mWorkflow execution completed.[0m
+2026-02-23 21:44:37 | INFO     | app.api.endpoints.workflows:execute_workflow:106 - [32m工作流执行成功[0m
+2026-02-23 21:44:37 | INFO     | logging:callHandlers:1736 - 127.0.0.1:58800 - "POST /api/v1/workflows/intent_routing/execute HTTP/1.1" 200
