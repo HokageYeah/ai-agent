@@ -404,6 +404,7 @@ function handleNewChat(): void {
   position: relative;
 }
 
+
 /* 路由切换动画 */
 .page-fade-enter-active,
 .page-fade-leave-active {
@@ -418,5 +419,18 @@ function handleNewChat(): void {
 .page-fade-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* ====================================================
+ * 移动端适配
+ * ==================================================== */
+@media screen and (max-width: 768px) {
+  .sidebar {
+    width: 64px;
+    min-width: 64px;
+  }
+  .brand-text, .nav-label, .system-status {
+    display: none !important;
+  }
 }
 </style>

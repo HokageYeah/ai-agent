@@ -67,6 +67,7 @@ class AgentExecuteResponse(BaseModel):
     result: Dict[str, Any] = Field(..., description="执行结果")
     iterations: int = Field(..., description="执行迭代次数")
     success: bool = Field(..., description="是否执行成功")
+    messages: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="执行过程中的消息轨迹")
 
 
 class AgentInfo(BaseModel):

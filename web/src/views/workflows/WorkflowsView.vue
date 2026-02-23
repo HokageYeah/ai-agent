@@ -59,6 +59,19 @@
         </div>
 
         <template v-else>
+          <!-- 工作流使用说明 -->
+          <el-alert
+            title="工作流使用说明"
+            type="info"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 2px;"
+          >
+            <p style="margin: 4px 0 0 0; line-height: 1.5; font-size: 0.8rem;">
+              工作流（Workflow）是由预定义节点组成的确定性有向无环图。您只需要提供<strong>入口节点所需的初始变量（键值对）</strong>，引擎会自动按拓扑顺序调度大模型进行逻辑处理。<br/>
+              <strong>操作指南：</strong>在下方配置对应的变量名和变量值，点击执行即可观测工作流的运转。
+            </p>
+          </el-alert>
           <!-- 工作流图示（简化流程图） -->
           <div class="wf-diagram card-base">
             <div class="wf-diagram-header">
@@ -91,11 +104,17 @@
 
           <!-- 输入参数配置 -->
           <div class="wf-input-section">
-            <div class="section-header">
-              <span class="section-label">工作流输入数据</span>
-              <el-tooltip content="输入为 JSON 格式，键值对作为工作流的初始输入变量" placement="top">
-                <el-icon style="color:var(--color-text-muted);cursor:help"><InfoFilled /></el-icon>
-              </el-tooltip>
+            <div class="section-header" style="justify-content: space-between; width: 100%;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="section-label">工作流输入数据</span>
+                <el-tooltip content="输入为 JSON 格式，键值对作为工作流的初始输入变量" placement="top">
+                  <el-icon style="color:var(--color-text-muted);cursor:help"><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              
+              <div class="quick-examples" v-if="selectedWorkflow.workflow_id === 'intent_routing'">
+                <span class="example-tag" @click="fillIntentExample">示例：售后退货</span>
+              </div>
             </div>
             <div class="input-fields">
               <div v-for="(val, key) in inputData" :key="key" class="input-field-row">
@@ -217,6 +236,11 @@ function addInputField(): void {
   inputData.value[newFieldKey.value.trim()] = newFieldValue.value
   newFieldKey.value = ''
   newFieldValue.value = ''
+}
+
+/** 填充意图路由示例数据 */
+function fillIntentExample(): void {
+  inputData.value = { user_query: '我买的衣服破损了，麻烦帮我处理下退货退款，订单号是 12345688' }
 }
 
 /** 删除输入字段 */
@@ -515,4 +539,22 @@ onMounted(() => { loadWorkflows() })
 .result-header-row { display: flex; align-items: center; gap: 10px; }
 .result-label { font-weight: 600; font-size: 0.875rem; color: var(--color-text-primary); }
 .result-box { padding: 16px; max-height: 400px; overflow-y: auto; }
+
+.quick-examples {
+  display: flex;
+  gap: 8px;
+}
+.example-tag {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-primary);
+  transition: all 0.2s;
+}
+.example-tag:hover {
+  background: var(--color-primary-lighter);
+}
 </style>

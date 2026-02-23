@@ -36,3 +36,27 @@
 2026-02-23 11:56:02 | ERROR    | app.llm_hub.inference:infer_stream:332 - [31m[req-000001] 流式推理请求失败: list index out of range[0m
 2026-02-23 11:56:02 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: list index out of range[0m
 2026-02-23 11:56:02 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: list index out of range[0m
+2026-02-23 12:04:08 | ERROR    | app.agents.execution:_delegate_to_agent:408 - [31m子 Agent 管理器未初始化[0m
+2026-02-23 12:18:31 | ERROR    | app.api.endpoints.agents:execute_agent:177 - [31mAgent 执行失败: 6 validation errors for AgentExecuteResponse
+messages.0
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Cr...4bb9-87e6-228eeb0e7121'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type
+messages.1
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Cr...4258-b3d8-e414119fc2b0'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type
+messages.2
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Ex...4c51-a50a-fceb0cdaced7'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type
+messages.3
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Ex...4756-b766-4b7180c1a4c7'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type
+messages.4
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Re...4472-9eb6-b92b85561911'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type
+messages.5
+  Input should be a valid dictionary [type=dict_type, input_value=SystemMessage(content='Re...412e-907e-0d0a3e79af04'), input_type=SystemMessage]
+    For further information visit https://errors.pydantic.dev/2.12/v/dict_type[0m
+2026-02-23 19:14:00 | ERROR    | app.tools.builtin.database:execute:398 - [DatabaseQueryTool] SQLite 错误: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 16344 and this is thread id 12484.
+2026-02-23 21:38:32 | ERROR    | app.tools.builtin.database:execute:398 - [DatabaseQueryTool] SQLite 错误: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 9860 and this is thread id 13672.
+2026-02-23 21:38:35 | ERROR    | app.tools.builtin.http:execute:319 - [HTTPRequestTool] 连接失败: https://api.logistics.com/track - 
+2026-02-23 21:42:35 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'framework'[0m

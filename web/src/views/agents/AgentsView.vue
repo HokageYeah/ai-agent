@@ -64,6 +64,20 @@
         <!-- 已选择 Agent：显示执行界面 -->
         <template v-else>
           <!-- Agent 详情头部 -->
+          <el-alert
+            title="Agent 使用说明"
+            type="info"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 2px;"
+          >
+            <p style="margin: 4px 0 0 0; line-height: 1.5; font-size: 0.8rem;">
+              Agent 能够基于选定的专家角色，对您输入的任务进行<strong>自主规划（Planning）</strong>需要的工具和技能，逐步<strong>执行（Execution）</strong>，并进行<strong>自我反思（Reflection）</strong>来检验目标是否完成。
+              <br/>
+              <strong>操作指南：</strong>在下方输入需要解决的复杂问题，点击执行即可观测大模型的自动化思维与行为闭环。
+            </p>
+          </el-alert>
+          
           <div class="selected-agent-header">
             <div class="selected-agent-avatar">
               <el-icon :size="24" style="color:white"><Setting /></el-icon>
@@ -80,7 +94,13 @@
 
           <!-- 任务输入 -->
           <div class="task-section">
-            <label class="input-label">任务描述</label>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+              <label class="input-label">任务描述</label>
+              <div class="quick-examples">
+                <span class="example-tag" @click="taskInput='请用计算器算一下 2026 减去 2020 的结果。'">示例 1：计算器</span>
+                <span class="example-tag" @click="taskInput='告诉我今天是几月几日，并为今天写一句关于时间的名言。'">示例 2：工具与技能组合</span>
+              </div>
+            </div>
             <el-input
               v-model="taskInput"
               type="textarea"
@@ -101,18 +121,103 @@
             </el-button>
           </div>
 
-          <!-- 执行结果 -->
-          <div v-if="executeResult" class="result-section">
-            <div class="result-header">
-              <span class="result-label">执行结果</span>
-              <el-tag :type="executeResult.success ? 'success' : 'danger'" size="small">
-                {{ executeResult.success ? '成功' : '失败' }}
-              </el-tag>
-              <span class="result-iterations">{{ executeResult.iterations }} 次迭代</span>
+          <!-- 执行轨迹 (详情) -->
+          <div class="trajectory-section" v-if="executeResult">
+            <div class="trajectory-header">
+              <el-icon><DataLine /></el-icon>
+              <span>Agent 思考与执行轨迹</span>
             </div>
-            <div class="result-content card-base">
-              <MarkdownRenderer :content="formatAgentResult(executeResult.result)" />
-            </div>
+            
+            <el-timeline style="margin-top: 20px;">
+              <!-- Message列表 -->
+              <el-timeline-item
+                v-for="(msg, index) in executeResult?.messages || []"
+                :key="'msg-'+index"
+                type="info"
+                :hollow="true"
+                size="large"
+              >
+                <div class="trajectory-content card-base" style="margin-top: 0;">
+                  <div style="margin-bottom: 8px; font-weight: 600;">
+                    <el-tag size="small" type="info">系统日志</el-tag>
+                    <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">{{ msg.type }}</span>
+                  </div>
+                  <div style="font-size: 0.9rem;" class="trajectory-result-block">
+                     <MarkdownRenderer v-if="typeof msg.content === 'string'" :content="msg.content" />
+                     <div v-else>{{ msg.content }}</div>
+                  </div>
+                </div>
+              </el-timeline-item>
+
+              <!-- 执行步骤展示 -->
+              <template v-for="(step, index) in parsedResult?.step_results || []" :key="'step-'+index">
+                <el-timeline-item
+                  v-if="step.action !== 'final_answer'"
+                  :type="step.success ? 'primary' : 'danger'"
+                  :hollow="true"
+                  size="large"
+                >
+                  <div class="trajectory-content card-base" style="margin-top: 0;">
+                    <div style="margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
+                      <span v-if="step.action === 'tool'"><el-tag size="small" type="success">调用工具: {{ step.tool_name }}</el-tag></span>
+                      <span v-else-if="step.action === 'skill'"><el-tag size="small" type="warning">使用技能: {{ step.skill_id }}</el-tag></span>
+                      <span v-else><el-tag size="small">{{ step.action || '执行步骤' }}</el-tag></span>
+                      
+                      <span v-if="!step.success" style="color: var(--el-color-danger); font-size: 0.8rem;">执行异常</span>
+                    </div>
+
+                    <!-- 渲染工具/技能返回的复杂数据或普通文本 -->
+                    <div class="trajectory-result-block" style="background: var(--color-bg-secondary); padding: 12px; border-radius: 8px;">
+                      <MarkdownRenderer v-if="typeof step.result === 'string'" :content="step.result" />
+                      <!-- 如果是对象，格式化输出。或者有专门的 error 则展示 error -->
+                      <div v-else-if="step.result?.error" style="color: var(--el-color-danger)">
+                        {{ step.result.error }}
+                      </div>
+                      <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(step.result, null, 2) + '\n```'" />
+                    </div>
+                  </div>
+                </el-timeline-item>
+              </template>
+
+              <!-- 反思节点展示 -->
+              <el-timeline-item
+                v-if="parsedResult?.reflection"
+                type="warning"
+                :hollow="true"
+                size="large"
+              >
+                <div class="trajectory-content card-base" style="margin-top: 0; background: var(--color-warning-light-9);">
+                  <div style="margin-bottom: 8px; font-weight: 600;">
+                    <el-tag size="small" type="warning">自我反思 (Reflection)</el-tag>
+                    <el-tag size="small" :type="parsedResult.reflection.success ? 'success' : 'danger'" style="margin-left: 8px;">
+                      总结论: {{ parsedResult.reflection.success ? '✅ 任务完成' : '❌ 存在短板' }}
+                    </el-tag>
+                  </div>
+                  <div style="font-size: 0.9rem; margin-bottom: 8px;">
+                    <strong>分析反馈：</strong>{{ parsedResult.reflection.feedback }}
+                  </div>
+                  <div style="font-size: 0.9rem;">
+                    <strong>最终总结：</strong>{{ parsedResult.reflection.summary }}
+                  </div>
+                </div>
+              </el-timeline-item>
+
+              <!-- 最终结果展示 -->
+              <el-timeline-item
+                v-if="finalResult"
+                type="success"
+                size="large"
+              >
+                <div class="trajectory-content card-base" style="margin-top: 0; background: var(--color-success-light-9); border: 1px solid var(--color-success-light-5);">
+                  <div style="margin-bottom: 8px; font-weight: 600;">
+                    <el-tag size="small" type="success" effect="dark">最终结果 (Final Answer)</el-tag>
+                  </div>
+                  <div class="trajectory-result-block" style="font-size: 1rem; color: var(--color-text-primary);">
+                    <MarkdownRenderer :content="finalResult" />
+                  </div>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
           </div>
 
           <!-- 执行错误 -->
@@ -126,12 +231,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Setting, Refresh, CaretRight } from '@element-plus/icons-vue'
+import { ref, onMounted, computed } from 'vue'
+import { Setting, Refresh, CaretRight, DataLine } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAgentList, executeAgent } from '@/api/modules/agents'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import type { AgentInfo, AgentExecuteResponse } from '@/types/agent'
+
+// 为更复杂的执行结果定义内部便捷接口以在模板中使用
+interface StepResult {
+  action: string;
+  success: boolean;
+  tool_name?: string;
+  skill_id?: string;
+  result: any;
+}
+
+interface ReflectionResult {
+  success: boolean;
+  needs_replanning: boolean;
+  feedback: string;
+  summary: string;
+}
+
+interface ParsedExecuteResult {
+  step_results?: StepResult[];
+  reflection?: ReflectionResult;
+  [key: string]: any;
+}
 
 const agents = ref<AgentInfo[]>([])
 const selectedAgent = ref<AgentInfo | null>(null)
@@ -140,6 +267,27 @@ const taskInput = ref<string>('')
 const executing = ref<boolean>(false)
 const executeResult = ref<AgentExecuteResponse | null>(null)
 const executeError = ref<string>('')
+
+// 对执行结果增加强类型转换（用于 Template 解析展示）
+const parsedResult = computed<ParsedExecuteResult | null>(() => {
+  if (!executeResult.value || !executeResult.value.result) return null
+  return executeResult.value.result as ParsedExecuteResult
+})
+
+// 计算最终结果
+const finalResult = computed<string>(() => {
+  if (!parsedResult.value) return ''
+  if (typeof parsedResult.value.result === 'string') {
+    return parsedResult.value.result
+  }
+  if (parsedResult.value.step_results) {
+    const finalStep = parsedResult.value.step_results.find(s => s.action === 'final_answer')
+    if (finalStep && typeof finalStep.result === 'string') {
+      return finalStep.result
+    }
+  }
+  return ''
+})
 
 /**
  * 加载所有可用 Agent 列表
@@ -200,10 +348,15 @@ async function handleExecute(): Promise<void> {
 /**
  * 将 Agent 执行结果对象格式化为 Markdown 字符串
  */
-function formatAgentResult(result: Record<string, unknown>): string {
-  // 尝试提取 final_answer 字段
+function formatAgentResult(result: Record<string, any>): string {
+  if (!result) return ''
+  // 如果 API 最外层提供了 final_answer
   if (result.final_answer) {
     return String(result.final_answer)
+  }
+  // 如果是当前最新的结构，最终回答实际上在 result.result 里 （如 user 的 logs）
+  if (result.result && typeof result.result === 'string') {
+    return result.result
   }
   if (result.content) {
     return String(result.content)
@@ -440,6 +593,24 @@ onMounted(() => {
 .task-section { display: flex; flex-direction: column; gap: 8px; }
 .input-label { font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary); }
 
+.quick-examples {
+  display: flex;
+  gap: 8px;
+}
+.example-tag {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-primary);
+  transition: all 0.2s;
+}
+.example-tag:hover {
+  background: var(--color-primary-lighter);
+}
+
 /* 执行结果区域 */
 .result-section { display: flex; flex-direction: column; gap: 12px; }
 .result-header { display: flex; align-items: center; gap: 10px; }
@@ -448,7 +619,57 @@ onMounted(() => {
 
 .result-content {
   padding: 20px;
-  max-height: 500px;
-  overflow-y: auto;
+}
+
+/* 轨迹展示区 */
+.trajectory-section {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trajectory-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-border-light);
+  padding-bottom: 8px;
+}
+
+.trajectory-content {
+  padding: 16px;
+  font-size: 0.85rem;
+  max-width: 100%;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+.trajectory-result-block :deep(p:last-child) { 
+  margin-bottom: 0; 
+}
+.trajectory-result-block :deep(pre) {
+  margin: 8px 0;
+}
+
+/* 响应式布局：小屏幕下改为上下排列 */
+@media screen and (max-width: 768px) {
+  .agents-layout {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .agent-list-panel {
+    width: 100%;
+    min-width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .execution-panel {
+    overflow: visible;
+  }
 }
 </style>

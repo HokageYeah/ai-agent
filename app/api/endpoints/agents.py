@@ -157,9 +157,10 @@ async def execute_agent(
             agent_id=agent.agent_id,
             agent_name=agent.name,
             task=request.task,
-            result=result.get("final_result", {}),
+            result=result.get("result", {}),
             iterations=result.get("iterations", 0),
-            success=result.get("success", False)
+            success=result.get("success", False),
+            messages=result.get("messages", [])
         )
         
         return ApiResponseData(

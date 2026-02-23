@@ -45,6 +45,7 @@ export interface AgentExecuteResponse {
   result: Record<string, unknown>     // 执行结果（格式根据 Agent 不同而异）
   iterations: number                   // 执行迭代次数
   success: boolean                     // 是否成功
+  messages?: Record<string, any>[]     // 执行轨迹
 }
 
 // ======================== 技能相关 ========================

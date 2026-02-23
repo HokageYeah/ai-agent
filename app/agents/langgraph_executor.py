@@ -409,12 +409,27 @@ class LangGraphAgentExecutor:
                 f"{Fore.GREEN}总迭代次数: {final_state['iterations']}{Style.RESET_ALL}"
             )
             
+            # 序列化 messages 以供前端展示
+            raw_messages = final_state.get("messages", [])
+            serialized_messages = []
+            for msg in raw_messages:
+                if isinstance(msg, dict):
+                    serialized_messages.append(msg)
+                elif hasattr(msg, "model_dump"):
+                    serialized_messages.append(msg.model_dump())
+                elif hasattr(msg, "dict"):
+                    serialized_messages.append(msg.dict())
+                else:
+                    role = getattr(msg, "type", "system")
+                    content = getattr(msg, "content", str(msg))
+                    serialized_messages.append({"role": role, "content": content})
+            
             # 返回最终结果
             return {
                 "success": True,
                 "result": final_state.get("final_result"),
                 "iterations": final_state["iterations"],
-                "messages": final_state["messages"]
+                "messages": serialized_messages
             }
             
         except Exception as e:
