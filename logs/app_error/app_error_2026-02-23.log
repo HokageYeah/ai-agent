@@ -60,3 +60,4 @@ messages.5
 2026-02-23 21:38:32 | ERROR    | app.tools.builtin.database:execute:398 - [DatabaseQueryTool] SQLite 错误: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 9860 and this is thread id 13672.
 2026-02-23 21:38:35 | ERROR    | app.tools.builtin.http:execute:319 - [HTTPRequestTool] 连接失败: https://api.logistics.com/track - 
 2026-02-23 21:42:35 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'framework'[0m
+2026-02-23 21:48:54 | ERROR    | app.tools.builtin.database:execute:398 - [DatabaseQueryTool] SQLite 错误: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 9860 and this is thread id 13672.
