@@ -100,7 +100,7 @@ class ChatService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=config_kwargs.get("model", "gpt-3.5-turbo"),
+                model=config_kwargs.get("model", "qwen3-max"),
                 temperature=config_kwargs.get("temperature", 0.7),
                 max_tokens=config_kwargs.get("max_tokens", 2048)
             )
@@ -184,7 +184,7 @@ class ChatService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=config_kwargs.get("model", "gpt-3.5-turbo"),
+                model=config_kwargs.get("model", "qwen3-max"),
                 temperature=config_kwargs.get("temperature", 0.7),
                 max_tokens=config_kwargs.get("max_tokens", 2048),
                 stream=True
@@ -196,7 +196,7 @@ class ChatService:
             full_response = ""
             
             # 4. 流式返回响应
-            async for chunk in self.llm_hub.stream(messages=messages, config=config):
+            async for chunk in self.llm_hub.infer_stream(messages=messages, config=config):
                 if chunk.content:
                     full_response += chunk.content
                     yield chunk.content

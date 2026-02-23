@@ -35,7 +35,7 @@ class InferenceConfig:
     
     def __init__(
         self,
-        model: str = "gpt-3.5-turbo",
+        model: str = "qwen3-max",
         temperature: float = 0.7,
         max_tokens: int = 4096,
         stream: bool = False,
@@ -631,7 +631,7 @@ if __name__ == "__main__":
     
     # 测试配置
     config = InferenceConfig(
-        model="gpt-3.5-turbo",
+        model="qwen3-max",
         temperature=0.7,
         system_prompt="你是一个有帮助的助手"
     )
@@ -641,7 +641,7 @@ if __name__ == "__main__":
     result = InferenceResult(
         content="这是一个测试回复",
         raw_response={},
-        model="gpt-3.5-turbo",
+        model="qwen3-max",
         provider="openai",
         usage={"prompt_tokens": 10, "completion_tokens": 5},
         finish_reason="stop"

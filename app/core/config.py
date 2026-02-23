@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # LLM 相关配置
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: Optional[str] = None
-    DEFAULT_MODEL: Optional[str] = "gpt-3.5-turbo"
+    DEFAULT_MODEL: Optional[str] = "qwen3-max"
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_BASE_URL: Optional[str] = None
     DEFAULT_ANTHROPIC_MODEL: Optional[str] = "claude-3-sonnet-20240229"

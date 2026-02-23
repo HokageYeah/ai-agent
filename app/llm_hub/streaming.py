@@ -230,7 +230,9 @@ class StreamingManager:
         if provider_name == "openai":
             # OpenAI 格式解析
             # OpenAI 响应格式: {"id": "...", "object": "chat.completion.chunk", ...}
-            choice = raw_chunk.get("choices", [{}])[0]
+            choices = raw_chunk.get("choices", [])
+            choice = choices[0] if choices else {}
+            
             delta_content = choice.get("delta", {}).get("content", "")
             finish_reason = choice.get("finish_reason", None)
             

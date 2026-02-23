@@ -122,7 +122,7 @@ class OpenAIProvider(LLMProvider):
         config = config or {}
         
         # 从配置中获取模型，默认为 gpt-3.5-turbo
-        model = config.get("model", "gpt-3.5-turbo")
+        model = config.get("model", "qwen3-max")
         # 获取温度参数，控制输出的随机性
         temperature = config.get("temperature", 0.7)
         
@@ -217,7 +217,7 @@ class OpenAIProvider(LLMProvider):
         config = config or {}
         
         # 获取配置参数
-        model = config.get("model", "gpt-3.5-turbo")
+        model = config.get("model", "qwen3-max")
         temperature = config.get("temperature", 0.7)
         
         logger.info(

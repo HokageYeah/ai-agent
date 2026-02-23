@@ -1,0 +1,38 @@
+2026-02-23 11:12:34 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:12:34 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:13:33 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:13:33 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:16:33 | ERROR    | app.llm_hub.providers.openai:chat:169 - [31mAPI 返回错误，无有效回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:16:33 | ERROR    | app.llm_hub.providers.openai:chat:183 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:16:33 | ERROR    | app.llm_hub.inference:infer:262 - [31m[req-000001] 推理请求失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:16:33 | ERROR    | app.services.chat_service:chat:137 - [31m对话处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:16:33 | ERROR    | app.api.endpoints.chat:chat:123 - [31m对话请求处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:17:41 | ERROR    | app.llm_hub.providers.openai:chat:169 - [31mAPI 返回错误，无有效回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:17:41 | ERROR    | app.llm_hub.providers.openai:chat:183 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:17:41 | ERROR    | app.llm_hub.inference:infer:262 - [31m[req-000001] 推理请求失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:17:41 | ERROR    | app.services.chat_service:chat:137 - [31m对话处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:17:41 | ERROR    | app.api.endpoints.chat:chat:123 - [31m对话请求处理失败: API 返回错误，无法获取回复内容: status=435, msg=Model not support[0m
+2026-02-23 11:32:55 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:32:55 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:33:47 | ERROR    | app.agents.execution:_delegate_to_agent:408 - [31m子 Agent 管理器未初始化[0m
+2026-02-23 11:34:11 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'target_language'[0m
+2026-02-23 11:35:00 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'style'[0m
+2026-02-23 11:36:01 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:36:01 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:38:05 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'target_language'[0m
+2026-02-23 11:39:36 | ERROR    | app.agents.execution:_delegate_to_agent:408 - [31m子 Agent 管理器未初始化[0m
+2026-02-23 11:39:51 | ERROR    | app.tools.builtin.database:execute:398 - [DatabaseQueryTool] SQLite 错误: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 20204 and this is thread id 17632.
+2026-02-23 11:39:55 | ERROR    | app.tools.builtin.http:execute:319 - [HTTPRequestTool] 连接失败: https://api.logistics.com/tracking - 
+2026-02-23 11:40:42 | ERROR    | app.api.endpoints.skills:execute_skill:187 - [31m技能执行失败: 'content_type'[0m
+2026-02-23 11:41:10 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:41:10 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:45:57 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:45:57 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:46:17 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:46:17 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:47:12 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:47:12 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: 'InferenceEngine' object has no attribute 'stream'[0m
+2026-02-23 11:56:02 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: list index out of range[0m
+2026-02-23 11:56:02 | ERROR    | app.llm_hub.inference:infer_stream:332 - [31m[req-000001] 流式推理请求失败: list index out of range[0m
+2026-02-23 11:56:02 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: list index out of range[0m
+2026-02-23 11:56:02 | ERROR    | app.api.endpoints.chat:generate_stream:160 - [31m流式对话请求处理失败: list index out of range[0m
