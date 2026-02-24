@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.0
-- **最后更新**: 2026-02-12
+- **版本号**: v1.1
+- **最后更新**: 2026-02-24
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -949,6 +949,37 @@ REFUND_AGENT = Agent(
     available_skills=[],
     child_agents=[]
 )
+```
+
+### 8.8 客服 + 订单场景的落地实现（本项目）
+
+在当前代码仓库中，以上通用模型已经被具体化为一个**客服 + 订单查询** Demo，核心实现位于：
+
+- `app/agents/library/customer_service.py`：定义了三个典型 Agent：
+  - `cs_master`（客服总监，主 Agent）
+  - `order_agent`（订单专员，子 Agent）
+  - `refund_agent`（退款专员，子 Agent）
+- `app/tools/builtin/database.py` + `app/db/seed_order_data.py`：封装 `DatabaseQueryTool` 与内存订单数据库（包含 `customers / products / orders / order_items / refunds` 等表），启动时自动注入 1001–1010 号订单测试数据并同步 Schema 到工具描述。
+
+**具体策略如下：**
+
+- `cs_master`：
+  - `available_tools=["datetime"]`，**不具备数据库查询能力**。
+  - 角色 Prompt 明确要求：若问题涉及订单 / 配送 / 退款，必须委派给 `order_agent` 或 `refund_agent`，自己只做任务拆分与结果整合。
+- `order_agent`：
+  - `available_tools=["database_query", "http_request", "datetime"]`，专职处理订单查询、订单状态、配送跟踪。
+  - 直接对接内存订单数据库，通过 `DatabaseQueryTool` 查询真实数据。
+- `refund_agent`：
+  - `available_tools=["database_query", "calculator", "datetime"]`，专职处理退款相关问题。
+
+**执行过程示例（订单查询）：**
+
+1. 用户调用 `cs_master`：`"帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。"`
+2. 规划引擎根据 `cs_master.available_tools` 发现其不具备 `database_query` 能力，规划步骤中不会出现数据库工具调用，而是生成 `delegate` 步骤，将任务委派给 `order_agent`。
+3. `order_agent` 使用 `database_query` 一次性 JOIN 多表（`orders + customers + order_items`），拿到订单状态、客户信息和商品明细。
+4. 执行引擎收集工具结果，调用 LLM 合成自然语言答案，返回给用户（不再包含 `{status}`、`[customer_name]` 这类占位符，而是落地的真实字段值）。
+
+> 总结：`available_tools` 和 `available_skills` 不仅是元数据声明，实际在 **规划阶段用于过滤可见能力**，在 **执行阶段用于强制授权校验**，从而实现“主 Agent 负责协调，子 Agent 负责落地”的多智能体协作模式。
 ```
 
 ---

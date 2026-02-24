@@ -114,6 +114,42 @@ graph TD
     CapabilityLayer -->|依赖解析| InfraLayer
 ```
 
+## 🧪 内置客服 + 订单查询 Demo
+
+本项目内置了一组完整的客服场景 Agent 与订单演示数据，方便直接体验“主 Agent 协调 + 子 Agent 落地执行 + 数据库查询”的全流程能力：
+
+- **客服主 Agent（`cs_master`，客服总监）**
+  - 职责：只做**问题分类、任务委派、结果整合与对话输出**。
+  - 工具权限：仅授权 `datetime`，**没有** `database_query` 等业务工具。
+  - 协作策略：遇到订单 / 配送 / 退款等问题时，必须委派给对应子 Agent（`order_agent`、`refund_agent`），自己只负责向用户说明与总结。
+
+- **订单子 Agent（`order_agent`，订单专员）**
+  - 职责：订单详情查询、订单状态、配送跟踪、商品明细等。
+  - 工具权限：授权 `database_query`、`http_request`、`datetime`，可以直接访问内存订单数据库。
+
+- **退款子 Agent（`refund_agent`，退款专员）**
+  - 职责：退款申请、退款审核、退款进度查询。
+  - 工具权限：授权 `database_query`、`calculator`、`datetime`。
+
+- **内存订单数据库 + `DatabaseQueryTool`**
+  - 启动时自动构建 SQLite 内存库，包含 `customers / products / orders / order_items / refunds` 等表，并注入 1001–1010 号订单等测试数据。
+  - `DatabaseQueryTool` 会在数据注入后自动读取 Schema，将**表结构与字段信息拼接到工具描述中**，确保大模型可以根据真实列名生成合法 SQL（仅允许 `SELECT`）。
+  - 成功启动后日志中会看到类似：
+    - `[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010`
+
+- **典型调用示例**
+  - 请求：`POST /api/v1/agents/cs_master/execute`
+  - Body 示例：
+    ```json
+    {
+      "task": "帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。"
+    }
+    ```
+  - 执行流程（简化）：
+    1. `cs_master` 识别为订单类问题 → 委派给 `order_agent`
+    2. `order_agent` 使用 `database_query` 查询订单 + 客户 + 商品明细
+    3. 执行引擎将查询结果传回，由 LLM 合成一段**带有真实字段值**的中文说明作为最终回复
+
 ## 🚀 外界真实系统调用全流程解密
 
 为了让企业应用、前端页面或微信小程序等使用者可以无缝与 Agent 对接，API 层被设计成了高度解耦的方法。当外界只想要简单的能力时可以走简单通道，想要复杂的反思推演逻辑时则会自动落入引擎管道内。

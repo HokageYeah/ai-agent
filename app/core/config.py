@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # docker 数据库字段
     MYSQL_ROOT_PASSWORD: Optional[str] = "aa123456"
-    MYSQL_DATABASE: Optional[str] = "wx_public_dev"
+    MYSQL_DATABASE: Optional[str] = "order_agent_dev"
     MYSQL_USER: Optional[str] = "yy"
     MYSQL_PASSWORD: Optional[str] = "aa123456"
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: Optional[str] = "aa123456"
     DB_HOST: Optional[str] = "localhost"
     DB_PORT: Optional[int] = 3306
-    DB_NAME: Optional[str] = "wx_public_dev"
+    DB_NAME: Optional[str] = "order_agent_dev"
     DB_CHARSET: Optional[str] = "utf8mb4"
     DB_ECHO: Optional[bool] = True
     DB_POOL_SIZE: Optional[int] = 5

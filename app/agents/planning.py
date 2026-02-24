@@ -194,6 +194,9 @@ class PlanningEngine:
         
         # 格式化子 Agent 列表
         child_agents_text = ", ".join(agent.child_agents) if agent.child_agents else "无"
+
+        # 创建变量xxx
+        xxx="xxx"
         
         # 构建 Prompt
         prompt = f"""你是 {agent.name}，{agent.description}
@@ -223,11 +226,15 @@ class PlanningEngine:
 }}
 
 注意事项：
-1. 每个步骤只能有一个 action 字段
-2. 最后一步应该是 final_answer，包含最终结果
+1. 每个步骤只能有一个 action 字段，action 必须严格使用 "tool"、"skill"、"delegate"、"final_answer" 之一，禁止把工具名直接写作 action 值（例如不要写 "action": "database_query"，正确写法是 "action": "tool", "tool_name": "database_query"）
+2. 最后一步必须是 final_answer，其 content 只需写一句简短的意图说明即可（例如 "根据以上查询结果回答用户"），禁止使用 {xxx} 或 [xxx] 这类占位符——系统会自动将前序步骤的真实数据合成为最终回答
 3. 如果需要使用工具，确保工具名称正确
 4. 如果需要调用技能，确保技能 ID 正确
 5. 如果需要委派给子 Agent，确保子 Agent ID 在可用列表中
+6. 【重要】每个工具步骤的参数必须是完整的、自包含的，不能依赖其他步骤的运行时输出。具体规则：
+   - 数据库查询：必须用 JOIN 或子查询合并多表，不能使用 ? 占位符，禁止把前一步结果作为参数
+   - 计算器：只能计算纯数学表达式（如 "1+2*3"），不能引用数据库字段名或变量
+   - 如果需要先查询再计算，请在一条 SQL 里直接用 SUM/COUNT/AVG 等聚合函数完成
 
 请只返回 JSON，不要包含其他文本。
 """

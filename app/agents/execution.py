@@ -14,6 +14,8 @@
 创建时间: 2026-02-15
 """
 
+import re
+import json as _json
 from typing import Dict, List, Any, Optional
 from loguru import logger
 from colorama import Fore, Style
@@ -119,31 +121,51 @@ class ExecutionEngine:
                     f"action={step.action}{Style.RESET_ALL}"
                 )
                 
-                # 执行步骤
-                step_result = await self._execute_step(agent, step, context)
+                # 执行步骤（把已完成步骤结果传入，供 skill 等使用）
+                step_result = await self._execute_step(agent, step, context, step_results)
                 step_results.append(step_result)
                 
-                # 如果是 final_answer，直接返回
+                # 如果是 final_answer，先合成再返回
                 if step.action == "final_answer":
-                    final_result = step.params.get("content", "")
+                    template = step.params.get("content", "")
                     
-                    # 鲁棒性增强：如果 final_answer 为空，尝试收集之前步骤的结果
-                    if not final_result and step_results:
-                        logger.warning(
-                            f"{Fore.YELLOW}final_answer 为空，尝试使用之前步骤的结果{Style.RESET_ALL}"
+                    # 收集本轮所有成功的工具/技能/委派结果（排除 final_answer 步骤本身）
+                    tool_results = [
+                        r for r in step_results
+                        if r.get("success") and r.get("result")
+                        and r.get("action") != "final_answer"
+                    ]
+                    
+                    # 只要有真实数据（工具/技能/委派结果），就调用 LLM 合成最终答案。
+                    # LLM 在规划阶段还没有执行结果，final_answer.content 只是意图描述
+                    # 或占位符模板，不能直接返回给用户。
+                    should_synthesize = bool(tool_results)
+                    
+                    if should_synthesize:
+                        logger.info(
+                            f"{Fore.BLUE}[执行引擎] 存在工具/委派执行结果，"
+                            f"调用 LLM 合成真实答案...{Style.RESET_ALL}"
                         )
-                        # 收集所有非空的步骤结果
-                        results = []
-                        for res in step_results:
-                            if res.get("success") and res.get("result"):
-                                action = res.get("action", "unknown")
-                                val = str(res.get("result"))
-                                results.append(f"[{action}]: {val}")
-                        
-                        if results:
-                            final_result = "自动聚合的执行结果：\n" + "\n".join(results)
-                        else:
-                            final_result = "执行完成，但没有产生具体结果。"
+                        final_result = await self._synthesize_answer(
+                            agent=agent,
+                            task=context.get("task", "") if context else "",
+                            tool_results=tool_results,
+                            template=template
+                        )
+                    elif template:
+                        final_result = template
+                    elif tool_results:
+                        # 没有 LLM 合成条件，直接拼接工具结果
+                        parts = []
+                        for r in tool_results:
+                            label = r.get("tool_name") or r.get("agent_id") or r.get("action", "")
+                            val = r["result"]
+                            if isinstance(val, dict):
+                                val = _json.dumps(val, ensure_ascii=False, indent=2)
+                            parts.append(f"【{label}】\n{val}")
+                        final_result = "\n\n".join(parts)
+                    else:
+                        final_result = "执行完成，但没有产生具体结果。"
 
                     logger.info(
                         f"{Fore.GREEN}执行完成，获得最终答案{Style.RESET_ALL}"
@@ -180,28 +202,116 @@ class ExecutionEngine:
                 error=str(e)
             )
     
+    async def _synthesize_answer(
+        self,
+        agent: Agent,
+        task: str,
+        tool_results: List[Dict[str, Any]],
+        template: str = ""
+    ) -> str:
+        """
+        调用 LLM 将工具/技能返回的原始数据合成为自然语言的最终答案。
+
+        在 final_answer 的 content 包含占位符（如 [status]、[customer_name]）
+        或为空时触发，避免把模板字符串作为最终结果返回给用户。
+
+        Args:
+            agent: 当前执行的 Agent 实例（用于取角色名）
+            task: 原始用户任务描述
+            tool_results: 本轮所有成功的工具/技能/委派结果列表
+            template: LLM 规划时写的 final_answer 模板（可能含占位符）
+
+        Returns:
+            str: 基于真实数据合成的自然语言答案
+        """
+        # ── 格式化工具结果，供 LLM 阅读 ──────────────────────
+        result_parts = []
+        for idx, r in enumerate(tool_results, 1):
+            label = r.get("tool_name") or r.get("agent_id") or r.get("action", f"步骤{idx}")
+            val = r.get("result", "")
+            if isinstance(val, dict):
+                val_str = _json.dumps(val, ensure_ascii=False, indent=2)
+            else:
+                val_str = str(val)
+            # 截断超长输出，防止 token 超限
+            if len(val_str) > 3000:
+                val_str = val_str[:3000] + "\n...（内容已截断）"
+            result_parts.append(f"[来源: {label}]\n{val_str}")
+
+        results_text = "\n\n".join(result_parts)
+
+        synthesis_prompt = f"""你是 {agent.name}，{agent.description}
+
+用户任务：{task}
+
+以下是执行过程中获取到的数据：
+
+{results_text}
+
+请根据以上数据，用清晰、友好的自然语言回答用户的任务需求。
+要求：
+1. 直接给出具体数据，不要使用 [xxx] 这样的占位符
+2. 信息完整，涵盖用户关心的所有字段
+3. 格式清晰，必要时使用列表或分段展示
+4. 如果数据中有错误或空值，如实告知
+
+请直接输出最终回答，不要包含任何前缀说明。"""
+
+        try:
+            from app.llm_hub.inference import InferenceConfig
+            config = InferenceConfig(
+                model=agent.agent_config.execution_model,
+                stream=False,
+                temperature=0.3   # 答案合成用低温度，减少幻觉
+            )
+            response = await self.llm_hub.infer(
+                messages=[{"role": "user", "content": synthesis_prompt}],
+                config=config
+            )
+            answer = response.content.strip()
+            logger.info(
+                f"{Fore.GREEN}[执行引擎] LLM 答案合成完成，"
+                f"长度: {len(answer)} 字符{Style.RESET_ALL}"
+            )
+            return answer
+
+        except Exception as e:
+            logger.error(
+                f"{Fore.RED}[执行引擎] LLM 答案合成失败，回退到原始数据拼接: {e}{Style.RESET_ALL}"
+            )
+            # 合成失败时降级：把原始工具结果直接拼接返回
+            return "\n\n".join(
+                f"【{r.get('tool_name') or r.get('action', '')}】\n"
+                + (_json.dumps(r["result"], ensure_ascii=False, indent=2)
+                   if isinstance(r["result"], dict) else str(r["result"]))
+                for r in tool_results
+                if r.get("result")
+            ) or template or "执行完成，但未能生成最终答案。"
+
     async def _execute_step(
         self,
         agent: Agent,
         step: PlanStep,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        prev_results: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         执行单个步骤
-        
+
         Args:
             agent: Agent 实例
             step: 计划步骤
             context: 执行上下文
-            
+            prev_results: 本轮已完成步骤的结果列表，供 skill 等引用真实数据
+
         Returns:
             Dict[str, Any]: 步骤执行结果
         """
         try:
             if step.action == "tool":
-                return await self._execute_tool(step)
+                return await self._execute_tool(step, agent)
             elif step.action == "skill":
-                return await self._execute_skill(step, context, agent)
+                return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
                 return await self._delegate_to_agent(step)
             elif step.action == "final_answer":
@@ -211,6 +321,20 @@ class ExecutionEngine:
                     "action": "final_answer"
                 }
             else:
+                # ── 兜底兼容：LLM 有时把工具名直接写成 action（如 "database_query"）
+                # 检查 action 值是否是已注册的工具名，若是则自动修正为 action="tool"
+                if self.tool_hub and self.tool_hub.get_tool(step.action):
+                    original_action = step.action
+                    logger.warning(
+                        f"{Fore.YELLOW}[兼容] LLM 将工具名 '{original_action}' "
+                        f"误用为 action 类型，自动修正为 action='tool'{Style.RESET_ALL}"
+                    )
+                    # 若 params 中没有 tool_name 则补充（有的话直接用）
+                    if "tool_name" not in step.params:
+                        step.params["tool_name"] = original_action
+                    step.action = "tool"
+                    return await self._execute_tool(step, agent)
+                
                 logger.warning(
                     f"{Fore.YELLOW}未知的 action 类型: {step.action}{Style.RESET_ALL}"
                 )
@@ -229,13 +353,16 @@ class ExecutionEngine:
                 "action": step.action
             }
     
-    async def _execute_tool(self, step: PlanStep) -> Dict[str, Any]:
+    async def _execute_tool(
+        self, step: PlanStep, agent: Optional[Agent] = None
+    ) -> Dict[str, Any]:
         """
         执行工具调用
-        
+
         Args:
             step: 计划步骤
-            
+            agent: 当前 Agent 实例（用于授权校验）
+
         Returns:
             Dict[str, Any]: 执行结果
         """
@@ -243,6 +370,22 @@ class ExecutionEngine:
         params = step.params.get("params", {})
         
         logger.info(f"{Fore.CYAN}调用工具: {tool_name}{Style.RESET_ALL}")
+
+        # ── 工具授权校验 ──────────────────────────────────────────
+        # 若 agent 声明了 available_tools（非空），则只允许使用授权内的工具
+        if agent and agent.available_tools and tool_name not in agent.available_tools:
+            error_msg = (
+                f"Agent '{agent.name}' 无权使用工具 '{tool_name}'。"
+                f"该 Agent 仅授权以下工具: {agent.available_tools}。"
+                f"如需使用 '{tool_name}'，请委派给有该工具权限的子 Agent。"
+            )
+            logger.warning(f"{Fore.YELLOW}[权限拦截] {error_msg}{Style.RESET_ALL}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "action": "tool",
+                "tool_name": tool_name
+            }
         
         # 获取工具
         tool = self.tool_hub.get_tool(tool_name)
@@ -281,15 +424,18 @@ class ExecutionEngine:
         self,
         step: PlanStep,
         context: Optional[Dict[str, Any]] = None,
-        agent: Optional[Agent] = None
+        agent: Optional[Agent] = None,
+        prev_results: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         执行技能调用
-        
+
         Args:
             step: 计划步骤
             context: 执行上下文
-            
+            agent: 当前 Agent 实例
+            prev_results: 本轮已完成步骤的结果列表，用于向 skill 注入真实数据
+
         Returns:
             Dict[str, Any]: 执行结果
         """
@@ -314,6 +460,40 @@ class ExecutionEngine:
         try:
             # 1. 准备参数，添加默认值以增强鲁棒性
             safe_params = params.copy()
+            
+            # ── 将前序步骤的真实数据注入 skill 参数 ────────────────
+            # LLM 在规划阶段无法知道工具结果，skill 的 data/content 往往是描述文字。
+            # 如果存在真实的工具/委派执行结果，用它们替换或补充 skill 的数据输入。
+            if prev_results:
+                real_data_parts = []
+                for r in prev_results:
+                    if not (r.get("success") and r.get("result")):
+                        continue
+                    label = r.get("tool_name") or r.get("agent_id") or r.get("action", "")
+                    val = r["result"]
+                    if isinstance(val, dict):
+                        val_str = _json.dumps(val, ensure_ascii=False, indent=2)
+                    else:
+                        val_str = str(val)
+                    if len(val_str) > 2000:
+                        val_str = val_str[:2000] + "\n...（已截断）"
+                    real_data_parts.append(f"[{label}]\n{val_str}")
+                
+                if real_data_parts:
+                    injected_data = "\n\n".join(real_data_parts)
+                    # 对于需要数据输入的技能（data_analysis 等），用真实数据替换描述
+                    if skill_id in ("data_analysis",):
+                        safe_params["data"] = injected_data
+                        logger.info(
+                            f"{Fore.BLUE}[执行引擎] 向技能 {skill_id} 注入前序步骤真实数据"
+                            f"（{len(real_data_parts)} 条）{Style.RESET_ALL}"
+                        )
+                    # 通用：若参数里有 content/topic 是简短描述，也追加真实数据
+                    for key in ("content", "topic", "input"):
+                        if key in safe_params and isinstance(safe_params[key], str):
+                            if len(safe_params[key]) < 200:  # 短描述，不是真实数据
+                                safe_params[key] = safe_params[key] + "\n\n" + injected_data
+                                break
             
             # 通用回退逻辑：如果缺 topic 用 content，反之亦然
             if "topic" not in safe_params and "content" in safe_params:

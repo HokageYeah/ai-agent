@@ -97,8 +97,9 @@
             <div style="display: flex; justify-content: space-between; align-items: flex-end;">
               <label class="input-label">任务描述</label>
               <div class="quick-examples">
-                <span class="example-tag" @click="taskInput='请用计算器算一下 2026 减去 2020 的结果。'">示例 1：计算器</span>
-                <span class="example-tag" @click="taskInput='告诉我今天是几月几日，并为今天写一句关于时间的名言。'">示例 2：工具与技能组合</span>
+                <span class="example-tag example-tag-delegate" @click="setExample(1)">示例 1：订单详情</span>
+                <span class="example-tag example-tag-delegate" @click="setExample(2)">示例 2：客户订单</span>
+                <span class="example-tag example-tag-delegate" @click="setExample(3)">示例 3：数据分析</span>
               </div>
             </div>
             <el-input
@@ -161,13 +162,36 @@
                     <div style="margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
                       <span v-if="step.action === 'tool'"><el-tag size="small" type="success">调用工具: {{ step.tool_name }}</el-tag></span>
                       <span v-else-if="step.action === 'skill'"><el-tag size="small" type="warning">使用技能: {{ step.skill_id }}</el-tag></span>
+                      <span v-else-if="step.action === 'delegate'">
+                        <el-tag size="small" type="primary" effect="plain">
+                          🤖 委派子Agent: {{ step.agent_id || step.result?.agent_id || step.result?.agent_name || '子Agent' }}
+                        </el-tag>
+                      </span>
                       <span v-else><el-tag size="small">{{ step.action || '执行步骤' }}</el-tag></span>
                       
                       <span v-if="!step.success" style="color: var(--el-color-danger); font-size: 0.8rem;">执行异常</span>
                     </div>
 
+                    <!-- delegate 步骤专属展示 -->
+                    <template v-if="step.action === 'delegate'">
+                      <div v-if="!step.success" class="trajectory-result-block delegate-error-block">
+                        <el-icon style="color:var(--el-color-danger); margin-right:4px"><WarningFilled /></el-icon>
+                        <span style="color:var(--el-color-danger)">{{ step.result?.error || step.error || '子Agent执行失败' }}</span>
+                      </div>
+                      <div v-else class="trajectory-result-block delegate-result-block">
+                        <div class="delegate-agent-badge">
+                          <el-icon style="margin-right:4px"><User /></el-icon>
+                          {{ step.result?.agent_name || step.agent_id || '子Agent' }} 执行结果
+                        </div>
+                        <div style="margin-top: 8px;">
+                          <MarkdownRenderer v-if="typeof step.result?.result === 'string'" :content="step.result.result" />
+                          <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(step.result?.result ?? step.result, null, 2) + '\n```'" />
+                        </div>
+                      </div>
+                    </template>
+
                     <!-- 渲染工具/技能返回的复杂数据或普通文本 -->
-                    <div class="trajectory-result-block" style="background: var(--color-bg-secondary); padding: 12px; border-radius: 8px;">
+                    <div v-else class="trajectory-result-block" style="background: var(--color-bg-secondary); padding: 12px; border-radius: 8px;">
                       <MarkdownRenderer v-if="typeof step.result === 'string'" :content="step.result" />
                       <!-- 如果是对象，格式化输出。或者有专门的 error 则展示 error -->
                       <div v-else-if="step.result?.error" style="color: var(--el-color-danger)">
@@ -232,7 +256,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { Setting, Refresh, CaretRight, DataLine } from '@element-plus/icons-vue'
+import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAgentList, executeAgent } from '@/api/modules/agents'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
@@ -305,6 +329,42 @@ async function loadAgents(): Promise<void> {
   } finally {
     loadingAgents.value = false
   }
+}
+
+// 根据当前选中的 Agent，分别给出最合适的示例任务
+// 数据库测试数据覆盖订单 1001-1010（含客户、商品、退款信息）
+const EXAMPLE_MAP: Record<number, Record<string, string>> = {
+  // 示例1：查询单笔订单详情（已发货，覆盖 delegate 场景）
+  1: {
+    default:      '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。',
+    cs_master:    '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。',
+    order_agent:  '查询订单号 1002 的详细信息：买了什么商品、支付了多少、现在的配送状态是什么，物流单号是多少？',
+    refund_agent: '查询订单号 1003 的退款进度，客户反馈已申请退款，请告知当前处理状态和退款金额。',
+  },
+  // 示例2：查询某客户的所有订单
+  2: {
+    default:      '帮我查询客户"李娜"的所有订单记录，列出每笔订单的金额和当前状态。',
+    cs_master:    '帮我查询客户"李娜"的所有订单，并汇总她的总消费金额。',
+    order_agent:  '查询客户ID为2（李娜）的所有订单，统计她的订单总数、总金额，并列出每笔订单的商品名和状态。',
+    refund_agent: '查询所有待审核的退款申请（status=pending），列出申请人、退款金额和退款原因，并按申请时间排序。',
+  },
+  // 示例3：多表联查 + 数据分析
+  3: {
+    default:      '统计一下各种订单状态（待确认、已发货、已完成等）的订单数量和总金额分布，给出业务分析。',
+    cs_master:    '统计各订单状态的数量分布，并找出金额最高的前3笔已完成订单，给我一份客服业务摘要报告。',
+    order_agent:  '分析所有已发货但未签收的订单（status=shipped），列出订单号、客户、商品、物流单号，并评估是否有超时风险。',
+    refund_agent: '统计所有退款记录的总退款金额，按退款状态分组，并分析退款原因分布，给出降低退款率的建议。',
+  },
+}
+
+/**
+ * 根据示例编号和当前选中的 Agent 设置快捷任务输入
+ */
+function setExample(num: number): void {
+  const agentId = selectedAgent.value?.agent_id || 'default'
+  const map = EXAMPLE_MAP[num] || {}
+  taskInput.value = map[agentId] || map['default'] || ''
+  console.log(`[AgentView] 设置示例 ${num}，Agent: ${agentId}，内容: ${taskInput.value}`)
 }
 
 /**
@@ -609,6 +669,41 @@ onMounted(() => {
 }
 .example-tag:hover {
   background: var(--color-primary-lighter);
+}
+.example-tag-delegate {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.example-tag-delegate:hover {
+  background: var(--el-color-primary-light-7);
+}
+
+/* 委派子Agent 步骤专属样式 */
+.delegate-error-block {
+  display: flex;
+  align-items: center;
+  background: var(--el-color-danger-light-9);
+  border: 1px solid var(--el-color-danger-light-5);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.delegate-result-block {
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+.delegate-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-8);
+  padding: 3px 10px;
+  border-radius: 20px;
 }
 
 /* 执行结果区域 */

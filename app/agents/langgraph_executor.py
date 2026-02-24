@@ -156,9 +156,37 @@ class LangGraphAgentExecutor:
         agent = state["agent"]
         task = state["task"]
         
-        # 获取可用工具和技能
-        available_tools = self.tool_hub.list_tools() if self.tool_hub else []
-        available_skills = self.skill_manager.list_skills() if self.skill_manager else []
+        # 按 Agent 的授权列表过滤工具和技能
+        # agent.available_tools 为空列表时表示不限制（向后兼容），否则只暴露授权项
+        if self.tool_hub:
+            all_tools = self.tool_hub.list_tools()
+            if agent.available_tools:
+                available_tools = [t for t in all_tools if t.name in agent.available_tools]
+                restricted = [t.name for t in all_tools if t.name not in agent.available_tools]
+                if restricted:
+                    logger.debug(
+                        f"{Fore.YELLOW}[Plan Node] Agent '{agent.name}' "
+                        f"不可访问工具: {restricted}{Style.RESET_ALL}"
+                    )
+            else:
+                available_tools = all_tools
+        else:
+            available_tools = []
+
+        if self.skill_manager:
+            all_skills = self.skill_manager.list_skills()
+            if agent.available_skills:
+                available_skills = [s for s in all_skills if s.skill_id in agent.available_skills]
+            else:
+                available_skills = all_skills
+        else:
+            available_skills = []
+
+        logger.info(
+            f"{Fore.BLUE}[Plan Node] Agent '{agent.name}' "
+            f"可用工具: {[t.name for t in available_tools]} | "
+            f"可用技能: {[s.skill_id for s in available_skills]}{Style.RESET_ALL}"
+        )
         
         # 创建计划
         plan = await self.planning_engine.create_plan(
@@ -196,10 +224,11 @@ class LangGraphAgentExecutor:
         agent = state["agent"]
         plan = state["current_plan"]
         
-        # 执行计划
+        # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
-            plan=plan
+            plan=plan,
+            context={"task": state.get("task", "")}
         )
         
         logger.info(f"{Fore.GREEN}[Execute Node] 计划执行完成{Style.RESET_ALL}")

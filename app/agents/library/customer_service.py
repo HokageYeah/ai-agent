@@ -22,9 +22,16 @@ CUSTOMER_SERVICE_MASTER = Agent(
     agent_id="cs_master",
     name="客服总监",
     description="负责客户服务的总协调，处理客户问题并委派给专业子 Agent",
-    role="你是一个专业的客服总监，负责协调处理各类客户问题。你可以将订单相关问题委派给订单专员，将退款相关问题委派给退款专员。",
+    role=(
+        "你是一个专业的客服总监，负责协调处理各类客户问题。\n"
+        "【重要】你只拥有 datetime 工具，没有数据库查询能力。\n"
+        "遇到以下类型的问题，必须委派给对应的子 Agent：\n"
+        "- 订单查询、订单状态、配送跟踪、商品明细 → 委派给 order_agent（订单专员）\n"
+        "- 退款申请、退款审核、退款进度 → 委派给 refund_agent（退款专员）\n"
+        "你的职责是：理解用户问题 → 判断类型 → 委派给合适的子 Agent → 整合结果回复用户。"
+    ),
     capabilities=["问题分类", "任务委派", "结果整合", "客户沟通"],
-    available_tools=["database_query", "datetime"],
+    available_tools=["datetime"],
     available_skills=["text_writing"],
     child_agents=["order_agent", "refund_agent"],
     agent_config=AgentConfig(

@@ -99,6 +99,79 @@ class DatabaseQueryTool(Tool):
         
         logger.info(f"[DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: {default_db_path}")
     
+    def seed_data(self, seed_fn) -> None:
+        """
+        向共享内存数据库注入种子数据。
+        
+        通常在工具注册后、第一次查询前调用，用于初始化测试数据。
+        只有当使用内存数据库（`:memory:`）时才有效。
+        
+        Args:
+            seed_fn: 接受 sqlite3.Connection 参数的回调函数，
+                     负责建表和插入测试数据。
+        """
+        if self._shared_memory_conn is None:
+            logger.warning("[DatabaseQueryTool] 非内存数据库，跳过种子数据注入")
+            return
+        
+        try:
+            logger.info("[DatabaseQueryTool] 开始向共享内存数据库注入种子数据...")
+            seed_fn(self._shared_memory_conn)
+            logger.info("[DatabaseQueryTool] 种子数据注入完成 ✅")
+        except Exception as e:
+            logger.error(f"[DatabaseQueryTool] 种子数据注入失败: {e}")
+
+    def refresh_schema_description(self) -> None:
+        """
+        读取内存数据库的实际表结构，将完整的 Schema（表名+列名+类型）
+        拼接到工具描述中，让 LLM 在规划 SQL 时能使用准确的列名。
+        
+        必须在 seed_data() 之后调用，否则读到的是空库。
+        """
+        if self._shared_memory_conn is None:
+            logger.warning("[DatabaseQueryTool] 非内存数据库，跳过 Schema 刷新")
+            return
+
+        try:
+            cursor = self._shared_memory_conn.cursor()
+
+            # 查询所有用户创建的表
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+
+            if not tables:
+                logger.warning("[DatabaseQueryTool] 数据库中暂无表，跳过 Schema 刷新")
+                return
+
+            schema_lines = ["【数据库 Schema（请严格按照以下列名编写 SQL）】"]
+            for table in tables:
+                cursor.execute(f"PRAGMA table_info({table})")
+                cols = cursor.fetchall()
+                # PRAGMA 返回: (cid, name, type, notnull, dflt_value, pk)
+                col_desc = ", ".join(
+                    f"{c[1]}({c[2]})" for c in cols
+                )
+                schema_lines.append(f"  表 {table}: {col_desc}")
+
+            schema_text = "\n".join(schema_lines)
+
+            # 更新工具描述，追加 Schema 信息，供 LLM 规划时参考
+            self._description = (
+                "执行安全的数据库查询（仅支持 SELECT 语句）。支持参数化查询，防止 SQL 注入，返回格式化的查询结果。\n\n"
+                + schema_text
+            )
+
+            logger.info(
+                f"[DatabaseQueryTool] Schema 描述已更新，包含 {len(tables)} 张表: "
+                f"{', '.join(tables)}"
+            )
+            logger.debug(f"[DatabaseQueryTool] 完整 Schema:\n{schema_text}")
+
+        except Exception as e:
+            logger.error(f"[DatabaseQueryTool] Schema 刷新失败: {e}")
+
     @property
     def name(self) -> str:
         """
@@ -309,6 +382,21 @@ class DatabaseQueryTool(Tool):
             return {
                 "success": False,
                 "error": "查询语句不能为空"
+            }
+        
+        # 检查 SQL 中是否包含未绑定的 ? 占位符（LLM 有时会忘记提供参数值）
+        import re as _re
+        positional_count = len(_re.findall(r'\?', query))
+        if positional_count > 0 and not params_dict:
+            tip = (
+                f"SQL 中包含 {positional_count} 个 '?' 占位符，"
+                f"但未提供参数值。请改用完整 SQL（将具体值直接写入查询，"
+                f"或使用子查询/JOIN 代替多步骤查询）。"
+            )
+            logger.warning(f"[DatabaseQueryTool] {tip}")
+            return {
+                "success": False,
+                "error": tip
             }
         
         logger.info(f"[DatabaseQueryTool] 准备执行查询: {query[:100]}...")

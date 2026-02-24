@@ -25,6 +25,7 @@ from app.schemas.agent_data import (
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.agents.registry import AgentRegistry
 from app.agents.langgraph_executor import LangGraphAgentExecutor
+from app.agents.child_agent_manager import ChildAgentManager
 from app.llm_hub.inference import InferenceEngine
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
@@ -35,6 +36,7 @@ router = APIRouter()
 # 全局服务实例
 _agent_registry: AgentRegistry = None
 _agent_executor: LangGraphAgentExecutor = None
+_child_agent_manager: ChildAgentManager = None
 
 
 def get_agent_registry() -> AgentRegistry:
@@ -62,10 +64,12 @@ def get_agent_executor() -> LangGraphAgentExecutor:
     """
     获取 LangGraphAgentExecutor 实例（依赖注入）
     
+    同时初始化 ChildAgentManager，使父 Agent 能够将任务委派给子 Agent。
+    
     Returns:
         LangGraphAgentExecutor: Agent 执行器实例
     """
-    global _agent_executor
+    global _agent_executor, _child_agent_manager
     if _agent_executor is None:
         logger.info(f"{Fore.BLUE}初始化 LangGraphAgentExecutor...{Style.RESET_ALL}")
         
@@ -102,14 +106,27 @@ def get_agent_executor() -> LangGraphAgentExecutor:
         register_all_builtin_tools(tool_hub)
         register_all_builtin_skills(skill_manager)
         
-        # 创建执行器
-        _agent_executor = LangGraphAgentExecutor(
+        # 获取 Agent 注册表（确保已初始化）
+        agent_registry = get_agent_registry()
+        
+        # 创建子 Agent 管理器，让父 Agent 能把任务委派给子 Agent
+        _child_agent_manager = ChildAgentManager(
+            agent_registry=agent_registry,
             llm_hub=inference_engine,
             tool_hub=tool_hub,
             skill_manager=skill_manager
         )
+        logger.info(f"{Fore.CYAN}已创建 ChildAgentManager，支持多层 Agent 委派{Style.RESET_ALL}")
         
-        logger.info(f"{Fore.GREEN}LangGraphAgentExecutor 初始化完成{Style.RESET_ALL}")
+        # 创建执行器，传入子 Agent 管理器
+        _agent_executor = LangGraphAgentExecutor(
+            llm_hub=inference_engine,
+            tool_hub=tool_hub,
+            skill_manager=skill_manager,
+            child_agent_manager=_child_agent_manager
+        )
+        
+        logger.info(f"{Fore.GREEN}LangGraphAgentExecutor 初始化完成（含 ChildAgentManager）{Style.RESET_ALL}")
     
     return _agent_executor
 
