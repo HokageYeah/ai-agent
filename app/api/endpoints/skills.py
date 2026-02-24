@@ -19,7 +19,7 @@ from colorama import Fore, Style
 
 from app.schemas.agent_data import (
     SkillExecuteRequest, SkillExecuteResponse,
-    SkillInfo
+    SkillInfo, SkillParamSchema
 )
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.skills.manager import SkillManager
@@ -74,19 +74,35 @@ async def list_skills(
         skills = skill_manager.list_skills()
         
         # 构建响应
-        skills_info = [
-            SkillInfo(
-                skill_id=skill.skill_id,
-                name=skill.name,
-                description=skill.description,
-                required_tools=skill.required_tools,
-                optional_tools=skill.optional_tools,
-                tags=skill.tags
+        skills_info = []
+        for skill in skills:
+            # NOTE: 将 Skill 模型的 param_schemas 转换为 API 层的 SkillParamSchema 格式
+            # key 为参数名（对应 prompt_template 中 {key}），value 包含说明和示例
+            api_param_schemas = {
+                param_name: SkillParamSchema(
+                    label=param_schema.label,
+                    description=param_schema.description,
+                    examples=param_schema.examples,
+                    required=param_schema.required
+                )
+                for param_name, param_schema in skill.param_schemas.items()
+            }
+            logger.debug(
+                f"{Fore.CYAN}[技能列表] {skill.skill_id} 包含 {len(api_param_schemas)} 个参数元数据{Style.RESET_ALL}"
             )
-            for skill in skills
-        ]
+            skills_info.append(
+                SkillInfo(
+                    skill_id=skill.skill_id,
+                    name=skill.name,
+                    description=skill.description,
+                    required_tools=skill.required_tools,
+                    optional_tools=skill.optional_tools,
+                    tags=skill.tags,
+                    param_schemas=api_param_schemas
+                )
+            )
         
-        logger.info(f"{Fore.GREEN}成功列出 {len(skills_info)} 个技能{Style.RESET_ALL}")
+        logger.info(f"{Fore.GREEN}成功列出 {len(skills_info)} 个技能，参数元数据已携带{Style.RESET_ALL}")
         
         return ApiResponseData(
             platform=PlatformEnum.WX_PUBLIC,

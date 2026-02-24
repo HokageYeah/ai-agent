@@ -50,6 +50,14 @@ export interface AgentExecuteResponse {
 
 // ======================== 技能相关 ========================
 
+// 技能参数元数据（对应后端每个 prompt_template 变量的说明）
+export interface SkillParamSchema {
+  label: string         // 参数中文名称
+  description: string   // 参数功能说明
+  examples: string[]    // 示例值列表，前端可点击快捷填入
+  required: boolean     // 是否必填
+}
+
 // 技能基础信息（GET /api/v1/skills 列表返回）
 export interface SkillInfo {
   skill_id: string
@@ -58,6 +66,7 @@ export interface SkillInfo {
   required_tools: string[]
   optional_tools: string[]
   tags: string[]
+  param_schemas: Record<string, SkillParamSchema>  // 参数元数据，key 为参数名
 }
 
 // 执行技能的请求体（POST /api/v1/skills/{id}/execute）

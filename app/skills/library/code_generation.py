@@ -16,7 +16,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
-from app.skills.base import Skill, MemoryStrategy
+from app.skills.base import Skill, MemoryStrategy, ParamSchema
 
 # 代码生成技能定义
 CODE_GENERATION_SKILL = Skill(
@@ -46,7 +46,33 @@ CODE_GENERATION_SKILL = Skill(
     optional_tools=[],
     memory_strategy=MemoryStrategy(include_short_term=True),
     tags=["编程", "代码", "开发", "自动化"],
-    examples=[]
+    examples=[],
+    # NOTE: 参数元数据，告知前端每个参数的含义和示例，帮助用户快速填写
+    param_schemas={
+        "requirements": ParamSchema(
+            label="需求描述",
+            description="详细描述你要实现的功能需求，越清晰越好",
+            examples=[
+                "实现一个用户登录接口，包含手机号+密码验证，返回 JWT Token",
+                "写一个爬取豆瓣电影 Top250 的爬虫，保存为 CSV 文件",
+                "实现二叉树的前序、中序、后序遍历，要求递归和迭代两种方式"
+            ],
+            required=True
+        ),
+        "language": ParamSchema(
+            label="编程语言",
+            description="目标编程语言",
+            examples=["Python", "TypeScript", "Go", "Java", "Rust", "JavaScript"],
+            required=True
+        ),
+        "framework": ParamSchema(
+            label="框架/库",
+            description="使用的框架或第三方库，无特定要求可填写「无」或「标准库」",
+            examples=["FastAPI", "Vue 3 + TypeScript", "React + Hooks", "无，使用标准库", "Spring Boot"],
+            required=True
+        )
+    }
 )
 
-logger.info(f"{Fore.GREEN}[代码生成技能] CODE_GENERATION_SKILL 已定义{Style.RESET_ALL}")
+logger.info(f"{Fore.GREEN}[代码生成技能] CODE_GENERATION_SKILL 已定义，参数元数据加载完成{Style.RESET_ALL}")
+

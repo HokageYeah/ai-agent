@@ -8,6 +8,23 @@ from colorama import Fore, Style
 logger.remove()
 logger.add(stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
 
+
+class ParamSchema(BaseModel):
+    """
+    技能参数元数据定义
+    
+    用于描述 prompt_template 中每个 {variable} 参数的含义和示例，
+    前端弹框展示时显示在对应输入框下方，帮助用户快速理解并填写参数。
+    """
+    # 参数名称（与 prompt_template 中 {key} 对应）
+    label: str = Field(..., description="参数中文名称，展示在输入框标签处")
+    description: str = Field(..., description="参数功能说明，帮助用户理解该参数作用")
+    # 示例值列表，前端可直接点击填入
+    examples: List[str] = Field(default_factory=list, description="参数示例值列表，前端点击可快捷填入")
+    # 是否为必填参数
+    required: bool = Field(True, description="是否为必填参数")
+
+
 class MemoryStrategy(BaseModel):
     """
     记忆策略配置
@@ -32,6 +49,11 @@ class Skill(BaseModel):
     memory_strategy: MemoryStrategy = Field(default_factory=lambda: MemoryStrategy(), description="记忆策略")
     tags: List[str] = Field(default_factory=list, description="技能标签")
     examples: List[Dict[str, Any]] = Field(default_factory=list, description="Few-shot 示例")
+    # NOTE: 每个 prompt_template 变量对应的参数说明和示例，key 为变量名（不含花括号）
+    param_schemas: Dict[str, ParamSchema] = Field(
+        default_factory=dict,
+        description="参数元数据字典，key 为参数名，value 为参数描述与示例"
+    )
     
     model_config = ConfigDict(
         json_schema_extra={

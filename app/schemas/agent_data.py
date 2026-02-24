@@ -146,6 +146,18 @@ class SkillExecuteResponse(BaseModel):
     success: bool = Field(..., description="是否执行成功")
 
 
+class SkillParamSchema(BaseModel):
+    """
+    技能参数元数据（API 返回格式）
+    
+    前端通过此信息在弹框中显示参数说明和可点击的示例值
+    """
+    label: str = Field(..., description="参数中文名称")
+    description: str = Field(..., description="参数功能说明")
+    examples: List[str] = Field(default_factory=list, description="示例值列表")
+    required: bool = Field(True, description="是否必填")
+
+
 class SkillInfo(BaseModel):
     """技能信息"""
     skill_id: str = Field(..., description="技能 ID")
@@ -154,6 +166,11 @@ class SkillInfo(BaseModel):
     required_tools: List[str] = Field(..., description="必需工具列表")
     optional_tools: List[str] = Field(default_factory=list, description="可选工具列表")
     tags: List[str] = Field(default_factory=list, description="标签列表")
+    # NOTE: 参数元数据字典，key 为 prompt_template 中的变量名，value 为说明和示例
+    param_schemas: Dict[str, SkillParamSchema] = Field(
+        default_factory=dict,
+        description="参数元数据，key 为变量名，value 为参数说明和示例"
+    )
 
 
 # =============================================================================

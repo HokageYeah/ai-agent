@@ -14,7 +14,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
-from app.skills.base import Skill, MemoryStrategy
+from app.skills.base import Skill, MemoryStrategy, ParamSchema
 
 # 数据分析技能定义
 DATA_ANALYSIS_SKILL = Skill(
@@ -42,7 +42,21 @@ DATA_ANALYSIS_SKILL = Skill(
     optional_tools=[],
     memory_strategy=MemoryStrategy(include_short_term=True),
     tags=["分析", "数据", "统计", "可视化"],
-    examples=[]
+    examples=[],
+    # NOTE: 参数元数据，告知前端每个参数的含义和示例，帮助用户快速填写
+    param_schemas={
+        "data": ParamSchema(
+            label="数据内容",
+            description="需要分析的数据，可以是 CSV 格式、JSON 格式、数字列表或表格文本",
+            examples=[
+                "月份,销售额,利润\n1月,12000,3000\n2月,15000,4200\n3月,9800,1500\n4月,18000,5600",
+                "[120, 135, 98, 210, 88, 176, 145, 230, 167, 199]",
+                "产品A季度销量：Q1=5000, Q2=7200, Q3=6800, Q4=9500"
+            ],
+            required=True
+        )
+    }
 )
 
-logger.info(f"{Fore.GREEN}[数据分析技能] DATA_ANALYSIS_SKILL 已定义{Style.RESET_ALL}")
+logger.info(f"{Fore.GREEN}[数据分析技能] DATA_ANALYSIS_SKILL 已定义，参数元数据加载完成{Style.RESET_ALL}")
+

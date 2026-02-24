@@ -15,7 +15,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
-from app.skills.base import Skill, MemoryStrategy
+from app.skills.base import Skill, MemoryStrategy, ParamSchema
 
 # 文本写作技能定义
 TEXT_WRITING_SKILL = Skill(
@@ -49,7 +49,39 @@ TEXT_WRITING_SKILL = Skill(
     optional_tools=[],
     memory_strategy=MemoryStrategy(include_short_term=False),
     tags=["写作", "文本", "创作", "内容"],
-    examples=[]
+    examples=[],
+    # NOTE: 参数元数据，告知前端每个参数的含义和示例，帮助用户快速填写
+    param_schemas={
+        "topic": ParamSchema(
+            label="写作主题",
+            description="文章的核心主题或标题，描述越清晰内容越精准",
+            examples=[
+                "人工智能对职场未来的影响",
+                "如何培养高效的时间管理习惯",
+                "新能源汽车行业的发展现状与趋势"
+            ],
+            required=True
+        ),
+        "content_type": ParamSchema(
+            label="文本类型",
+            description="要写作的文本类型，决定整体结构和格式",
+            examples=["博客文章", "产品介绍", "工作报告", "商业邮件", "学术论文摘要", "社交媒体推文"],
+            required=True
+        ),
+        "style": ParamSchema(
+            label="写作风格",
+            description="文章的语气和风格，影响语言表达方式",
+            examples=["正式专业", "轻松易懂", "学术严谨", "幽默风趣", "激励人心"],
+            required=True
+        ),
+        "word_count": ParamSchema(
+            label="字数要求",
+            description="目标字数或字数范围",
+            examples=["500字以内", "800-1200字", "2000字左右", "不限字数，内容完整即可"],
+            required=True
+        )
+    }
 )
 
-logger.info(f"{Fore.GREEN}[文本写作技能] TEXT_WRITING_SKILL 已定义{Style.RESET_ALL}")
+logger.info(f"{Fore.GREEN}[文本写作技能] TEXT_WRITING_SKILL 已定义，参数元数据加载完成{Style.RESET_ALL}")
+

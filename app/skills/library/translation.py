@@ -15,7 +15,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
-from app.skills.base import Skill, MemoryStrategy
+from app.skills.base import Skill, MemoryStrategy, ParamSchema
 
 # 翻译技能定义
 TRANSLATION_SKILL = Skill(
@@ -41,7 +41,27 @@ TRANSLATION_SKILL = Skill(
     optional_tools=[],
     memory_strategy=MemoryStrategy(include_short_term=False),
     tags=["翻译", "语言", "多语言", "国际化"],
-    examples=[]
+    examples=[],
+    # NOTE: 参数元数据，告知前端每个参数的含义和示例，帮助用户快速填写
+    param_schemas={
+        "text": ParamSchema(
+            label="待翻译文本",
+            description="需要翻译的原始文本，支持段落、句子、技术术语等任意内容",
+            examples=[
+                "Artificial intelligence is transforming the way we work and live.",
+                "The quick brown fox jumps over the lazy dog.",
+                "请将这段产品说明书翻译成英文，保持专业性和准确性。"
+            ],
+            required=True
+        ),
+        "target_language": ParamSchema(
+            label="目标语言",
+            description="翻译的目标语言",
+            examples=["中文", "英文", "日文", "韩文", "法文", "德文", "西班牙文"],
+            required=True
+        )
+    }
 )
 
-logger.info(f"{Fore.GREEN}[翻译技能] TRANSLATION_SKILL 已定义{Style.RESET_ALL}")
+logger.info(f"{Fore.GREEN}[翻译技能] TRANSLATION_SKILL 已定义，参数元数据加载完成{Style.RESET_ALL}")
+
