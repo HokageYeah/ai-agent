@@ -36601,3 +36601,25 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 2026-02-24 20:18:29 | INFO     | app.llm_hub.inference:infer:254 - [32m[req-000001] 推理请求成功完成，结果长度: 19 字符[0m
 2026-02-24 20:18:29 | INFO     | app.api.endpoints.skills:execute_skill:182 - [32m技能执行成功[0m
 2026-02-24 20:18:29 | INFO     | logging:callHandlers:1736 - 127.0.0.1:49165 - "POST /api/v1/skills/translation/execute HTTP/1.1" 200
+2026-02-24 22:23:33 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:23:34 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2026-02-24 22:23:37 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:23:37 | DEBUG    | logging:callHandlers:1736 - Using selector: SelectSelector
+2026-02-24 22:23:37 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:23:37 | INFO     | logging:callHandlers:1736 - Started server process [10296]
+2026-02-24 22:23:37 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2026-02-24 22:23:37 | INFO     | app.main:lifespan:40 - [36m=======================================================[0m
+2026-02-24 22:23:37 | INFO     | app.main:lifespan:41 - [36m  AI Agent 服务启动中...[0m
+2026-02-24 22:23:37 | INFO     | app.main:lifespan:42 - [36m=======================================================[0m
+2026-02-24 22:23:37 | INFO     | app.main:lifespan:45 - [34m[启动] 连接 MySQL 数据库...[0m
+2026-02-24 22:25:29 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:25:29 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2026-02-24 22:25:31 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:25:31 | DEBUG    | logging:callHandlers:1736 - Using selector: SelectSelector
+2026-02-24 22:25:31 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-24 22:25:31 | INFO     | logging:callHandlers:1736 - Started server process [1224]
+2026-02-24 22:25:31 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2026-02-24 22:25:31 | INFO     | app.main:lifespan:40 - [36m=======================================================[0m
+2026-02-24 22:25:31 | INFO     | app.main:lifespan:41 - [36m  AI Agent 服务启动中...[0m
+2026-02-24 22:25:31 | INFO     | app.main:lifespan:42 - [36m=======================================================[0m
+2026-02-24 22:25:31 | INFO     | app.main:lifespan:45 - [34m[启动] 连接 MySQL 数据库...[0m
