@@ -97,9 +97,15 @@
             <div style="display: flex; justify-content: space-between; align-items: flex-end;">
               <label class="input-label">任务描述</label>
               <div class="quick-examples">
-                <span class="example-tag example-tag-delegate" @click="setExample(1)">示例 1：订单详情</span>
-                <span class="example-tag example-tag-delegate" @click="setExample(2)">示例 2：客户订单</span>
-                <span class="example-tag example-tag-delegate" @click="setExample(3)">示例 3：数据分析</span>
+                <span class="example-tag example-tag-delegate" @click="setExample(1)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 1：中英翻译' : '示例 1：订单详情' }}
+                </span>
+                <span class="example-tag example-tag-delegate" @click="setExample(2)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 2：网络查询' : '示例 2：客户订单' }}
+                </span>
+                <span class="example-tag example-tag-delegate" @click="setExample(3)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 3：代码生成' : '示例 3：数据分析' }}
+                </span>
               </div>
             </div>
             <el-input
@@ -181,11 +187,45 @@
                       <div v-else class="trajectory-result-block delegate-result-block">
                         <div class="delegate-agent-badge">
                           <el-icon style="margin-right:4px"><User /></el-icon>
-                          {{ step.result?.agent_name || step.agent_id || '子Agent' }} 执行结果
+                          {{ step.result?.agent_name || step.agent_id || '子Agent' }} 执行轨迹
                         </div>
-                        <div style="margin-top: 8px;">
-                          <MarkdownRenderer v-if="typeof step.result?.result === 'string'" :content="step.result.result" />
-                          <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(step.result?.result ?? step.result, null, 2) + '\n```'" />
+                        
+                        <!-- 嵌套渲染子 Agent 的 step_results -->
+                        <div v-if="step.result?.step_results && step.result.step_results.length > 0" class="delegate-sub-steps" style="margin-top: 12px; padding: 12px; background: var(--color-bg-primary); border-left: 3px solid var(--el-color-primary-light-5); border-radius: 4px;">
+                           <div v-for="(subStep, sIdx) in step.result.step_results" :key="'sub-' + sIdx" style="margin-bottom: 12px; font-size: 0.85rem;">
+                              <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                                <span>
+                                  <span v-if="subStep.action === 'tool'"><el-tag size="small" type="success">调用工具: {{ subStep.tool_name }}</el-tag></span>
+                                  <span v-else-if="subStep.action === 'skill'"><el-tag size="small" type="warning">使用技能: {{ subStep.skill_id }}</el-tag></span>
+                                  <span v-else-if="subStep.action === 'delegate'"><el-tag size="small" type="primary" effect="plain">委派孙Agent: {{ subStep.agent_id || subStep.result?.agent_name || '未知' }}</el-tag></span>
+                                  <span v-else-if="subStep.action === 'final_answer'"><el-tag size="small" type="info" effect="dark">合成答案</el-tag></span>
+                                  <span v-else><el-tag size="small">{{ subStep.action || '执行步骤' }}</el-tag></span>
+                                </span>
+                                <span v-if="!subStep.success" style="color: var(--el-color-danger); font-size: 0.75rem;">失败</span>
+                              </div>
+                              <div style="padding: 8px 10px; background: var(--color-bg-secondary); border-radius: 4px; border: 1px solid var(--color-border-light);">
+                                <MarkdownRenderer v-if="typeof subStep.result === 'string'" :content="subStep.result" />
+                                <div v-else-if="subStep.result?.error" style="color: var(--el-color-danger)">{{ subStep.result.error }}</div>
+                                <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(subStep.result?.result ?? subStep.result, null, 2) + '\n```'" />
+                              </div>
+                           </div>
+                           
+                           <!-- 子 Agent 反思结果 -->
+                           <div v-if="step.result.reflection" style="margin-top: 12px; padding: 10px; background: var(--color-warning-light-9); border-radius: 4px; border: 1px dashed var(--el-color-warning-light-5);">
+                             <div style="font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--el-color-warning-dark-2);">
+                               自我反思 ({{ step.result.reflection.success ? '成功' : '存在短板' }})
+                             </div>
+                             <div style="font-size: 0.85rem; color: var(--color-text-primary);">{{ step.result.reflection.summary }}</div>
+                           </div>
+                        </div>
+
+                        <!-- 子 Agent 最终结论 -->
+                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--color-border-light);">
+                          <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--color-text-secondary);">最终结论：</div>
+                          <div style="font-size: 0.95rem;">
+                            <MarkdownRenderer v-if="typeof step.result?.result === 'string'" :content="step.result.result" />
+                            <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(step.result?.result ?? step.result, null, 2) + '\n```'" />
+                          </div>
                         </div>
                       </div>
                     </template>
@@ -268,6 +308,8 @@ interface StepResult {
   success: boolean;
   tool_name?: string;
   skill_id?: string;
+  agent_id?: string;
+  error?: string;
   result: any;
 }
 
@@ -340,6 +382,7 @@ const EXAMPLE_MAP: Record<number, Record<string, string>> = {
     cs_master:    '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。',
     order_agent:  '查询订单号 1002 的详细信息：买了什么商品、支付了多少、现在的配送状态是什么，物流单号是多少？',
     refund_agent: '查询订单号 1003 的退款进度，客户反馈已申请退款，请告知当前处理状态和退款金额。',
+    general_agent: '请把这句话翻译成英文："人工智能正在以前所未有的速度改变我们的生活和工作方式。"',
   },
   // 示例2：查询某客户的所有订单
   2: {
@@ -347,6 +390,7 @@ const EXAMPLE_MAP: Record<number, Record<string, string>> = {
     cs_master:    '帮我查询客户"李娜"的所有订单，并汇总她的总消费金额。',
     order_agent:  '查询客户ID为2（李娜）的所有订单，统计她的订单总数、总金额，并列出每笔订单的商品名和状态。',
     refund_agent: '查询所有待审核的退款申请（status=pending），列出申请人、退款金额和退款原因，并按申请时间排序。',
+    general_agent: '搜一下什么是 MCP (Model Context Protocol)，并用一段话向我通俗地解释一下。',
   },
   // 示例3：多表联查 + 数据分析
   3: {
@@ -354,6 +398,7 @@ const EXAMPLE_MAP: Record<number, Record<string, string>> = {
     cs_master:    '统计各订单状态的数量分布，并找出金额最高的前3笔已完成订单，给我一份客服业务摘要报告。',
     order_agent:  '分析所有已发货但未签收的订单（status=shipped），列出订单号、客户、商品、物流单号，并评估是否有超时风险。',
     refund_agent: '统计所有退款记录的总退款金额，按退款状态分组，并分析退款原因分布，给出降低退款率的建议。',
+    general_agent: '用 Python 写一个快速排序算法，并写出一段测试代码来验证它。',
   },
 }
 

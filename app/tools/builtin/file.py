@@ -281,13 +281,17 @@ class FileReadTool(BaseFileTool):
                 - error: 错误信息（失败时）
         """
         # ========== 参数提取阶段 ==========
-        path = params.get("path", "")
+        # 增加容错：LLM 可能会不按 schema 中的 "path" 传参，也许会传 "file_path", "filepath" 或 "file"
+        path = params.get("path") or params.get("file_path") or params.get("filepath") or params.get("file") or ""
         encoding = params.get("encoding", "auto")
         max_size = params.get("max_size", self.max_file_size)
         
+        # 打印详细中文日志，便于排查 LLM 到底传了什么参数
+        logger.debug(f"[FileReadTool] 接收到原始参数 dict 结构: {params}")
+        
         # 参数验证
         if not path:
-            logger.warning("[FileReadTool] 文件路径为空")
+            logger.warning("[FileReadTool] 文件路径为空，可能是 LLM 传递的参数名不匹配（未找到 path/file_path/filepath/file）。")
             return {
                 "success": False,
                 "error": "文件路径不能为空"
@@ -592,8 +596,11 @@ class FileWriteTool(BaseFileTool):
                 - error: 错误信息（失败时）
         """
         # ========== 参数提取阶段 ==========
-        path = params.get("path", "")
-        content = params.get("content", "")
+        # 增加参数容错与日志：LLM 返回的参数往往可能使用不同的命名
+        logger.debug(f"[FileWriteTool] 接收到原始参数 dict 结构: 内部键包括 {list(params.keys())}")
+        
+        path = params.get("path") or params.get("file_path") or params.get("filepath") or params.get("file") or ""
+        content = params.get("content") or params.get("text") or params.get("data")
         encoding = params.get("encoding", "utf-8")
         mode = params.get("mode", "w")
         create_dirs = params.get("create_dirs", True)
@@ -602,7 +609,7 @@ class FileWriteTool(BaseFileTool):
         
         # 参数验证
         if not path:
-            logger.warning("[FileWriteTool] 文件路径为空")
+            logger.warning("[FileWriteTool] 文件路径为空，可能是 LLM 未正确传递 path/file_path 等字段。")
             return {
                 "success": False,
                 "error": "文件路径不能为空"

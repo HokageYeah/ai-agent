@@ -22,11 +22,18 @@ OpenAI 供应商适配器 (OpenAI Provider)
 """
 
 import os
+import asyncio
 from typing import AsyncIterator, List, Dict, Any, Optional
+import httpx
 from openai import AsyncOpenAI
 from loguru import logger
 from colorama import Fore, Style
 from app.llm_hub.providers.base import LLMProvider
+
+# NOTE: 429 限流自动重试配置
+# 最多重试次数，每次退避时间翻倍（2→4→8→16 秒），避免频繁触发限流
+_MAX_RETRY_TIMES = 4
+_INITIAL_WAIT_SECONDS = 2
 
 
 class OpenAIProvider(LLMProvider):
@@ -132,58 +139,84 @@ class OpenAIProvider(LLMProvider):
             f"消息数: {len(messages)}{Style.RESET_ALL}"
         )
         
-        try:
-            # 过滤掉不需要传递给 API 的参数
-            # 保留其他自定义参数，如 tools, function_call 等
-            filtered_config = {
-                k: v for k, v in config.items()
-                if k not in ["model", "temperature", "stream"]
-            }
-            
-            # 调用 OpenAI API 创建对话
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                stream=False,  # 非流式模式
-                **filtered_config
-            )
-            
-            # 检查响应是否为空
-            if response is None:
-                raise ValueError("API 返回空响应")
-            
-            print('大模型回答：response:', response.model_dump())
-            
-            # 安全获取 choices
-            choices = getattr(response, 'choices', None)
-            
-            # NOTE: 当 API 返回错误响应时（如 status=435 Model not support），
-            #       choices 会是 None。此时必须抛出异常，而不是静默返回错误响应，
-            #       否则上层调用方（Planning/Reflection）会尝试解析错误信息为 JSON
-            if choices is None or len(choices) == 0:
-                # 提取错误详情（如果有）
-                status_code = getattr(response, 'status', None)
-                error_msg = getattr(response, 'msg', None) or getattr(response, 'error', None)
-                detail = f"status={status_code}, msg={error_msg}" if status_code else str(response)
-                logger.error(
-                    f"{Fore.RED}API 返回错误，无有效回复内容: {detail}{Style.RESET_ALL}"
+        # 过滤掉不需要传递给 API 的参数（model/temperature/stream 单独处理）
+        filtered_config = {
+            k: v for k, v in config.items()
+            if k not in ["model", "temperature", "stream"]
+        }
+
+        # NOTE: 针对 429 限流错误进行指数退避重试
+        # 当 API 返回 429 时，等待 wait_seconds 后重试，每次等待时间翻倍
+        # 最多重试 _MAX_RETRY_TIMES 次，超出后向上层抛出异常
+        wait_seconds = _INITIAL_WAIT_SECONDS
+        for attempt in range(1, _MAX_RETRY_TIMES + 2):  # attempt: 1..5（第5次才真正抛出）
+            try:
+                # 调用 OpenAI API 创建对话（非流式模式）
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=False,
+                    **filtered_config
                 )
-                raise ValueError(f"API 返回错误，无法获取回复内容: {detail}")
-            
-            logger.info(
-                f"{Fore.GREEN}OpenAI 对话响应成功，"
-                f"响应ID: {response.id}{Style.RESET_ALL}"
-            )
-            
-            # 将响应转换为字典格式返回
-            return response.model_dump()
-            
-        except Exception as e:
-            logger.error(
-                f"{Fore.RED}OpenAI 对话请求失败: {type(e).__name__}: {e}{Style.RESET_ALL}"
-            )
-            raise
+
+                # 检查响应是否为空
+                if response is None:
+                    raise ValueError("API 返回空响应")
+
+                # NOTE: 调试用，记录完整响应体（DEBUG 级别，生产环境可关闭）
+                logger.debug(
+                    f"{Fore.BLUE}[OpenAI] 原始响应: id={response.id}, "
+                    f"model={response.model}, "
+                    f"tokens={getattr(response.usage, 'total_tokens', '?')}{Style.RESET_ALL}"
+                )
+
+                # 安全获取 choices
+                choices = getattr(response, 'choices', None)
+
+                # NOTE: 当 API 返回错误响应时（如 status=435 Model not support），
+                #       choices 会是 None。必须抛出异常，不能静默返回，
+                #       否则上层（Planning/Reflection）会尝试把错误信息解析为 JSON
+                if choices is None or len(choices) == 0:
+                    status_code = getattr(response, 'status', None)
+                    error_msg = getattr(response, 'msg', None) or getattr(response, 'error', None)
+                    detail = f"status={status_code}, msg={error_msg}" if status_code else str(response)
+                    logger.error(
+                        f"{Fore.RED}API 返回错误，无有效回复内容: {detail}{Style.RESET_ALL}"
+                    )
+                    raise ValueError(f"API 返回错误，无法获取回复内容: {detail}")
+
+                logger.info(
+                    f"{Fore.GREEN}OpenAI 对话响应成功，"
+                    f"响应ID: {response.id}{Style.RESET_ALL}"
+                )
+
+                # 将响应转换为字典格式返回
+                return response.model_dump()
+
+            except httpx.HTTPStatusError as e:
+                # NOTE: 只对 429 限流错误进行重试，其他 HTTP 错误直接抛出
+                if e.response.status_code == 429 and attempt <= _MAX_RETRY_TIMES:
+                    logger.warning(
+                        f"{Fore.YELLOW}[OpenAI] 触发限流 (429 Too Many Requests)，"
+                        f"第 {attempt}/{_MAX_RETRY_TIMES} 次重试，"
+                        f"等待 {wait_seconds} 秒后继续...{Style.RESET_ALL}"
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    # 指数退避：等待时间翻倍
+                    wait_seconds *= 2
+                    continue
+                # 非 429 错误或已超出最大重试次数，向上抛出
+                logger.error(
+                    f"{Fore.RED}OpenAI 对话请求失败 (HTTP {e.response.status_code}): {e}{Style.RESET_ALL}"
+                )
+                raise
+
+            except Exception as e:
+                logger.error(
+                    f"{Fore.RED}OpenAI 对话请求失败: {type(e).__name__}: {e}{Style.RESET_ALL}"
+                )
+                raise
     
     async def stream(
         self,

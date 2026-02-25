@@ -3,39 +3,45 @@
 ================================
 
 本模块定义了客服系统相关的 Agent，包括：
-1. CustomerServiceMaster - 客服主 Agent
-2. OrderAgent - 订单处理子 Agent
-3. RefundAgent - 退款处理子 Agent
+1. CustomerServiceMaster - 客服主 Agent（协调分发）
+2. OrderAgent            - 订单处理子 Agent
+3. RefundAgent           - 退款处理子 Agent
+4. GeneralAssistantAgent - 通用助手子 Agent（处理非订单/退款类问题）
 
 作者: AI Agent Team
 创建时间: 2026-02-15
 """
 
+from loguru import logger
+from colorama import Fore, Style
 from app.agents.base import Agent, AgentConfig
 
 
 # =============================================================================
 # 客服主 Agent
+# NOTE: 主 Agent 负责意图识别与委派，自身不直接处理业务，避免职责混乱
 # =============================================================================
 
 CUSTOMER_SERVICE_MASTER = Agent(
     agent_id="cs_master",
     name="客服总监",
-    description="负责客户服务的总协调，处理客户问题并委派给专业子 Agent",
+    description="负责客户服务的总协调，识别用户意图并委派给专业子 Agent 处理",
     role=(
         "你是一个专业的客服总监，负责协调处理各类客户问题。\n"
-        "【重要】你只拥有 datetime 工具，没有数据库查询能力。\n"
-        "遇到以下类型的问题，必须委派给对应的子 Agent：\n"
+        "【重要】你只拥有 datetime 工具，没有数据库查询或搜索能力。\n"
+        "必须根据以下规则委派给对应子 Agent，禁止自行回答专业性问题：\n"
         "- 订单查询、订单状态、配送跟踪、商品明细 → 委派给 order_agent（订单专员）\n"
         "- 退款申请、退款审核、退款进度 → 委派给 refund_agent（退款专员）\n"
+        "- 搜索信息、写代码、翻译、数据分析、文本写作、网络请求、计算、文件处理等通用任务 → 委派给 general_agent（通用助手）\n"
+        "- 如果自己没有能力处理，优先委派给 general_agent 尝试处理\n"
         "你的职责是：理解用户问题 → 判断类型 → 委派给合适的子 Agent → 整合结果回复用户。"
     ),
     capabilities=["问题分类", "任务委派", "结果整合", "客户沟通"],
     available_tools=["datetime"],
     available_skills=["text_writing"],
-    child_agents=["order_agent", "refund_agent"],
+    # NOTE: 更新 child_agents，纳入新增的通用助手 Agent
+    child_agents=["order_agent", "refund_agent", "general_agent"],
     agent_config=AgentConfig(
-        # 使用默认配置（从环境变量 DEFAULT_MODEL 读取）
         max_iterations=5,
         timeout_seconds=120
     )
@@ -54,9 +60,8 @@ ORDER_AGENT = Agent(
     capabilities=["订单查询", "订单更新", "配送跟踪", "订单分析"],
     available_tools=["database_query", "http_request", "datetime"],
     available_skills=["data_analysis"],
-    child_agents=[],  # 没有子 Agent
+    child_agents=[],
     agent_config=AgentConfig(
-        # 使用默认配置（从环境变量 DEFAULT_MODEL 读取）
         max_iterations=3,
         timeout_seconds=60
     )
@@ -75,12 +80,82 @@ REFUND_AGENT = Agent(
     capabilities=["退款申请", "退款审核", "退款查询", "退款分析"],
     available_tools=["database_query", "calculator", "datetime"],
     available_skills=["data_analysis"],
-    child_agents=[],  # 没有子 Agent
+    child_agents=[],
     agent_config=AgentConfig(
-        # 使用默认配置（从环境变量 DEFAULT_MODEL 读取）
         max_iterations=3,
         timeout_seconds=60
     )
+)
+
+
+# =============================================================================
+# 通用助手子 Agent
+# NOTE: 处理一切非订单/退款类问题，拥有除数据库查询以外的所有工具和全部技能。
+#       适合处理的场景包括但不限于：网络搜索、信息查询、代码生成、文本翻译、
+#       数据分析、文本写作、HTTP 请求、文件读写、计算器等通用任务。
+# =============================================================================
+
+GENERAL_AGENT = Agent(
+    agent_id="general_agent",
+    name="通用助手",
+    description=(
+        "处理订单/退款以外的通用请求，包括网络搜索、信息查询、代码生成、"
+        "文本翻译、数据分析、文本写作、HTTP 请求、文件读写、计算等各类任务"
+    ),
+    role=(
+        "你是一个能力全面的通用 AI 助手，负责处理用户提出的各类通用问题。\n"
+        "【重要工具说明】\n"
+        "- search: 搜索网络信息，适合回答「搜一下 X」「查询 X 的最新资讯」等\n"
+        "- http_request: 发起 HTTP 请求，适合调用外部 API 或抓取网页内容\n"
+        "- python_executor: 执行 Python 代码，适合数据处理、数值计算、验证逻辑\n"
+        "- file_read: 读取本地文件内容\n"
+        "- file_write: 将内容写入本地文件\n"
+        "- calculator: 进行数学计算\n"
+        "- datetime: 获取当前日期时间\n"
+        "【重要技能说明】\n"
+        "- data_analysis: 分析数据并生成报告\n"
+        "- code_generation: 根据需求生成代码\n"
+        "- text_writing: 撰写文章、报告等文本\n"
+        "- translation: 多语言翻译\n"
+        "【工作原则】\n"
+        "1. 优先选择最合适的工具/技能完成任务\n"
+        "2. 如果需要搜索信息，使用 search 工具\n"
+        "3. 复杂任务可以组合使用多个工具和技能\n"
+        "4. 禁止访问数据库（database_query 工具不可用）\n"
+        "5. 给出清晰、准确、有帮助的回答"
+    ),
+    capabilities=[
+        "网络搜索", "信息查询", "代码生成", "文本翻译",
+        "数据分析", "文本写作", "HTTP 请求", "文件读写", "数学计算"
+    ],
+    # NOTE: 囊括除 database_query 之外的所有内置工具
+    available_tools=[
+        "search",
+        "http_request",
+        "python_executor",
+        "file_read",
+        "file_write",
+        "calculator",
+        "datetime",
+    ],
+    # NOTE: 挂载全部四个内置技能
+    available_skills=[
+        "data_analysis",
+        "code_generation",
+        "text_writing",
+        "translation",
+    ],
+    child_agents=[],  # 通用助手是叶子节点，不再向下委派
+    agent_config=AgentConfig(
+        # NOTE: 通用任务可能涉及多步骤推理（如搜索+分析+写作），给予更多迭代次数
+        max_iterations=8,
+        timeout_seconds=180
+    )
+)
+
+logger.info(
+    f"{Fore.GREEN}[客服 Agent 库] 已定义 4 个 Agent："
+    f"cs_master / order_agent / refund_agent / general_agent{Style.RESET_ALL}"
 )
 
 
@@ -91,23 +166,31 @@ REFUND_AGENT = Agent(
 def get_all_customer_service_agents():
     """
     获取所有客服系统 Agent
-    
+
     Returns:
-        list[Agent]: Agent 列表
+        list[Agent]: Agent 列表，顺序为：主 Agent → 各子 Agent
     """
     return [
         CUSTOMER_SERVICE_MASTER,
         ORDER_AGENT,
-        REFUND_AGENT
+        REFUND_AGENT,
+        GENERAL_AGENT,
     ]
 
 
 def register_customer_service_agents(agent_registry):
     """
     将所有客服系统 Agent 注册到 Agent 注册表
-    
+
     Args:
         agent_registry: Agent 注册表实例
     """
-    for agent in get_all_customer_service_agents():
+    agents = get_all_customer_service_agents()
+    for agent in agents:
         agent_registry.register_agent(agent)
+        logger.debug(
+            f"{Fore.CYAN}[客服 Agent 库] 已注册 Agent: {agent.agent_id} ({agent.name}){Style.RESET_ALL}"
+        )
+    logger.info(
+        f"{Fore.GREEN}[客服 Agent 库] 所有 Agent 注册完成，共 {len(agents)} 个{Style.RESET_ALL}"
+    )

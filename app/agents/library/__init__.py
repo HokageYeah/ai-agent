@@ -12,11 +12,13 @@ Agent Library
 from app.agents.library.customer_service import (
     CUSTOMER_SERVICE_MASTER,
     ORDER_AGENT,
-    REFUND_AGENT
+    REFUND_AGENT,
+    GENERAL_AGENT,
 )
 
 __all__ = [
     "CUSTOMER_SERVICE_MASTER",
     "ORDER_AGENT",
-    "REFUND_AGENT"
+    "REFUND_AGENT",
+    "GENERAL_AGENT",
 ]

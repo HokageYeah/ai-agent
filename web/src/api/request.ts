@@ -9,7 +9,7 @@ import type { ApiResponseData } from '@/types/api'
 // 创建 Axios 实例，基础配置
 const request: AxiosInstance = axios.create({
   baseURL: '/api/v1',         // 通过 Vite 代理转发到后端 localhost:8002
-  timeout: 120000,            // 超时时间 120 秒（Agent 执行可能较慢）
+  timeout: 300000,            // 超时时间 300 秒（Agent 执行可能较慢）
   headers: {
     'Content-Type': 'application/json',
   },

@@ -106,43 +106,60 @@ class ChildAgentManager:
         
         try:
             # 执行子 Agent
-            from app.agents.langgraph_executor import LangGraphAgentExecutor
+            from app.agents.planning import PlanningEngine
+            from app.agents.execution import ExecutionEngine
             
-            max_iterations = child_agent.agent_config.max_iterations if child_agent.agent_config else 3
+            # 创建 Planning Engine
+            planning_engine = PlanningEngine(llm_hub=self.llm_hub)
             
-            # 创建 LangGraph 执行器，子 Agent 同样可以拥有完整的反思闭环
-            executor = LangGraphAgentExecutor(
-                llm_hub=self.llm_hub,
-                tool_hub=self.tool_hub,
-                skill_manager=self.skill_manager,
-                child_agent_manager=self,  # 递归支持（如子Agent叫孙Agent）
-                max_iterations=max_iterations
+            # 获取子 Agent 的可用工具和技能
+            available_tools = [
+                self.tool_hub.get_tool(tool_name)
+                for tool_name in child_agent.available_tools
+            ]
+            available_tools = [t for t in available_tools if t is not None]
+            
+            available_skills = [
+                self.skill_manager.get_skill(skill_id)
+                for skill_id in child_agent.available_skills
+            ]
+            available_skills = [s for s in available_skills if s is not None]
+            
+            # 创建执行计划
+            logger.info(f"{Fore.BLUE}为子 Agent {child_agent.name} 创建执行计划{Style.RESET_ALL}")
+            plan = await planning_engine.create_plan(
+                agent=child_agent,
+                task=task,
+                available_tools=available_tools,
+                available_skills=available_skills,
+                context=context
             )
             
-            logger.info(f"{Fore.BLUE}开始执行子 Agent {child_agent.name} (LangGraph引擎){Style.RESET_ALL}")
+            # 创建 Execution Engine
+            execution_engine = ExecutionEngine(
+                tool_hub=self.tool_hub,
+                skill_manager=self.skill_manager,
+                llm_hub=self.llm_hub,
+                child_agent_manager=self  # 递归支持
+            )
             
-            # 执行任务
-            result = await executor.execute(
+            # 执行计划
+            logger.info(f"{Fore.BLUE}执行子 Agent {child_agent.name} 的计划{Style.RESET_ALL}")
+            result = await execution_engine.execute_plan(
                 agent=child_agent,
-                task=task
+                plan=plan,
+                context=context
             )
             
             logger.info(
                 f"{Fore.GREEN}子 Agent {child_agent.name} 任务执行完成{Style.RESET_ALL}"
             )
             
-            # 提取详细结果以供前端精美展示
-            final_res = result.get("result") or {}
-            
             return {
-                "success": result.get("success", False) and final_res.get("success", False),
-                "result": final_res.get("result"),  # 子 Agent 最终合成文字
-                "step_results": final_res.get("step_results", []),
-                "reflection": final_res.get("reflection", None),
-                "messages": result.get("messages", []),
+                "success": result.success,
+                "result": result.result,
                 "agent_id": child_agent_id,
-                "agent_name": child_agent.name,
-                "error": final_res.get("error") or result.get("error")
+                "agent_name": child_agent.name
             }
             
         except Exception as e:

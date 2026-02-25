@@ -107,8 +107,8 @@
             <div v-if="getParamSchema(key)?.examples?.length" class="param-examples">
               <span class="param-examples-label">示例：</span>
               <span
-                v-for="(example, idx) in getParamSchema(key)!.examples"
-                :key="idx"
+                v-for="(example, idx) in (getParamSchema(key)?.examples ?? [])"
+                :key="key + '-' + idx"
                 class="param-example-pill"
                 :title="example"
                 @click="fillExample(key, example)"
