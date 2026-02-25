@@ -4,10 +4,23 @@ Chat API Endpoints (对话接口)
 
 本模块提供对话相关的 REST API 端点。
 
-功能特点：
-1. POST /chat - 普通对话接口
-2. POST /chat/stream - 流式对话接口
-3. DELETE /chat/{conversation_id} - 清空对话历史
+消息流向（遵循分层架构）：
+    前端 HTTP 请求
+      ↓
+    RESTAPIAdapter（渠道层：标准化消息格式）
+      ↓
+    ChannelManager.route_message()（路由分发）
+      ↓
+    ChatService.chat()（应用层：处理对话业务逻辑）
+      ↓
+    InferenceEngine（LLM Hub：统一推理）
+      ↓
+    响应返回
+
+端点列表：
+  1. POST /chat         - 普通对话接口（经由 Channel Layer）
+  2. POST /chat/stream  - 流式对话接口（直接调用 ChatService，流式需要特殊处理）
+  3. DELETE /chat/{id}  - 清空对话历史
 
 作者: AI Agent Team
 创建时间: 2026-02-17
@@ -22,55 +35,10 @@ from colorama import Fore, Style
 from app.schemas.agent_data import ChatRequest, ChatResponse
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.services.chat_service import ChatService
-from app.llm_hub.inference import InferenceEngine
-from app.memory.short_term import ShortTermMemory
+from app.utils.dependencies import get_chat_service
 
 # 创建路由器
 router = APIRouter()
-
-# 全局服务实例（后续可以通过依赖注入管理）
-_chat_service: ChatService = None
-
-
-def get_chat_service() -> ChatService:
-    """
-    获取 ChatService 实例（依赖注入）
-    
-    Returns:
-        ChatService: 对话服务实例
-    """
-    global _chat_service
-    if _chat_service is None:
-        logger.info(f"{Fore.BLUE}初始化 ChatService...{Style.RESET_ALL}")
-        
-        # 创建推理引擎所需的依赖
-        from app.llm_hub.providers.openai import OpenAIProvider
-        from app.llm_hub.registry import ModelRegistry
-        from app.core.config import settings
-        
-        # 创建默认 Provider
-        provider = OpenAIProvider(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL
-        )
-        
-        # 创建模型注册中心
-        model_registry = ModelRegistry()
-        
-        # 创建推理引擎
-        inference_engine = InferenceEngine(
-            provider=provider,
-            model_registry=model_registry
-        )
-        
-        # 创建短期记忆
-        memory = ShortTermMemory(max_messages=10)
-        
-        # 创建对话服务
-        _chat_service = ChatService(llm_hub=inference_engine, memory=memory)
-        logger.info(f"{Fore.GREEN}ChatService 初始化完成{Style.RESET_ALL}")
-    
-    return _chat_service
 
 
 @router.post("/chat")
@@ -79,48 +47,92 @@ async def chat(
     chat_service: ChatService = Depends(get_chat_service)
 ) -> ApiResponseData:
     """
-    普通对话接口
-    
+    普通对话接口（经由 Channel Layer 标准化处理）
+
+    请求流程：
+      1. 将 ChatRequest 封装为 REST API 渠道的原始消息格式（dict）
+      2. 通过 ChannelManager.route_message() 进入渠道层
+      3. 渠道层标准化消息后路由到 ChatService
+      4. 返回统一响应格式
+
     Args:
-        request: 对话请求
-        chat_service: 对话服务实例
-        
+        request: 对话请求体
+        chat_service: 对话服务实例（FastAPI 依赖注入）
+
     Returns:
         ApiResponseData: 统一响应格式
     """
-    logger.info(f"{Fore.CYAN}接收到对话请求 - 会话ID: {request.conversation_id}{Style.RESET_ALL}")
-    
+    logger.info(
+        f"{Fore.CYAN}【对话接口】接收到对话请求 — "
+        f"会话ID: {request.conversation_id}{Style.RESET_ALL}"
+    )
+    logger.debug(f"{Fore.CYAN}【对话接口】用户消息: {request.message[:100]}{Style.RESET_ALL}")
+
     try:
-        # 调用对话服务
-        result = await chat_service.chat(
-            conversation_id=request.conversation_id,
-            message=request.message,
-            system_prompt=request.system_prompt,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens
-        )
-        
-        logger.info(f"{Fore.GREEN}对话请求处理成功{Style.RESET_ALL}")
-        
-        # 构建响应（使用项目统一格式）
+        # ── 通过 Channel Layer 路由（标准架构分层流程）────────────────
+        from app.channels.manager import get_channel_manager
+
+        channel_manager = get_channel_manager()
+
+        # NOTE: 检查 ChannelManager 是否已有 rest_api 渠道适配器
+        # 如果服务尚未完全启动（如单元测试环境），降级到直接调用 ChatService
+        if channel_manager.get_adapter("rest_api") is not None:
+            logger.info(
+                f"{Fore.BLUE}【对话接口】通过 Channel Layer 路由 (渠道: rest_api){Style.RESET_ALL}"
+            )
+
+            # 构建渠道层原始消息格式
+            # metadata 中携带对话所需的额外参数，供 ChannelManager 分发时使用
+            raw_message = {
+                "user_id": request.conversation_id,
+                "content": request.message,
+                "metadata": {
+                    "service_type": "chat",             # 路由目标：对话服务
+                    "conversation_id": request.conversation_id,
+                    "system_prompt": request.system_prompt,
+                    "model": request.model or "qwen3-max",
+                    "temperature": request.temperature or 0.7,
+                    "max_tokens": request.max_tokens or 2048,
+                }
+            }
+
+            result = await channel_manager.route_message("rest_api", raw_message)
+
+        else:
+            # ── 降级模式：直接调用 ChatService（兼容测试/独立部署）───────
+            logger.info(
+                f"{Fore.YELLOW}【对话接口】Channel Layer 未就绪，"
+                f"降级为直接调用 ChatService{Style.RESET_ALL}"
+            )
+            result = await chat_service.chat(
+                conversation_id=request.conversation_id,
+                message=request.message,
+                system_prompt=request.system_prompt,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            )
+
+        logger.info(f"{Fore.GREEN}【对话接口】对话请求处理成功{Style.RESET_ALL}")
+
+        # 构建标准响应格式
         response = ChatResponse(
             conversation_id=result["conversation_id"],
             message=result["message"],
             model=result["model"],
             usage=result.get("usage")
         )
-        
+
         return ApiResponseData(
-            platform=PlatformEnum.WX_PUBLIC,  # 使用现有枚举
+            platform=PlatformEnum.WX_PUBLIC,
             api="/chat",
             data=response.model_dump(),
             ret=["success"],
             v=1
         )
-        
+
     except Exception as e:
-        logger.error(f"{Fore.RED}对话请求处理失败: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.RED}【对话接口】对话请求处理失败: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=500, detail=f"对话处理失败: {str(e)}")
 
 
@@ -131,18 +143,25 @@ async def chat_stream(
 ):
     """
     流式对话接口
-    
+
+    NOTE: 流式接口直接调用 ChatService.stream_chat()，
+    不经过 ChannelManager，因为流式响应需要逐块写入 HTTP 响应，
+    无法通过同步 route_message() 进行包装。
+
     Args:
-        request: 对话请求
+        request: 对话请求体
         chat_service: 对话服务实例
-        
+
     Returns:
-        StreamingResponse: 流式响应
+        StreamingResponse: 服务器推送事件（text/plain）
     """
-    logger.info(f"{Fore.CYAN}接收到流式对话请求 - 会话ID: {request.conversation_id}{Style.RESET_ALL}")
-    
+    logger.info(
+        f"{Fore.CYAN}【对话接口】接收到流式对话请求 — "
+        f"会话ID: {request.conversation_id}{Style.RESET_ALL}"
+    )
+
     async def generate_stream() -> AsyncIterator[str]:
-        """生成流式响应"""
+        """内部生成器：从 ChatService 获取流式响应块"""
         try:
             async for chunk in chat_service.stream_chat(
                 conversation_id=request.conversation_id,
@@ -153,13 +172,13 @@ async def chat_stream(
                 max_tokens=request.max_tokens
             ):
                 yield chunk
-                
-            logger.info(f"{Fore.GREEN}流式对话请求处理完成{Style.RESET_ALL}")
-            
+
+            logger.info(f"{Fore.GREEN}【对话接口】流式对话请求处理完成{Style.RESET_ALL}")
+
         except Exception as e:
-            logger.error(f"{Fore.RED}流式对话请求处理失败: {e}{Style.RESET_ALL}")
+            logger.error(f"{Fore.RED}【对话接口】流式对话请求处理失败: {e}{Style.RESET_ALL}")
             yield f"Error: {str(e)}"
-    
+
     return StreamingResponse(
         generate_stream(),
         media_type="text/plain"
@@ -173,22 +192,23 @@ async def clear_chat(
 ) -> ApiResponseData:
     """
     清空对话历史
-    
+
     Args:
-        conversation_id: 会话 ID
+        conversation_id: 要清空的会话 ID
         chat_service: 对话服务实例
-        
+
     Returns:
         ApiResponseData: 统一响应格式
     """
-    logger.info(f"{Fore.YELLOW}清空对话历史 - 会话ID: {conversation_id}{Style.RESET_ALL}")
-    
+    logger.info(
+        f"{Fore.YELLOW}【对话接口】清空对话历史 — "
+        f"会话ID: {conversation_id}{Style.RESET_ALL}"
+    )
+
     try:
-        # 清空会话
         chat_service.clear_conversation(conversation_id)
-        
-        logger.info(f"{Fore.GREEN}对话历史清空成功{Style.RESET_ALL}")
-        
+        logger.info(f"{Fore.GREEN}【对话接口】对话历史清空成功{Style.RESET_ALL}")
+
         return ApiResponseData(
             platform=PlatformEnum.WX_PUBLIC,
             api=f"/chat/{conversation_id}",
@@ -196,7 +216,7 @@ async def clear_chat(
             ret=["success"],
             v=1
         )
-        
+
     except Exception as e:
-        logger.error(f"{Fore.RED}清空对话历史失败: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.RED}【对话接口】清空对话历史失败: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=500, detail=f"清空对话历史失败: {str(e)}")

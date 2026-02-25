@@ -31,7 +31,9 @@ async def lifespan(app: FastAPI):
 
     startup 阶段：
     1. 连接 MySQL 数据库（SQLAlchemy）
-    2. 预热 Agent 执行器（含工具注册 + SQLite 内存数据库种子数据初始化）
+    2. 初始化 Channel Layer（注册适配器）
+    3. 预热 Agent 执行器及其他核心服务
+    4. 将核心服务注入到 ChannelManager 进行路由绑定
 
     shutdown 阶段：
     1. 关闭数据库连接
@@ -46,15 +48,45 @@ async def lifespan(app: FastAPI):
     database.connect()
     logger.info(f"{Fore.GREEN}[启动] MySQL 数据库连接成功{Style.RESET_ALL}")
 
-    # 2. 预热 Agent 执行器（懒加载 → 提前初始化，确保种子数据在第一个请求前就已注入）
-    logger.info(f"{Fore.BLUE}[启动] 预热 Agent 执行器（注册工具 + 初始化订单测试数据）...{Style.RESET_ALL}")
+    # 2. 初始化 Channel Layer
+    logger.info(f"{Fore.BLUE}[启动] 初始化 Channel Layer...{Style.RESET_ALL}")
+    try:
+        from app.channels.manager import get_channel_manager
+        from app.channels.adapters.rest_api import RESTAPIAdapter
+        from app.channels.adapters.web_chat import WebChatAdapter
+        
+        channel_manager = get_channel_manager()
+        channel_manager.register_channel("rest_api", RESTAPIAdapter())
+        channel_manager.register_channel("web_chat", WebChatAdapter())
+        logger.info(f"{Fore.GREEN}[启动] Channel Layer 初始化完成 ✅{Style.RESET_ALL}")
+    except Exception as e:
+        logger.error(f"{Fore.RED}[启动] Channel Layer 初始化失败 (不阻断启动): {e}{Style.RESET_ALL}")
+
+    # 3. 预热 Agent 执行器及核心服务
+    logger.info(f"{Fore.BLUE}[启动] 预热核心服务 (Agent/Chat/Automation)...{Style.RESET_ALL}")
     try:
         from app.api.endpoints.agents import get_agent_executor, get_agent_registry
+        from app.api.endpoints.chat import get_chat_service
+        from app.api.endpoints.automation import get_automation_service
+        
         get_agent_registry()   # 先确保 Agent 注册表初始化
-        get_agent_executor()   # 触发工具注册 + 种子数据注入
-        logger.info(f"{Fore.GREEN}[启动] Agent 执行器预热完成 ✅{Style.RESET_ALL}")
+        agent_executor = get_agent_executor()   # 触发工具注册 + 种子数据注入
+        chat_service = get_chat_service()
+        automation_service = get_automation_service()
+        logger.info(f"{Fore.GREEN}[启动] 核心服务预热完成 ✅{Style.RESET_ALL}")
+
+        # 4. 将服务注入 ChannelManager (绑定路由)
+        logger.info(f"{Fore.BLUE}[启动] 注入服务依赖到 ChannelManager...{Style.RESET_ALL}")
+        if 'channel_manager' in locals():
+            channel_manager.set_services(
+                chat_service=chat_service,
+                agent_executor=agent_executor,
+                automation_service=automation_service
+            )
+            logger.info(f"{Fore.GREEN}[启动] ChannelManager 路由绑定完成 ✅{Style.RESET_ALL}")
+
     except Exception as e:
-        logger.error(f"{Fore.RED}[启动] Agent 执行器预热失败（不阻断启动）: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.RED}[启动] 核心服务预热/注入失败 (不阻断启动): {e}{Style.RESET_ALL}")
 
     logger.info(f"{Fore.GREEN}{'='*55}{Style.RESET_ALL}")
     logger.info(f"{Fore.GREEN}  AI Agent 服务启动完成，等待请求...{Style.RESET_ALL}")

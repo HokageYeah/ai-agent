@@ -19,33 +19,10 @@ from colorama import Fore, Style
 from app.schemas.agent_data import ToolInfo
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.tools.hub import ToolHub
+from app.utils.dependencies import get_tool_hub
 
 # 创建路由器
 router = APIRouter()
-
-# 全局服务实例
-_tool_hub: ToolHub = None
-
-
-def get_tool_hub() -> ToolHub:
-    """
-    获取 ToolHub 实例（依赖注入）
-    
-    Returns:
-        ToolHub: 工具中心实例
-    """
-    global _tool_hub
-    if _tool_hub is None:
-        logger.info(f"{Fore.BLUE}初始化 ToolHub...{Style.RESET_ALL}")
-        _tool_hub = ToolHub()
-        
-        # 注册所有内置工具
-        from app.tools.builtin import register_all_builtin_tools
-        register_all_builtin_tools(_tool_hub)
-        
-        logger.info(f"{Fore.GREEN}ToolHub 初始化完成{Style.RESET_ALL}")
-    
-    return _tool_hub
 
 
 @router.get("/tools")

@@ -11,7 +11,7 @@ const chatRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/chat/ChatView.vue'),
     meta: {
       title: 'AI 对话',
-      icon: 'chat',
+      icon: 'ChatDotSquare',
     },
   },
 ]

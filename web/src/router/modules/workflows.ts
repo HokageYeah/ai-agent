@@ -10,7 +10,7 @@ const workflowsRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/workflows/WorkflowsView.vue'),
     meta: {
       title: '工作流',
-      icon: 'workflow',
+      icon: 'Connection',
     },
   },
 ]

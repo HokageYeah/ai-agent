@@ -20,6 +20,7 @@ from colorama import Fore, Style
 
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
+from app.core.config import settings
 
 
 class AutomationService:
@@ -96,7 +97,7 @@ class AutomationService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=processing_config.get("model", "gpt-4"),
+                model=processing_config.get("model", settings.DEFAULT_MODEL),
                 temperature=0.3,  # 数据处理需要更确定性的结果
                 max_tokens=processing_config.get("max_tokens", 2048)
             )
@@ -188,7 +189,7 @@ class AutomationService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=report_config.get("model", "gpt-4"),
+                model=report_config.get("model", settings.DEFAULT_MODEL),
                 temperature=0.7,
                 max_tokens=report_config.get("max_tokens", 4096)
             )
@@ -258,7 +259,7 @@ class AutomationService:
                     from app.llm_hub.inference import InferenceConfig
                     
                     config = InferenceConfig(
-                        model=code_config.get("model", "gpt-4"),
+                        model=code_config.get("model", settings.DEFAULT_MODEL),
                         temperature=0.3,
                         max_tokens=code_config.get("max_tokens", 4096)
                     )
@@ -319,7 +320,7 @@ class AutomationService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=code_config.get("model", "gpt-4"),
+                model=code_config.get("model", settings.DEFAULT_MODEL),
                 temperature=0.3,
                 max_tokens=code_config.get("max_tokens", 4096)
             )

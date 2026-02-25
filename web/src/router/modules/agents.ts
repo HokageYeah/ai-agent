@@ -10,7 +10,7 @@ const agentsRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/agents/AgentsView.vue'),
     meta: {
       title: 'Agent 执行',
-      icon: 'agent',
+      icon: 'Setting',
     },
   },
 ]

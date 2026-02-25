@@ -23,35 +23,10 @@ from app.schemas.agent_data import (
 )
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.skills.manager import SkillManager
-from app.llm_hub.inference import InferenceEngine
-from app.tools.hub import ToolHub
+from app.utils.dependencies import get_skill_manager
 
 # 创建路由器
 router = APIRouter()
-
-# 全局服务实例
-_skill_manager: SkillManager = None
-
-
-def get_skill_manager() -> SkillManager:
-    """
-    获取 SkillManager 实例（依赖注入）
-    
-    Returns:
-        SkillManager: 技能管理器实例
-    """
-    global _skill_manager
-    if _skill_manager is None:
-        logger.info(f"{Fore.BLUE}初始化 SkillManager...{Style.RESET_ALL}")
-        _skill_manager = SkillManager()
-        
-        # 注册所有内置技能
-        from app.skills.library import register_all_builtin_skills
-        register_all_builtin_skills(_skill_manager)
-        
-        logger.info(f"{Fore.GREEN}SkillManager 初始化完成{Style.RESET_ALL}")
-    
-    return _skill_manager
 
 
 @router.get("/skills")

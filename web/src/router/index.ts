@@ -37,7 +37,7 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/dashboard/DashboardView.vue'),
-        meta: { title: '仪表盘', icon: 'dashboard' },
+        meta: { title: '仪表盘', icon: 'Odometer' },
       },
       // 合并各模块路由到主布局下
       ...moduleRoutes,

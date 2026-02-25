@@ -293,7 +293,7 @@ async def test_phase0(result: TestResult):
         register_customer_service_agents(reg)
 
         agents = reg.list_agents()
-        assert len(agents) == 3
+        assert len(agents) == 4
         assert reg.get_agent("cs_master") is not None
         cs = reg.get_agent("cs_master")
         assert "order_agent" in cs.child_agents

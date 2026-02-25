@@ -24,49 +24,10 @@ from app.schemas.agent_data import (
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.workflows.engine import WorkflowEngine
 from app.workflows.nodes import Workflow
+from app.utils.dependencies import get_workflow_engine, get_workflows
 
 # 创建路由器
 router = APIRouter()
-
-# 全局服务实例
-_workflow_engine: WorkflowEngine = None
-_workflows: Dict[str, Workflow] = {}
-
-
-def get_workflow_engine() -> WorkflowEngine:
-    """
-    获取 WorkflowEngine 实例（依赖注入）
-    
-    Returns:
-        WorkflowEngine: 工作流引擎实例
-    """
-    global _workflow_engine
-    if _workflow_engine is None:
-        logger.info(f"{Fore.BLUE}初始化 WorkflowEngine...{Style.RESET_ALL}")
-        _workflow_engine = WorkflowEngine()
-        logger.info(f"{Fore.GREEN}WorkflowEngine 初始化完成{Style.RESET_ALL}")
-    
-    return _workflow_engine
-
-
-def get_workflows() -> Dict[str, Workflow]:
-    """
-    获取所有工作流（依赖注入）
-    
-    Returns:
-        Dict[str, Workflow]: 工作流字典
-    """
-    global _workflows
-    if not _workflows:
-        logger.info(f"{Fore.BLUE}加载工作流定义...{Style.RESET_ALL}")
-        
-        # 注册所有内置工作流
-        from app.workflows.templates.intent_routing import INTENT_ROUTING_WORKFLOW
-        _workflows[INTENT_ROUTING_WORKFLOW.workflow_id] = INTENT_ROUTING_WORKFLOW
-        
-        logger.info(f"{Fore.GREEN}工作流定义加载完成，共 {len(_workflows)} 个{Style.RESET_ALL}")
-    
-    return _workflows
 
 
 @router.post("/workflows/{workflow_id}/execute")

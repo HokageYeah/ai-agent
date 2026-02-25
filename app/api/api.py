@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import wx_public, test_api, chat, agents, workflows, skills, tools
+from app.api.endpoints import wx_public, test_api, chat, agents, workflows, skills, tools, automation
 
 api_router = APIRouter()
 
@@ -16,3 +16,4 @@ api_router.include_router(agents.router, tags=["Agent 系统"])
 api_router.include_router(workflows.router, tags=["工作流系统"])
 api_router.include_router(skills.router, tags=["技能系统"])
 api_router.include_router(tools.router, tags=["工具系统"])
+api_router.include_router(automation.router, prefix="/automation", tags=["自动化服务"])

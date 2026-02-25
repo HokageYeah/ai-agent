@@ -25,110 +25,10 @@ from app.schemas.agent_data import (
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.agents.registry import AgentRegistry
 from app.agents.langgraph_executor import LangGraphAgentExecutor
-from app.agents.child_agent_manager import ChildAgentManager
-from app.llm_hub.inference import InferenceEngine
-from app.tools.hub import ToolHub
-from app.skills.manager import SkillManager
+from app.utils.dependencies import get_agent_registry, get_agent_executor
 
 # 创建路由器
 router = APIRouter()
-
-# 全局服务实例
-_agent_registry: AgentRegistry = None
-_agent_executor: LangGraphAgentExecutor = None
-_child_agent_manager: ChildAgentManager = None
-
-
-def get_agent_registry() -> AgentRegistry:
-    """
-    获取 AgentRegistry 实例（依赖注入）
-    
-    Returns:
-        AgentRegistry: Agent 注册表实例
-    """
-    global _agent_registry
-    if _agent_registry is None:
-        logger.info(f"{Fore.BLUE}初始化 AgentRegistry...{Style.RESET_ALL}")
-        _agent_registry = AgentRegistry()
-        
-        # 注册所有内置 Agent
-        from app.agents.library.customer_service import register_customer_service_agents
-        register_customer_service_agents(_agent_registry)
-        
-        logger.info(f"{Fore.GREEN}AgentRegistry 初始化完成{Style.RESET_ALL}")
-    
-    return _agent_registry
-
-
-def get_agent_executor() -> LangGraphAgentExecutor:
-    """
-    获取 LangGraphAgentExecutor 实例（依赖注入）
-    
-    同时初始化 ChildAgentManager，使父 Agent 能够将任务委派给子 Agent。
-    
-    Returns:
-        LangGraphAgentExecutor: Agent 执行器实例
-    """
-    global _agent_executor, _child_agent_manager
-    if _agent_executor is None:
-        logger.info(f"{Fore.BLUE}初始化 LangGraphAgentExecutor...{Style.RESET_ALL}")
-        
-        # NOTE: InferenceEngine 需要 provider 和 model_registry 两个必填参数
-        # 参照 chat.py 的做法，先创建 OpenAIProvider 和 ModelRegistry，再传入 InferenceEngine
-        from app.llm_hub.providers.openai import OpenAIProvider
-        from app.llm_hub.registry import ModelRegistry
-        from app.core.config import settings
-        
-        # 创建默认 LLM Provider（使用 OpenAI 兼容接口）
-        provider = OpenAIProvider(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL
-        )
-        logger.info(f"{Fore.CYAN}已创建 OpenAIProvider（base_url={settings.OPENAI_BASE_URL}）{Style.RESET_ALL}")
-        
-        # 创建模型注册中心
-        model_registry = ModelRegistry()
-        logger.info(f"{Fore.CYAN}已创建 ModelRegistry{Style.RESET_ALL}")
-        
-        # 创建推理引擎（需要 provider 和 model_registry 两个必填参数）
-        inference_engine = InferenceEngine(
-            provider=provider,
-            model_registry=model_registry
-        )
-        logger.info(f"{Fore.CYAN}已创建 InferenceEngine{Style.RESET_ALL}")
-        
-        tool_hub = ToolHub()
-        skill_manager = SkillManager()
-        
-        # 注册所有内置工具和技能
-        from app.tools.builtin import register_all_builtin_tools
-        from app.skills.library import register_all_builtin_skills
-        register_all_builtin_tools(tool_hub)
-        register_all_builtin_skills(skill_manager)
-        
-        # 获取 Agent 注册表（确保已初始化）
-        agent_registry = get_agent_registry()
-        
-        # 创建子 Agent 管理器，让父 Agent 能把任务委派给子 Agent
-        _child_agent_manager = ChildAgentManager(
-            agent_registry=agent_registry,
-            llm_hub=inference_engine,
-            tool_hub=tool_hub,
-            skill_manager=skill_manager
-        )
-        logger.info(f"{Fore.CYAN}已创建 ChildAgentManager，支持多层 Agent 委派{Style.RESET_ALL}")
-        
-        # 创建执行器，传入子 Agent 管理器
-        _agent_executor = LangGraphAgentExecutor(
-            llm_hub=inference_engine,
-            tool_hub=tool_hub,
-            skill_manager=skill_manager,
-            child_agent_manager=_child_agent_manager
-        )
-        
-        logger.info(f"{Fore.GREEN}LangGraphAgentExecutor 初始化完成（含 ChildAgentManager）{Style.RESET_ALL}")
-    
-    return _agent_executor
 
 
 @router.post("/agents/{agent_id}/execute")
@@ -139,36 +39,85 @@ async def execute_agent(
     agent_executor: LangGraphAgentExecutor = Depends(get_agent_executor)
 ) -> ApiResponseData:
     """
-    执行 Agent
-    
+    执行 Agent（经由 Channel Layer 标准化处理）
+
+    消息流向（遵循分层架构）：
+      前端 HTTP 请求
+        ↓
+      RESTAPIAdapter（渠道层：标准化消息格式）
+        ↓
+      ChannelManager.route_message(service_type="agent")
+        ↓
+      LangGraphAgentExecutor.execute()（编排层）
+        ↓
+      PlanningEngine → ExecutionEngine → ReflectionEngine
+        ↓
+      响应返回
+
     Args:
         agent_id: Agent ID
-        request: 执行请求
-        agent_registry: Agent 注册表
-        agent_executor: Agent 执行器
-        
+        request: 执行请求体
+        agent_registry: Agent 注册表（依赖注入）
+        agent_executor: Agent 执行器（依赖注入）
+
     Returns:
         ApiResponseData: 统一响应格式
     """
-    logger.info(f"{Fore.CYAN}接收到 Agent 执行请求 - Agent ID: {agent_id}{Style.RESET_ALL}")
-    logger.info(f"{Fore.CYAN}任务: {request.task}{Style.RESET_ALL}")
-    
+    logger.info(
+        f"{Fore.CYAN}【Agent接口】接收到 Agent 执行请求 — "
+        f"Agent ID: {agent_id}{Style.RESET_ALL}"
+    )
+    logger.info(f"{Fore.CYAN}【Agent接口】任务: {request.task[:100]}{Style.RESET_ALL}")
+
     try:
-        # 获取 Agent
+        # 验证 Agent 是否存在（在进入渠道之前做前置校验，避免无效消息进入）
         agent = agent_registry.get_agent(agent_id)
         if not agent:
-            logger.error(f"{Fore.RED}Agent 不存在: {agent_id}{Style.RESET_ALL}")
+            logger.error(f"{Fore.RED}【Agent接口】Agent 不存在: {agent_id}{Style.RESET_ALL}")
             raise HTTPException(status_code=404, detail=f"Agent 不存在: {agent_id}")
-        
-        # 执行 Agent
-        result = await agent_executor.execute(
-            agent=agent,
-            task=request.task,
-            conversation_history=request.conversation_history
+
+        # ── 通过 Channel Layer 路由（标准架构分层流程）────────────────
+        from app.channels.manager import get_channel_manager
+
+        channel_manager = get_channel_manager()
+
+        if channel_manager.get_adapter("rest_api") is not None:
+            logger.info(
+                f"{Fore.BLUE}【Agent接口】通过 Channel Layer 路由 (渠道: rest_api){Style.RESET_ALL}"
+            )
+
+            # 构建渠道层原始消息格式
+            # content = 任务描述，metadata 携带 Agent 执行所需的额外参数
+            raw_message = {
+                "user_id": agent_id,
+                "content": request.task,           # 任务内容作为消息主体
+                "metadata": {
+                    "service_type": "agent",        # 路由目标：Agent 执行器
+                    "agent_id": agent_id,
+                    "conversation_history": request.conversation_history or [],
+                    "config": request.config or {},
+                }
+            }
+
+            result = await channel_manager.route_message("rest_api", raw_message)
+
+        else:
+            # ── 降级模式：直接调用 AgentExecutor（兼容测试/独立部署）────
+            logger.info(
+                f"{Fore.YELLOW}【Agent接口】Channel Layer 未就绪，"
+                f"降级为直接调用 AgentExecutor{Style.RESET_ALL}"
+            )
+            result = await agent_executor.execute(
+                agent=agent,
+                task=request.task,
+                conversation_history=request.conversation_history
+            )
+
+        logger.info(
+            f"{Fore.GREEN}【Agent接口】Agent 执行成功, "
+            f"success={result.get('success')}{Style.RESET_ALL}"
         )
-        
-        logger.info(f"{Fore.GREEN}Agent 执行成功{Style.RESET_ALL}")
-        
+
         # 构建响应
         response = AgentExecuteResponse(
             agent_id=agent.agent_id,
@@ -179,7 +128,7 @@ async def execute_agent(
             success=result.get("success", False),
             messages=result.get("messages", [])
         )
-        
+
         return ApiResponseData(
             platform=PlatformEnum.WX_PUBLIC,
             api=f"/agents/{agent_id}/execute",
@@ -187,11 +136,11 @@ async def execute_agent(
             ret=["success"],
             v=1
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"{Fore.RED}Agent 执行失败: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.RED}【Agent接口】Agent 执行失败: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=500, detail=f"Agent 执行失败: {str(e)}")
 
 

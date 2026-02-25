@@ -10,7 +10,7 @@ const skillsRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/skills/SkillsView.vue'),
     meta: {
       title: '技能库',
-      icon: 'skill',
+      icon: 'MagicStick',
     },
   },
 ]

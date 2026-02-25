@@ -36,7 +36,7 @@
           :class="{ active: isActive(item.path) }"
         >
           <el-icon class="nav-icon" :size="20">
-            <component :is="item.icon" />
+            <component :is="iconMap[item.icon] || Setting" />
           </el-icon>
           <span class="nav-label" v-show="!appStore.sidebarCollapsed">{{ item.label }}</span>
           <!-- 新对话按钮（仅 Chat 项显示） -->
@@ -96,26 +96,43 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  ChatDotSquare, Setting, MagicStick, Connection,
-  Plus, Expand, Fold, DataLine
-} from '@element-plus/icons-vue'
+import type { RouteRecordRaw } from 'vue-router'
+import { Plus, Expand, Fold, Setting } from '@element-plus/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { iconMap } from '@/utils/icon-map'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 
-// 导航菜单配置
-const navItems = [
-  { path: '/dashboard', label: '仪表盘', icon: DataLine },
-  { path: '/chat', label: 'AI 对话', icon: ChatDotSquare },
-  { path: '/agents', label: 'Agent 执行', icon: Setting },
-  { path: '/skills', label: '技能库', icon: MagicStick },
-  { path: '/workflows', label: '工作流', icon: Connection },
-]
+
+/**
+ * 从路由配置中自动提取导航菜单项
+ * 过滤条件：有 meta.title 的子路由（排除根路由和 404）
+ */
+const navItems = computed(() => {
+  const routes = router.getRoutes()
+
+  // 找到主布局路由的子路由
+  const mainLayoutRoute = routes.find(r => r.path === '/' && r.children?.length)
+  if (!mainLayoutRoute || !mainLayoutRoute.children) return []
+
+  // 提取所有子路由，转换为导航项
+  return mainLayoutRoute.children
+    .filter((r: RouteRecordRaw) => r.meta?.title && r.path)
+    .map((r: RouteRecordRaw) => {
+      const iconName = r.meta?.icon as string
+      // 处理路径：确保不以双斜杠开头
+      const path = r.path.startsWith('/') ? r.path : `/${r.path}`
+      return {
+        path,
+        label: r.meta?.title as string,
+        icon: iconName, // 直接存储 icon 字符串，由模板动态解析
+      }
+    })
+})
 
 /**
  * 判断导航项是否激活（兼容子路由匹配）
