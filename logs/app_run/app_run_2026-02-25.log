@@ -8049,3 +8049,162 @@ httpx.ConnectTimeout
 2026-02-25 15:40:02 | INFO     | app.agents.langgraph_executor:execute:437 - [32m总迭代次数: 1[0m
 2026-02-25 15:40:02 | INFO     | app.api.endpoints.agents:execute_agent:170 - [32mAgent 执行成功[0m
 2026-02-25 15:40:02 | INFO     | logging:callHandlers:1736 - 127.0.0.1:65288 - "POST /api/v1/agents/cs_master/execute HTTP/1.1" 200
+2026-02-25 15:43:38 | INFO     | logging:callHandlers:1736 - Shutting down
+2026-02-25 15:43:38 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
+2026-02-25 15:43:38 | INFO     | app.main:lifespan:66 - [33m[关闭] AI Agent 服务正在关闭...[0m
+2026-02-25 15:43:38 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接已关闭
+2026-02-25 15:43:38 | INFO     | app.main:lifespan:69 - [33m[关闭] MySQL 数据库连接已释放[0m
+2026-02-25 15:43:47 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-25 15:43:47 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2026-02-25 15:43:48 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Using selector: KqueueSelector
+2026-02-25 15:43:48 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - Started server process [87207]
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:40 - [36m=======================================================[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:41 - [36m  AI Agent 服务启动中...[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:42 - [36m=======================================================[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:45 - [34m[启动] 连接 MySQL 数据库...[0m
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Building SSL context
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Switching to SSL
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - SSL has been enabled
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Starting authorization phase
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - The provided initial strategy is caching_sha2_password
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - plugin_name: caching_sha2_password
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Server's response is an auth switch request
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - Switching to strategy mysql_native_password
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - package: mysql.connector.plugins
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - plugin_name: mysql_native_password
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - # request: b'\x03\xde\xdd\x8d\x0c\xe3j\x80\xdf\xe8\xb8<\x13x\xe3\xa06rr\xa0' size: 20
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2026-02-25 15:43:48 | DEBUG    | logging:callHandlers:1736 - mysql_native_password completed succesfully
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - SELECT DATABASE()
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - SELECT @@sql_mode
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - SELECT @@lower_case_table_names
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - [raw sql] {}
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - BEGIN (implicit)
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - SELECT 1
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - [generated in 0.00028s] {}
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接成功
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - ROLLBACK
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:47 - [32m[启动] MySQL 数据库连接成功[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:50 - [34m[启动] 预热 Agent 执行器（注册工具 + 初始化订单测试数据）...[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_registry:51 - [34m初始化 AgentRegistry...[0m
+2026-02-25 15:43:48 | INFO     | app.agents.registry:__init__:33 - [32mAgent 注册表初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.agents.library.customer_service:<module>:156 - [32m[客服 Agent 库] 已定义 4 个 Agent：cs_master / order_agent / refund_agent / general_agent[0m
+2026-02-25 15:43:48 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 客服总监 (ID: cs_master), 能力: 问题分类, 任务委派, 结果整合, 客户沟通[0m
+2026-02-25 15:43:48 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:191 - [36m[客服 Agent 库] 已注册 Agent: cs_master (客服总监)[0m
+2026-02-25 15:43:48 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 订单专员 (ID: order_agent), 能力: 订单查询, 订单更新, 配送跟踪, 订单分析[0m
+2026-02-25 15:43:48 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:191 - [36m[客服 Agent 库] 已注册 Agent: order_agent (订单专员)[0m
+2026-02-25 15:43:48 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 退款专员 (ID: refund_agent), 能力: 退款申请, 退款审核, 退款查询, 退款分析[0m
+2026-02-25 15:43:48 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:191 - [36m[客服 Agent 库] 已注册 Agent: refund_agent (退款专员)[0m
+2026-02-25 15:43:48 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 通用助手 (ID: general_agent), 能力: 网络搜索, 信息查询, 代码生成, 文本翻译, 数据分析, 文本写作, HTTP 请求, 文件读写, 数学计算[0m
+2026-02-25 15:43:48 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:191 - [36m[客服 Agent 库] 已注册 Agent: general_agent (通用助手)[0m
+2026-02-25 15:43:48 | INFO     | app.agents.library.customer_service:register_customer_service_agents:194 - [32m[客服 Agent 库] 所有 Agent 注册完成，共 4 个[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_registry:58 - [32mAgentRegistry 初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:74 - [34m初始化 LangGraphAgentExecutor...[0m
+2026-02-25 15:43:48 | INFO     | app.llm_hub.providers.openai:__init__:68 - [36m初始化 OpenAI 供应商适配器，基础URL: https://apis.iflow.cn/v1[0m
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.providers.openai:__init__:86 - [34mOpenAI 异步客户端创建完成[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:87 - [36m已创建 OpenAIProvider（base_url=https://apis.iflow.cn/v1）[0m
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: qwen3-max (openai)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: deepseek-v3.2 (openai)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-4-turbo (openai)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-3.5-turbo (openai)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-opus-20240229 (anthropic)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-sonnet-20240229 (anthropic)
+2026-02-25 15:43:48 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-haiku-20240307 (anthropic)
+2026-02-25 15:43:48 | INFO     | app.llm_hub.registry:_initialize_default_models:81 - [36mInitialized ModelRegistry with 7 default models[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:91 - [36m已创建 ModelRegistry[0m
+2026-02-25 15:43:48 | INFO     | app.llm_hub.inference:__init__:154 - [36m初始化 PromptBuilder: PromptBuilder[0m
+2026-02-25 15:43:48 | INFO     | app.llm_hub.streaming:__init__:81 - [36m初始化流式输出管理器 (StreamingManager)[0m
+2026-02-25 15:43:48 | INFO     | app.llm_hub.inference:__init__:158 - [36m初始化 StreamingManager: StreamingManager[0m
+2026-02-25 15:43:48 | INFO     | app.llm_hub.inference:__init__:167 - [32m推理引擎初始化完成，默认供应商: OpenAIProvider[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:98 - [36m已创建 InferenceEngine[0m
+2026-02-25 15:43:48 | INFO     | app.skills.manager:__init__:15 - [34mSkillManager initialized.[0m
+2026-02-25 15:43:48 | INFO     | app.skills.library.data_analysis:<module>:61 - [32m[数据分析技能] DATA_ANALYSIS_SKILL 已定义，参数元数据加载完成[0m
+2026-02-25 15:43:48 | INFO     | app.skills.library.code_generation:<module>:77 - [32m[代码生成技能] CODE_GENERATION_SKILL 已定义，参数元数据加载完成[0m
+2026-02-25 15:43:48 | INFO     | app.skills.library.text_writing:<module>:86 - [32m[文本写作技能] TEXT_WRITING_SKILL 已定义，参数元数据加载完成[0m
+2026-02-25 15:43:48 | INFO     | app.skills.library.translation:<module>:66 - [32m[翻译技能] TRANSLATION_SKILL 已定义，参数元数据加载完成[0m
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:__init__:98 - [DatabaseQueryTool] 已创建共享内存数据库连接
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:__init__:100 - [DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: :memory:
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.search:__init__:55 - [SearchTool] 网络搜索工具初始化完成
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.http:__init__:78 - [HTTPRequestTool] HTTP 请求工具初始化完成
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.executor:__init__:115 - [PythonExecutorTool] Python 代码执行工具初始化完成
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin.file:__init__:75 - [BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/AI Agent 项目/ai-agent', '/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T']
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.file:__init__:207 - [FileReadTool] 文件读取工具初始化完成
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin.file:__init__:75 - [BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/AI Agent 项目/ai-agent', '/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T']
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.file:__init__:501 - [FileWriteTool] 文件写入工具初始化完成
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: search[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: http_request[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: python_executor[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: file_read[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: file_write[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: database_query[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: calculator[0m
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin:register_all_builtin_tools:77 - [32m已注册内置工具: datetime[0m
+2026-02-25 15:43:48 | INFO     | app.tools.builtin:register_all_builtin_tools:79 - [32m所有内置工具注册完成，共注册 8 个工具[0m
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:192 - [34m[数据库初始化] 开始创建订单系统表结构...[0m
+2026-02-25 15:43:48 | DEBUG    | app.db.seed_order_data:seed_database:198 - [36m[数据库初始化] 创建 customers 表完成[0m
+2026-02-25 15:43:48 | DEBUG    | app.db.seed_order_data:seed_database:201 - [36m[数据库初始化] 创建 products 表完成[0m
+2026-02-25 15:43:48 | DEBUG    | app.db.seed_order_data:seed_database:204 - [36m[数据库初始化] 创建 orders 表完成[0m
+2026-02-25 15:43:48 | DEBUG    | app.db.seed_order_data:seed_database:207 - [36m[数据库初始化] 创建 order_items 表完成[0m
+2026-02-25 15:43:48 | DEBUG    | app.db.seed_order_data:seed_database:210 - [36m[数据库初始化] 创建 refunds 表完成[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:218 - [32m[数据库初始化] 已插入 5 条客户数据[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:227 - [32m[数据库初始化] 已插入 8 条商品数据[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:238 - [32m[数据库初始化] 已插入 10 条订单数据（订单号 1001-1010）[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:247 - [32m[数据库初始化] 已插入 12 条订单明细[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:256 - [32m[数据库初始化] 已插入 3 条退款数据[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:seed_database:259 - [32m[数据库初始化] ✅ 订单测试数据库初始化完成！包含 5 位客户, 8 款商品, 10 条订单 (1001-1010)[0m
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:280 - [36m──────────────────────────────────────────────────[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:281 - [36m[数据库] 当前测试数据概览：[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - customers       5 条记录[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - products        8 条记录[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - orders          10 条记录[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - order_items     12 条记录[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - refunds         3 条记录[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:299 - [36m  - 订单状态分布: delivered(5), shipped(2), pending(1), confirmed(1), cancelled(1)[0m
+2026-02-25 15:43:48 | INFO     | app.db.seed_order_data:print_data_summary:303 - [36m──────────────────────────────────────────────────[0m
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-02-25 15:43:48 | INFO     | app.tools.builtin.database:refresh_schema_description:166 - [DatabaseQueryTool] Schema 描述已更新，包含 6 张表: customers, order_items, orders, products, refunds, sqlite_sequence
+2026-02-25 15:43:48 | DEBUG    | app.tools.builtin.database:refresh_schema_description:170 - [DatabaseQueryTool] 完整 Schema:
+【数据库 Schema（请严格按照以下列名编写 SQL）】
+  表 customers: id(INTEGER), name(TEXT), phone(TEXT), email(TEXT), address(TEXT), level(TEXT), created_at(TEXT)
+  表 order_items: id(INTEGER), order_id(INTEGER), product_id(INTEGER), product_name(TEXT), quantity(INTEGER), unit_price(REAL), total_price(REAL)
+  表 orders: id(INTEGER), customer_id(INTEGER), total_amount(REAL), paid_amount(REAL), discount_amount(REAL), status(TEXT), payment_status(TEXT), payment_method(TEXT), shipping_address(TEXT), tracking_number(TEXT), remark(TEXT), created_at(TEXT), shipped_at(TEXT), delivered_at(TEXT)
+  表 products: id(INTEGER), name(TEXT), category(TEXT), price(REAL), cost_price(REAL), stock(INTEGER), unit(TEXT), description(TEXT)
+  表 refunds: id(INTEGER), order_id(INTEGER), amount(REAL), reason(TEXT), status(TEXT), refund_type(TEXT), apply_at(TEXT), processed_at(TEXT), remark(TEXT)
+  表 sqlite_sequence: name(), seq()
+2026-02-25 15:43:48 | INFO     | app.tools.builtin:register_all_builtin_tools:94 - [32m[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.manager:register_skill:28 - Registered skill: [32m数据分析 (data_analysis)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.library:register_all_builtin_skills:57 - [32m已注册内置技能: 数据分析 (data_analysis)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.manager:register_skill:28 - Registered skill: [32m代码生成 (code_generation)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.library:register_all_builtin_skills:57 - [32m已注册内置技能: 代码生成 (code_generation)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.manager:register_skill:28 - Registered skill: [32m文本写作 (text_writing)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.library:register_all_builtin_skills:57 - [32m已注册内置技能: 文本写作 (text_writing)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.manager:register_skill:28 - Registered skill: [32m翻译 (translation)[0m
+2026-02-25 15:43:48 | DEBUG    | app.skills.library:register_all_builtin_skills:57 - [32m已注册内置技能: 翻译 (translation)[0m
+2026-02-25 15:43:48 | INFO     | app.skills.library:register_all_builtin_skills:59 - [32m所有内置技能注册完成，共注册 4 个技能[0m
+2026-02-25 15:43:48 | INFO     | app.agents.child_agent_manager:__init__:56 - [32m子 Agent 管理器初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:119 - [36m已创建 ChildAgentManager，支持多层 Agent 委派[0m
+2026-02-25 15:43:48 | INFO     | app.agents.planning:__init__:94 - [32m规划引擎初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.agents.execution:__init__:91 - [32m执行引擎初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.agents.reflection:__init__:75 - [32m反思引擎初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.agents.langgraph_executor:_build_graph:108 - [34m构建 LangGraph 状态图[0m
+2026-02-25 15:43:48 | INFO     | app.agents.langgraph_executor:_build_graph:138 - [32m状态图构建完成[0m
+2026-02-25 15:43:48 | INFO     | app.agents.langgraph_executor:__init__:97 - [32mLangGraph Agent 执行器初始化完成[0m
+2026-02-25 15:43:48 | INFO     | app.api.endpoints.agents:get_agent_executor:129 - [32mLangGraphAgentExecutor 初始化完成（含 ChildAgentManager）[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:55 - [32m[启动] Agent 执行器预热完成 ✅[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:59 - [32m=======================================================[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:60 - [32m  AI Agent 服务启动完成，等待请求...[0m
+2026-02-25 15:43:48 | INFO     | app.main:lifespan:61 - [32m=======================================================[0m
+2026-02-25 15:43:48 | INFO     | logging:callHandlers:1736 - Application startup complete.
