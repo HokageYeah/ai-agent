@@ -39,8 +39,32 @@ class ToolHub:
         return list(self._tools.values())
     
     def get_schemas(self) -> List[Dict[str, Any]]:
-        """获取所有工具的 Schema 列表（用于 LLM）"""
-        return [tool.schema.model_dump() for tool in self._tools.values()]
+        """
+        获取所有工具的 Schema 列表（用于 LLM function calling）
+        
+        返回符合 OpenAI function calling 规范的格式：
+        {
+            "type": "function",
+            "function": {
+                "name": "...",
+                "description": "...",
+                "parameters": {...}
+            }
+        }
+        """
+        schemas = []
+        for tool in self._tools.values():
+            schema = tool.schema.model_dump()
+            # 包装为 OpenAI function calling 格式
+            schemas.append({
+                "type": "function",
+                "function": {
+                    "name": schema.get("name", ""),
+                    "description": schema.get("description", ""),
+                    "parameters": schema.get("parameters", {"type": "object", "properties": {}})
+                }
+            })
+        return schemas
 
 def tool(name: str = None, description: str = None):
     """

@@ -64,14 +64,16 @@ class ReflectionEngine:
     评估执行结果并决定下一步行动
     """
     
-    def __init__(self, llm_hub):
+    def __init__(self, llm_hub, tool_hub=None):
         """
         初始化反思引擎
         
         Args:
             llm_hub: LLM Hub 实例 (InferenceEngine)
+            tool_hub: 工具中心实例（可选），用于获取工具定义
         """
         self.llm_hub = llm_hub
+        self.tool_hub = tool_hub
         logger.info(f"{Fore.GREEN}反思引擎初始化完成{Style.RESET_ALL}")
     
     async def reflect(
@@ -108,10 +110,17 @@ class ReflectionEngine:
         try:
             from app.llm_hub.inference import InferenceConfig
             
+            # 获取工具定义（用于 LLM function calling）
+            tools = []
+            if self.tool_hub:
+                tools = self.tool_hub.get_schemas()
+                logger.debug(f"{Fore.CYAN}[反思引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            
             config = InferenceConfig(
                 model=agent.agent_config.execution_model,
                 temperature=0.5,
-                max_tokens=1024
+                max_tokens=1024,
+                tools=tools
             )
             
             response = await self.llm_hub.infer(

@@ -24,6 +24,8 @@ from app.schemas.agent_data import (
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.skills.manager import SkillManager
 from app.utils.dependencies import get_skill_manager
+from app.llm_hub.inference import InferenceEngine
+from app.tools.hub import ToolHub
 
 # 创建路由器
 router = APIRouter()
@@ -123,6 +125,7 @@ async def execute_skill(
         # 与 agents.py 和 chat.py 保持一致的初始化方式
         from app.llm_hub.providers.openai import OpenAIProvider
         from app.llm_hub.registry import ModelRegistry
+        from app.llm_hub.tool_gateway import ToolCallingGateway
         from app.core.config import settings
         
         provider = OpenAIProvider(
@@ -130,24 +133,44 @@ async def execute_skill(
             base_url=settings.OPENAI_BASE_URL
         )
         model_registry = ModelRegistry()
-        inference_engine = InferenceEngine(
-            provider=provider,
-            model_registry=model_registry
-        )
-        logger.info(f"{Fore.CYAN}技能执行 - 已创建 InferenceEngine{Style.RESET_ALL}")
         
+        # 创建工具中心并注册所有内置工具
         tool_hub = ToolHub()
-        
-        # 注册所有内置工具
         from app.tools.builtin import register_all_builtin_tools
         register_all_builtin_tools(tool_hub)
         
+        # 创建工具调用网关并注册工具
+        tool_gateway = ToolCallingGateway()
+        # 注册工具到网关
+        for tool in tool_hub.list_tools():
+            tool_gateway.register_tool(
+                name=tool.name,
+                tool_instance=tool,
+                schema=tool.schema.model_dump()
+            )
+        logger.info(f"{Fore.CYAN}技能执行 - 已创建 ToolCallingGateway，注册 {len(tool_hub.list_tools())} 个工具{Style.RESET_ALL}")
+        
+        inference_engine = InferenceEngine(
+            provider=provider,
+            model_registry=model_registry,
+            tool_gateway=tool_gateway
+        )
+        logger.info(f"{Fore.CYAN}技能执行 - 已创建 InferenceEngine (带工具网关){Style.RESET_ALL}")
+        
+        # 获取工具定义列表（用于 LLM function calling）
+        tools = tool_hub.get_schemas()
+        logger.info(f"{Fore.CYAN}技能执行 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+
+        # logger.info(f"{Fore.CYAN}技能执行 - 工具定义: {tools}{Style.RESET_ALL}")
         # 构建 Prompt
         prompt = skill.prompt_template.format(**request.parameters)
         
         # 执行推理
         from app.llm_hub.inference import InferenceConfig
         config = InferenceConfig(**request.config) if request.config else InferenceConfig()
+        
+        # 将工具定义传入配置
+        config.tools = tools
         
         result = await inference_engine.infer(
             messages=[{"role": "user", "content": prompt}],

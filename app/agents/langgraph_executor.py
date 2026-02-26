@@ -87,7 +87,7 @@ class LangGraphAgentExecutor:
         self.tool_gateway = tool_gateway
         
         # 创建各个引擎
-        self.planning_engine = PlanningEngine(llm_hub=llm_hub)
+        self.planning_engine = PlanningEngine(llm_hub=llm_hub, tool_hub=tool_hub)
         self.execution_engine = ExecutionEngine(
             tool_hub=tool_hub,
             skill_manager=skill_manager,
@@ -96,7 +96,7 @@ class LangGraphAgentExecutor:
             # 把网关注入执行引擎，使 _execute_tool() 优先走网关路径
             tool_gateway=tool_gateway
         )
-        self.reflection_engine = ReflectionEngine(llm_hub=llm_hub)
+        self.reflection_engine = ReflectionEngine(llm_hub=llm_hub, tool_hub=tool_hub)
         
         # 构建状态图
         self.graph = self._build_graph()

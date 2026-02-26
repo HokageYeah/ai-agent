@@ -170,6 +170,9 @@ class InferenceEngine:
         # 此时 InferenceEngine 会自动调用 tool_gateway 执行工具，
         # 将结果追加到对话历史，再次调用 LLM，形成原生工具调用循环。
         # 如果不传入 tool_gateway，则不进行原生工具调用循环（保持原有行为）。
+        logger.info(f"{Fore.CYAN}初始化 ToolCallingGateway: {type(tool_gateway).__name__}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}最大工具调用迭代次数: {max_tool_iterations}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}工具调用网关: {tool_gateway}{Style.RESET_ALL}")
         self._tool_gateway = tool_gateway
         self._max_tool_iterations = max_tool_iterations
         
@@ -243,6 +246,7 @@ class InferenceEngine:
                 tools=config.tools
             )
             
+            logger.info(f"{Fore.CYAN}[{request_id}] 构建 Prompt: {prompt_messages}{Style.RESET_ALL}")
             # 步骤 2: 选择模型和供应商
             logger.info(f"{Fore.BLUE}[{request_id}] 步骤 2/4: 选择模型{Style.RESET_ALL}")
             model_info, provider = self._select_model(config)
@@ -264,7 +268,8 @@ class InferenceEngine:
             start_time = datetime.now()
             
             raw_response = await provider.chat(prompt_messages, provider_config)
-            
+
+            logger.info(f"{Fore.CYAN}[{request_id}] 原始响应: {raw_response}{Style.RESET_ALL}")
             elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(
                 f"{Fore.GREEN}[{request_id}] 首次推理完成，耗时: {elapsed_ms:.2f}ms{Style.RESET_ALL}"
@@ -279,6 +284,8 @@ class InferenceEngine:
             #   4. 再次调用 LLM，让其基于工具结果生成最终回复
             #   5. 重复上述步骤，直到 LLM 不再请求工具或达到最大迭代次数
             # ─────────────────────────────────────────────────────────────────
+            logger.info(f"{Fore.CYAN}[{request_id}] 工具调用网关: {self._tool_gateway}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}[{request_id}] 工具定义传入: {config.tools}{Style.RESET_ALL}")
             if self._tool_gateway is not None and config.tools:
                 logger.info(
                     f"{Fore.BLUE}[{request_id}] 步骤 3.5: 检测工具调用循环条件："
@@ -690,6 +697,7 @@ class InferenceEngine:
             #       当 choices=None 且有错误状态码时，说明 API 调用失败
             #       必须抛出异常，而不是把错误信息当作 LLM 内容返回
             if raw_response.get("choices") is None:
+                logger.info(f"{Fore.CYAN}提取内容失败: {raw_response.get("choices")}{Style.RESET_ALL}")
                 status_code = raw_response.get("status")
                 error_msg = raw_response.get("msg") or raw_response.get("error")
                 if status_code is not None or error_msg is not None:
@@ -701,6 +709,7 @@ class InferenceEngine:
             
             # OpenAI 格式
             if "choices" in raw_response and raw_response["choices"] is not None:
+                logger.info(f"{Fore.CYAN}提取内容成功: {raw_response["choices"]}{Style.RESET_ALL}")
                 choice = raw_response["choices"][0]
                 if "message" in choice:
                     # 如果message是字符串，直接返回
@@ -715,10 +724,12 @@ class InferenceEngine:
             
             # Anthropic 格式
             if "content" in raw_response:
+                logger.info(f"{Fore.CYAN}提取内容成功: {raw_response["content"]}{Style.RESET_ALL}")
                 # 如果content是字符串，直接返回
                 if isinstance(raw_response["content"], str):
                     return raw_response["content"]      
                 blocks = raw_response["content"]
+                logger.info(f"{Fore.CYAN}提取内容成功: {blocks}{Style.RESET_ALL}")
                 for block in blocks:
                     if block.get("type") == "text":
                         return block.get("text", "")

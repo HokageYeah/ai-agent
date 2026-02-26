@@ -275,10 +275,18 @@ class ExecutionEngine:
 
         try:
             from app.llm_hub.inference import InferenceConfig
+            
+            # 获取工具定义（用于 LLM function calling）
+            tools = []
+            if self.tool_hub:
+                tools = self.tool_hub.get_schemas()
+                logger.debug(f"{Fore.CYAN}[执行引擎] 答案合成 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            
             config = InferenceConfig(
                 model=agent.agent_config.execution_model,
                 stream=False,
-                temperature=0.3   # 答案合成用低温度，减少幻觉
+                temperature=0.3,   # 答案合成用低温度，减少幻觉
+                tools=tools
             )
             response = await self.llm_hub.infer(
                 messages=[{"role": "user", "content": synthesis_prompt}],
@@ -625,10 +633,15 @@ class ExecutionEngine:
             model = "gpt-3.5-turbo"
             if agent and agent.agent_config:
                 model = agent.agent_config.execution_model
-                
+            
+            # 获取工具定义（用于 LLM function calling）
+            tools = self.tool_hub.get_schemas()
+            logger.debug(f"{Fore.CYAN}[执行引擎] 技能执行 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            
             config = InferenceConfig(
                 model=model,
-                temperature=0.7
+                temperature=0.7,
+                tools=tools
             )
             
             response = await self.llm_hub.infer(

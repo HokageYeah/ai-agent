@@ -83,14 +83,16 @@ class PlanningEngine:
     使用 LLM 为 Agent 生成执行计划
     """
     
-    def __init__(self, llm_hub):
+    def __init__(self, llm_hub, tool_hub=None):
         """
         初始化规划引擎
         
         Args:
             llm_hub: LLM Hub 实例 (InferenceEngine)
+            tool_hub: 工具中心实例（可选），用于获取工具定义
         """
         self.llm_hub = llm_hub
+        self.tool_hub = tool_hub
         logger.info(f"{Fore.GREEN}规划引擎初始化完成{Style.RESET_ALL}")
     
     async def create_plan(
@@ -130,10 +132,17 @@ class PlanningEngine:
         try:
             from app.llm_hub.inference import InferenceConfig
             
+            # 获取工具定义（用于 LLM function calling）
+            tools = []
+            if self.tool_hub:
+                tools = self.tool_hub.get_schemas()
+                logger.debug(f"{Fore.CYAN}[规划引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            
             config = InferenceConfig(
                 model=agent.agent_config.planning_model,
                 temperature=0.7,
-                max_tokens=2048
+                max_tokens=2048,
+                tools=tools
             )
             
             response = await self.llm_hub.infer(

@@ -92,7 +92,11 @@ class AutomationService:
 """
             
             logger.debug(f"{Fore.CYAN}构建处理 Prompt{Style.RESET_ALL}")
-            
+            logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}数据: {data}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}输出格式: {output_format}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}处理 Prompt: {prompt}{Style.RESET_ALL}")
+
             # 2. 调用 LLM 进行数据处理
             from app.llm_hub.inference import InferenceConfig
             
@@ -184,6 +188,11 @@ class AutomationService:
 """
             
             logger.debug(f"{Fore.CYAN}构建报告生成 Prompt{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}报告标题: {title}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}数据源: {data_source}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}报告模板: {template}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}报告配置: {report_config}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}报告生成 Prompt: {prompt}{Style.RESET_ALL}")
             
             # 2. 调用 LLM 生成报告
             from app.llm_hub.inference import InferenceConfig
@@ -244,7 +253,6 @@ class AutomationService:
             Dict[str, Any]: 生成的代码
         """
         logger.info(f"{Fore.BLUE}开始代码生成自动化{Style.RESET_ALL}")
-        logger.info(f"{Fore.CYAN}编程语言: {language}{Style.RESET_ALL}")
         
         try:
             code_config = code_config or {}
@@ -316,6 +324,12 @@ class AutomationService:
 
 请生成完整的代码。
 """
+            
+            logger.info(f"{Fore.CYAN}需求: {requirements}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}编程语言: {language}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}框架: {framework}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}代码配置: {code_config}{Style.RESET_ALL}")
+            logger.info(f"{Fore.CYAN}代码生成 Prompt: {prompt}{Style.RESET_ALL}")
             
             from app.llm_hub.inference import InferenceConfig
             
