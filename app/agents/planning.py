@@ -141,6 +141,8 @@ class PlanningEngine:
                 config=config
             )
             
+            # logger.info(f"{Fore.CYAN}LLM 生成计划: {response.content}{Style.RESET_ALL}")
+            
             # 解析计划
             plan = self._parse_plan(response.content)
             
@@ -238,7 +240,14 @@ class PlanningEngine:
 
 请只返回 JSON，不要包含其他文本。
 """
-        
+        logger.info(f"{Fore.CYAN}规划 Prompt: {prompt}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}工具列表: {tools_text}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}技能列表: {skills_text}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}子 Agent: {child_agents_text}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}角色定义: {agent.role}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}额外上下文: {context}{Style.RESET_ALL}")
+
         return prompt
     
     def _format_tools(self, tools: List[Tool]) -> str:

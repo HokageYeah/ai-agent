@@ -63,7 +63,8 @@ class LangGraphAgentExecutor:
         tool_hub,
         skill_manager,
         child_agent_manager=None,
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        tool_gateway=None
     ):
         """
         初始化 LangGraph Agent 执行器
@@ -74,12 +75,16 @@ class LangGraphAgentExecutor:
             skill_manager: 技能管理器
             child_agent_manager: 子 Agent 管理器（可选）
             max_iterations: 最大迭代次数
+            tool_gateway: ToolCallingGateway 实例（可选）
+                         传入后会注入给 ExecutionEngine，使所有工具调用
+                         统一通过网关执行（带参数校验、超时控制、统计监控）
         """
         self.llm_hub = llm_hub
         self.tool_hub = tool_hub
         self.skill_manager = skill_manager
         self.child_agent_manager = child_agent_manager
         self.max_iterations = max_iterations
+        self.tool_gateway = tool_gateway
         
         # 创建各个引擎
         self.planning_engine = PlanningEngine(llm_hub=llm_hub)
@@ -87,14 +92,20 @@ class LangGraphAgentExecutor:
             tool_hub=tool_hub,
             skill_manager=skill_manager,
             llm_hub=llm_hub,
-            child_agent_manager=child_agent_manager
+            child_agent_manager=child_agent_manager,
+            # 把网关注入执行引擎，使 _execute_tool() 优先走网关路径
+            tool_gateway=tool_gateway
         )
         self.reflection_engine = ReflectionEngine(llm_hub=llm_hub)
         
         # 构建状态图
         self.graph = self._build_graph()
         
-        logger.info(f"{Fore.GREEN}LangGraph Agent 执行器初始化完成{Style.RESET_ALL}")
+        gateway_status = "已启用" if tool_gateway else "未配置"
+        logger.info(
+            f"{Fore.GREEN}LangGraph Agent 执行器初始化完成 "
+            f"[工具网关: {gateway_status}]{Style.RESET_ALL}"
+        )
     
     def _build_graph(self) -> StateGraph:
         """

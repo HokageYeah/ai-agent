@@ -72,7 +72,8 @@ class ExecutionEngine:
         tool_hub: ToolHub,
         skill_manager: SkillManager,
         llm_hub,
-        child_agent_manager=None
+        child_agent_manager=None,
+        tool_gateway=None
     ):
         """
         初始化执行引擎
@@ -82,13 +83,28 @@ class ExecutionEngine:
             skill_manager: 技能管理器
             llm_hub: LLM Hub 实例
             child_agent_manager: 子 Agent 管理器（可选）
+            tool_gateway: ToolCallingGateway 实例（可选）
+                         当提供时，_execute_tool() 会优先通过网关执行工具调用，
+                         统一享受网关的参数校验、日志统计、超时控制等能力；
+                         未提供时降级为直接调用 ToolHub 中的工具实例。
         """
         self.tool_hub = tool_hub
         self.skill_manager = skill_manager
         self.llm_hub = llm_hub
         self.child_agent_manager = child_agent_manager
+        # ToolCallingGateway 实例：路由所有工具调用，实现统一管控
+        self.tool_gateway = tool_gateway
         
-        logger.info(f"{Fore.GREEN}执行引擎初始化完成{Style.RESET_ALL}")
+        if tool_gateway:
+            logger.info(
+                f"{Fore.GREEN}执行引擎初始化完成 "
+                f"[工具网关: 已启用]{Style.RESET_ALL}"
+            )
+        else:
+            logger.info(
+                f"{Fore.GREEN}执行引擎初始化完成 "
+                f"[工具网关: 未配置，使用直接调用模式]{Style.RESET_ALL}"
+            )
     
     async def execute_plan(
         self,
@@ -387,7 +403,7 @@ class ExecutionEngine:
                 "tool_name": tool_name
             }
         
-        # 获取工具
+        # 检查工具是否存在（无论走网关还是直接调用都需要先验证）
         tool = self.tool_hub.get_tool(tool_name)
         if not tool:
             error_msg = f"工具不存在: {tool_name}"
@@ -399,7 +415,78 @@ class ExecutionEngine:
                 "tool_name": tool_name
             }
         
-        # 执行工具
+        # ── 路径一：通过 ToolCallingGateway 执行（推荐路径）─────────────────
+        # 当网关已配置时，所有工具调用统一走网关，享受：
+        #   - 参数 JSON Schema 校验（防止非法参数进入工具）
+        #   - 超时控制（避免工具阻塞整个 Agent 流程）
+        #   - 执行统计（call_count / success_rate / avg_time 等）
+        #   - 统一错误处理和日志追踪
+        if self.tool_gateway:
+            try:
+                logger.info(
+                    f"{Fore.BLUE}[执行引擎→网关] 通过 ToolCallingGateway 执行工具: "
+                    f"{tool_name}{Style.RESET_ALL}"
+                )
+                # 调用网关的直接执行方法（规划执行模式专用，无需构造 LLM 格式响应）
+                from app.llm_hub.tool_gateway import ToolCallStatus
+                gateway_result = await self.tool_gateway.execute_direct_tool_call(
+                    tool_name=tool_name,
+                    arguments=params
+                )
+                
+                if gateway_result.status == ToolCallStatus.SUCCESS:
+                    logger.info(
+                        f"{Fore.GREEN}[执行引擎←网关] 工具 {tool_name} 执行成功，"
+                        f"耗时: {gateway_result.execution_time_ms:.2f}ms{Style.RESET_ALL}"
+                    )
+                    return {
+                        "success": True,
+                        "result": gateway_result.result,
+                        "action": "tool",
+                        "tool_name": tool_name,
+                        # 附加网关统计信息，供调试和监控使用
+                        "execution_time_ms": gateway_result.execution_time_ms
+                    }
+                else:
+                    error_msg = (
+                        f"工具 {tool_name} 通过网关执行失败 "
+                        f"(status={gateway_result.status.value}): {gateway_result.error}"
+                    )
+                    logger.warning(f"{Fore.YELLOW}{error_msg}{Style.RESET_ALL}")
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "action": "tool",
+                        "tool_name": tool_name
+                    }
+            except Exception as e:
+                # 网关执行出现意外异常时，降级到直接调用，保证 Agent 流程不中断
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 网关执行异常，降级为直接调用: {e}{Style.RESET_ALL}"
+                )
+                # 降级执行（fall-through 到下面的直接调用代码）
+                try:
+                    result = await tool.execute(params)
+                    logger.info(
+                        f"{Fore.GREEN}[执行引擎] 工具 {tool_name} 降级直接调用成功{Style.RESET_ALL}"
+                    )
+                    return {
+                        "success": True,
+                        "result": result,
+                        "action": "tool",
+                        "tool_name": tool_name
+                    }
+                except Exception as fallback_e:
+                    error_msg = f"工具 {tool_name} 降级执行也失败: {fallback_e}"
+                    logger.error(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+                    return {
+                        "success": False,
+                        "error": str(fallback_e),
+                        "action": "tool",
+                        "tool_name": tool_name
+                    }
+        
+        # ── 路径二：直接调用（未配置网关时的降级路径）────────────────────────
         try:
             result = await tool.execute(params)
             logger.info(f"{Fore.GREEN}工具 {tool_name} 执行成功{Style.RESET_ALL}")

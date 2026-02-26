@@ -362,7 +362,8 @@ class ToolCallingGateway:
     async def _execute_single_call(
         self,
         tool_call: ToolCall,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        skip_validation: bool = False
     ) -> ToolCallResult:
         """
         执行单个工具调用
@@ -370,6 +371,12 @@ class ToolCallingGateway:
         Args:
             tool_call: 工具调用请求
             context: 上下文信息
+            skip_validation: 是否跳过 Schema 参数校验（默认 False）
+                True  → execute_direct_tool_call() 调用时使用，
+                        参数来自规划引擎，工具 execute() 内部自行做别名容错，
+                        无需网关再做严格校验（否则 file_path vs path 等别名会误判 validation_error）
+                False → execute_tool_calls() 调用时使用（LLM 原生 tool_calls 路径），
+                        LLM 可能传入类型错误或缺失字段，需要严格校验拦截
             
         Returns:
             工具调用结果
@@ -378,7 +385,8 @@ class ToolCallingGateway:
         
         logger.info(
             f"{Fore.BLUE}执行工具调用: {tool_call.tool_name} "
-            f"(call_id={tool_call.call_id}){Style.RESET_ALL}"
+            f"(call_id={tool_call.call_id}, "
+            f"skip_validation={skip_validation}){Style.RESET_ALL}"
         )
         
         # 步骤 1: 查找工具
@@ -399,11 +407,14 @@ class ToolCallingGateway:
                 execution_time_ms=elapsed_ms
             )
         
-        # 步骤 2: 参数验证
+        # 步骤 2: 参数验证（仅 LLM 原生工具调用路径才执行严格校验）
+        # 背景：规划引擎生成的参数名（如 file_path）与工具 Schema 中的字段名（如 path）
+        # 可能存在别名差异，工具的 execute() 方法内部已做别名容错处理，
+        # 因此 execute_direct_tool_call() 调用时需跳过此校验，避免误判 validation_error。
         schema = self._tool_schemas.get(tool_call.tool_name)
         validated_args = tool_call.arguments
         
-        if schema:
+        if schema and not skip_validation:
             validated_args = self._validate_arguments(
                 tool_call.tool_name,
                 tool_call.arguments,
@@ -420,6 +431,11 @@ class ToolCallingGateway:
                     error="Argument validation failed",
                     execution_time_ms=elapsed_ms
                 )
+        elif skip_validation:
+            logger.debug(
+                f"{Fore.CYAN}[ToolCallingGateway] 跳过 Schema 校验（直接调用模式），"
+                f"由工具 execute() 自行处理参数别名容错{Style.RESET_ALL}"
+            )
         
         # 步骤 3: 执行工具
         try:
@@ -569,6 +585,92 @@ class ToolCallingGateway:
         
         expected_types = type_mapping.get(expected_type, (object,))
         return isinstance(value, expected_types)
+    
+    async def execute_direct_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        call_id: Optional[str] = None
+    ) -> "ToolCallResult":
+        """
+        直接执行工具调用（ExecutionEngine 专用入口）
+        
+        与 execute_tool_calls() 不同，该方法不需要 LLM 的 tool_calls 格式响应，
+        而是直接接受工具名称和参数，适用于规划执行模式（Planning → Execution）下的
+        工具调用。这样 ExecutionEngine 就可以把所有工具执行流量都路由到网关，
+        统一享受网关的参数校验、日志记录、超时控制、统计监控等能力。
+        
+        使用场景：
+        - ExecutionEngine 在执行 plan.steps 中的 action=tool 步骤时调用
+        - 由规划引擎生成执行计划，再由执行引擎通过此方法路由到网关
+        
+        与 execute_tool_calls() 的区别：
+        - execute_tool_calls(): 解析 LLM 的 tool_calls 响应 → 批量执行
+        - execute_direct_tool_call(): 直接指定工具名和参数 → 单次执行
+        
+        Args:
+            tool_name: 要执行的工具名称（必须已在网关中注册）
+            arguments: 工具参数字典（JSON-serializable）
+            call_id: 调用 ID（可选，不传则自动生成）
+            
+        Returns:
+            ToolCallResult: 工具执行结果（含状态、结果数据、耗时等）
+        """
+        import uuid as _uuid
+        
+        # 自动生成调用 ID（用于日志追踪）
+        effective_call_id = call_id or f"direct-{_uuid.uuid4().hex[:12]}"
+        
+        logger.info(
+            f"{Fore.BLUE}[ToolCallingGateway] 直接工具调用: "
+            f"tool={tool_name}, call_id={effective_call_id}{Style.RESET_ALL}"
+        )
+        logger.debug(
+            f"{Fore.CYAN}[ToolCallingGateway] 工具参数: {arguments}{Style.RESET_ALL}"
+        )
+        
+        # 构造 ToolCall 对象（与 LLM 原生 tool_calls 路径使用相同的结构）
+        tool_call = ToolCall(
+            call_id=effective_call_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            raw_data={
+                # 标记来源，方便调试区分原生 tool_calls 和直接调用
+                "source": "direct_call",
+                "tool_name": tool_name,
+                "arguments": arguments
+            }
+        )
+        
+        # 复用内部的单次执行逻辑（超时控制、错误处理等）
+        # 注意：skip_validation=True 跳过严格 Schema 校验
+        # 原因：规划引擎生成的参数名（如 file_path）可能与 Schema 定义（如 path）存在别名差异，
+        #       工具的 execute() 内部已做容错（params.get("path") or params.get("file_path") ...），
+        #       由工具自身处理参数兼容，避免网关误判 validation_error 导致工具无法执行
+        result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+        
+        # 更新统计信息
+        self._stats["total_calls"] += 1
+        if result.status == ToolCallStatus.SUCCESS:
+            self._stats["successful_calls"] += 1
+            logger.info(
+                f"{Fore.GREEN}[ToolCallingGateway] 直接工具调用成功: "
+                f"tool={tool_name}, 耗时={result.execution_time_ms:.2f}ms{Style.RESET_ALL}"
+            )
+        else:
+            self._stats["failed_calls"] += 1
+            logger.warning(
+                f"{Fore.YELLOW}[ToolCallingGateway] 直接工具调用失败: "
+                f"tool={tool_name}, status={result.status.value}, "
+                f"error={result.error}{Style.RESET_ALL}"
+            )
+        
+        # 追加到调用历史
+        self._call_history.append(result)
+        if len(self._call_history) > 100:
+            self._call_history = self._call_history[-100:]
+        
+        return result
     
     def format_results_for_llm(self, results: List[ToolCallResult]) -> List[Dict[str, Any]]:
         """

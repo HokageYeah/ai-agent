@@ -197,6 +197,14 @@ class ReflectionEngine:
 请只返回 JSON，不要包含其他文本。
 """
         
+        logger.info(f"{Fore.CYAN}反思 Prompt: {prompt}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}执行结果: {result_text}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}执行状态: {'成功' if execution_result.success else '失败'}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}错误信息: {execution_result.error if execution_result.error else '无'}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}步骤结果数量: {len(execution_result.step_results)}{Style.RESET_ALL}")
+        logger.info(f"{Fore.CYAN}最终结果: {execution_result.result}{Style.RESET_ALL}")
+        
         return prompt
     
     def _parse_reflection(self, llm_output: str, execution_result=None) -> ReflectionResult:

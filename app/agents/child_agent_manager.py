@@ -34,7 +34,8 @@ class ChildAgentManager:
         agent_registry: AgentRegistry,
         llm_hub,
         tool_hub,
-        skill_manager
+        skill_manager,
+        tool_gateway=None
     ):
         """
         初始化子 Agent 管理器
@@ -44,16 +45,25 @@ class ChildAgentManager:
             llm_hub: LLM Hub  实例
             tool_hub: 工具中心
             skill_manager: 技能管理器
+            tool_gateway: ToolCallingGateway 实例（可选）
+                         传入后会注入给每个子 Agent 创建的 LangGraphAgentExecutor，
+                         保证子 Agent 的工具调用也走统一的工具网关路径
         """
         self.agent_registry = agent_registry
         self.llm_hub = llm_hub
         self.tool_hub = tool_hub
         self.skill_manager = skill_manager
+        # 工具网关实例，用于注入子 Agent 的执行引擎
+        self.tool_gateway = tool_gateway
         
         # 记录当前调用链，用于检测循环依赖
         self._call_stack: Set[str] = set()
         
-        logger.info(f"{Fore.GREEN}子 Agent 管理器初始化完成{Style.RESET_ALL}")
+        gateway_status = "已启用" if tool_gateway else "未配置"
+        logger.info(
+            f"{Fore.GREEN}子 Agent 管理器初始化完成 "
+            f"[工具网关: {gateway_status}]{Style.RESET_ALL}"
+        )
     
     async def delegate_task(
         self,
@@ -111,12 +121,14 @@ class ChildAgentManager:
             max_iterations = child_agent.agent_config.max_iterations if child_agent.agent_config else 3
             
             # 创建 LangGraph 执行器，子 Agent 同样可以拥有完整的反思闭环
+            # 注意：tool_gateway 也需要传入，保证子 Agent 的工具调用也走统一网关
             executor = LangGraphAgentExecutor(
                 llm_hub=self.llm_hub,
                 tool_hub=self.tool_hub,
                 skill_manager=self.skill_manager,
                 child_agent_manager=self,  # 递归支持（如子Agent叫孙Agent）
-                max_iterations=max_iterations
+                max_iterations=max_iterations,
+                tool_gateway=self.tool_gateway  # 把网关透传给子 Agent 的执行引擎
             )
             
             logger.info(f"{Fore.BLUE}开始执行子 Agent {child_agent.name} (LangGraph引擎){Style.RESET_ALL}")

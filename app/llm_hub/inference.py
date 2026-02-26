@@ -15,7 +15,7 @@
 """
 
 import asyncio
-from typing import Dict, List, Any, Optional, AsyncIterator
+from typing import Dict, List, Any, Optional, AsyncIterator, Tuple
 from loguru import logger
 from colorama import Fore, Style, Back
 from datetime import datetime
@@ -135,7 +135,9 @@ class InferenceEngine:
         provider: LLMProvider,
         model_registry: Any,  # ModelRegistry
         prompt_builder: Optional[PromptBuilder] = None,
-        streaming_manager: Optional[StreamingManager] = None
+        streaming_manager: Optional[StreamingManager] = None,
+        tool_gateway: Optional[Any] = None,  # ToolCallingGateway 实例（可选）
+        max_tool_iterations: int = 5  # 工具调用循环的最大迭代次数，防止无限循环
     ):
         """
         初始化推理引擎
@@ -145,6 +147,12 @@ class InferenceEngine:
             model_registry: 模型注册中心
             prompt_builder: Prompt 构建器（可选，将自动创建）
             streaming_manager: 流式输出管理器（可选，将自动创建）
+            tool_gateway: 工具调用网关实例（可选）。
+                         当 LLM 响应包含 tool_calls（finish_reason=tool_calls）时，
+                         自动通过网关执行工具并将结果追加到对话，再次调用 LLM，
+                         形成"原生工具调用循环"，直到 LLM 不再请求工具或达到最大迭代次数。
+            max_tool_iterations: 工具调用循环的最大迭代次数（默认 5 次），
+                                 避免无限递归调用工具。
         """
         self._provider = provider
         self._model_registry = model_registry
@@ -156,6 +164,24 @@ class InferenceEngine:
         # 初始化流式输出管理器
         self._streaming_manager = streaming_manager or StreamingManager()
         logger.info(f"{Fore.CYAN}初始化 StreamingManager: {type(self._streaming_manager).__name__}{Style.RESET_ALL}")
+        
+        # ─── 工具调用网关（核心新增功能）───────────────────────────────
+        # 当 config.tools 非空时，LLM 可能返回 finish_reason=tool_calls，
+        # 此时 InferenceEngine 会自动调用 tool_gateway 执行工具，
+        # 将结果追加到对话历史，再次调用 LLM，形成原生工具调用循环。
+        # 如果不传入 tool_gateway，则不进行原生工具调用循环（保持原有行为）。
+        self._tool_gateway = tool_gateway
+        self._max_tool_iterations = max_tool_iterations
+        
+        if tool_gateway is not None:
+            logger.info(
+                f"{Fore.GREEN}工具调用网关已接入 InferenceEngine，"
+                f"最大工具调用迭代次数: {max_tool_iterations}{Style.RESET_ALL}"
+            )
+        else:
+            logger.info(
+                f"{Fore.YELLOW}工具调用网关未配置，LLM 原生工具调用循环不可用{Style.RESET_ALL}"
+            )
         
         # 请求计数器
         self._request_count = 0
@@ -241,8 +267,40 @@ class InferenceEngine:
             
             elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(
-                f"{Fore.GREEN}[{request_id}] 推理完成，耗时: {elapsed_ms:.2f}ms{Style.RESET_ALL}"
+                f"{Fore.GREEN}[{request_id}] 首次推理完成，耗时: {elapsed_ms:.2f}ms{Style.RESET_ALL}"
             )
+            
+            # 步骤 3.5: 工具调用循环（仅当工具网关已配置且本次请求携带工具定义时才激活）
+            # ─────────────────────────────────────────────────────────────────
+            # 原生工具调用流程：
+            #   1. LLM 返回 finish_reason=tool_calls，说明 LLM 想要调用工具
+            #   2. 通过 ToolCallingGateway 执行 LLM 请求的工具
+            #   3. 将 assistant 消息（含 tool_calls）和工具执行结果追加到对话历史
+            #   4. 再次调用 LLM，让其基于工具结果生成最终回复
+            #   5. 重复上述步骤，直到 LLM 不再请求工具或达到最大迭代次数
+            # ─────────────────────────────────────────────────────────────────
+            if self._tool_gateway is not None and config.tools:
+                logger.info(
+                    f"{Fore.BLUE}[{request_id}] 步骤 3.5: 检测工具调用循环条件："
+                    f"tool_gateway={type(self._tool_gateway).__name__}, "
+                    f"tools_count={len(config.tools)}{Style.RESET_ALL}"
+                )
+                raw_response, prompt_messages = await self._handle_tool_calling_loop(
+                    initial_response=raw_response,
+                    messages=prompt_messages,
+                    provider=provider,
+                    provider_config=provider_config,
+                    request_id=request_id
+                )
+            else:
+                if self._tool_gateway is None:
+                    logger.debug(
+                        f"{Fore.CYAN}[{request_id}] 工具调用网关未配置，跳过工具调用循环{Style.RESET_ALL}"
+                    )
+                elif not config.tools:
+                    logger.debug(
+                        f"{Fore.CYAN}[{request_id}] 当前请求未携带工具定义，跳过工具调用循环{Style.RESET_ALL}"
+                    )
             
             # 步骤 4: 后处理结果
             logger.info(f"{Fore.BLUE}[{request_id}] 步骤 4/4: 后处理结果{Style.RESET_ALL}")
@@ -254,6 +312,8 @@ class InferenceEngine:
             logger.info(
                 f"{Fore.GREEN}[{request_id}] 推理请求成功完成，结果长度: {len(result.content)} 字符{Style.RESET_ALL}"
             )
+            # 打印推理结果
+            logger.info(f"{Fore.GREEN}[{request_id}] 推理结果: {result.content}{Style.RESET_ALL}")
             
             return result
             
@@ -333,6 +393,191 @@ class InferenceEngine:
                 f"{Fore.RED}[{request_id}] 流式推理请求失败: {e}{Style.RESET_ALL}"
             )
             raise
+    
+    async def _handle_tool_calling_loop(
+        self,
+        initial_response: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        provider: LLMProvider,
+        provider_config: Dict[str, Any],
+        request_id: str
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        工具调用循环处理器（Tool Calling Loop）
+        
+        当 LLM 响应包含 finish_reason=tool_calls 时，自动执行以下循环：
+          1. 将 LLM 的 assistant 消息（含 tool_calls）追加到对话历史
+          2. 通过 ToolCallingGateway 执行 LLM 请求的工具
+          3. 将所有工具执行结果（role=tool 消息）追加到对话历史
+          4. 再次调用 LLM，基于工具结果生成最终回复
+          5. 重复上述过程，直到：
+             - LLM 不再返回 tool_calls（任务完成）
+             - 或达到 max_tool_iterations 上限（防止无限循环）
+        
+        Args:
+            initial_response: 首次 LLM 调用的原始响应
+            messages: 当前对话消息列表（会在循环中被追加）
+            provider: LLM 供应商实例
+            provider_config: 供应商配置参数
+            request_id: 请求 ID（用于日志追踪）
+            
+        Returns:
+            Tuple[最终 LLM 响应, 更新后的消息列表]
+        """
+        current_response = initial_response
+        # 使用列表副本，避免修改原始消息列表
+        current_messages = list(messages)
+        
+        logger.info(
+            f"{Fore.CYAN}[{request_id}] 🔄 开始工具调用循环，"
+            f"最大迭代次数: {self._max_tool_iterations}{Style.RESET_ALL}"
+        )
+        
+        for iteration in range(self._max_tool_iterations):
+            # ── 检查 LLM 是否请求工具调用 ──────────────────────────────────
+            finish_reason = self._extract_finish_reason(current_response)
+            
+            if finish_reason != "tool_calls":
+                # LLM 不再请求工具，循环正常结束
+                logger.info(
+                    f"{Fore.GREEN}[{request_id}] 工具调用循环正常结束 "
+                    f"(第 {iteration} 次迭代，finish_reason={finish_reason}){Style.RESET_ALL}"
+                )
+                break
+            
+            logger.info(
+                f"{Fore.BLUE}[{request_id}] 🔧 工具调用循环 - 第 {iteration + 1}/{self._max_tool_iterations} 次迭代{Style.RESET_ALL}"
+            )
+            
+            # ── 步骤 A: 提取 assistant 消息（含 tool_calls）并追加到对话 ──
+            # 必须将 assistant 的 tool_calls 消息加入对话，
+            # 否则 LLM 会不知道之前请求了哪些工具
+            assistant_msg = self._extract_assistant_message(current_response)
+            if assistant_msg:
+                current_messages.append(assistant_msg)
+                logger.debug(
+                    f"{Fore.CYAN}[{request_id}] 已追加 assistant 消息（含 tool_calls）到对话历史{Style.RESET_ALL}"
+                )
+            else:
+                logger.warning(
+                    f"{Fore.YELLOW}[{request_id}] 无法从响应中提取 assistant 消息，跳过本次追加{Style.RESET_ALL}"
+                )
+            
+            # ── 步骤 B: 通过 ToolCallingGateway 执行 LLM 请求的工具 ──────
+            logger.info(
+                f"{Fore.BLUE}[{request_id}] 📦 正在通过 ToolCallingGateway 执行工具调用...{Style.RESET_ALL}"
+            )
+            
+            try:
+                tool_results = await self._tool_gateway.execute_tool_calls(current_response)
+            except Exception as e:
+                logger.error(
+                    f"{Fore.RED}[{request_id}] ToolCallingGateway 执行工具失败: {e}，退出工具调用循环{Style.RESET_ALL}"
+                )
+                break
+            
+            if not tool_results:
+                # 没有可执行的工具调用结果，异常情况，退出循环避免死锁
+                logger.warning(
+                    f"{Fore.YELLOW}[{request_id}] 工具调用结果为空（LLM 请求了工具但网关未执行任何工具），退出循环{Style.RESET_ALL}"
+                )
+                break
+            
+            logger.info(
+                f"{Fore.GREEN}[{request_id}] ✅ 工具调用执行完成，共 {len(tool_results)} 个结果{Style.RESET_ALL}"
+            )
+            
+            # ── 步骤 C: 将工具执行结果追加到对话历史 ───────────────────────
+            # 每个工具结果对应一条 role=tool 的消息，包含 tool_call_id 和执行内容
+            for tool_result in tool_results:
+                result_msg = tool_result.to_dict()
+                current_messages.append(result_msg)
+                logger.debug(
+                    f"{Fore.CYAN}[{request_id}] 已追加工具结果到对话历史: "
+                    f"tool={tool_result.tool_name}, status={tool_result.status.value}{Style.RESET_ALL}"
+                )
+            
+            # ── 步骤 D: 携带工具结果再次调用 LLM ─────────────────────────
+            logger.info(
+                f"{Fore.BLUE}[{request_id}] 🤖 携带工具结果再次调用 LLM（对话历史共 {len(current_messages)} 条消息）{Style.RESET_ALL}"
+            )
+            
+            try:
+                loop_start = datetime.now()
+                current_response = await provider.chat(current_messages, provider_config)
+                loop_elapsed_ms = (datetime.now() - loop_start).total_seconds() * 1000
+                
+                logger.info(
+                    f"{Fore.GREEN}[{request_id}] LLM 再次调用完成，耗时: {loop_elapsed_ms:.2f}ms{Style.RESET_ALL}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"{Fore.RED}[{request_id}] 工具调用循环中 LLM 调用失败: {e}，退出循环{Style.RESET_ALL}"
+                )
+                break
+        
+        else:
+            # for-else 语句：当循环正常跑完（未 break）时执行
+            # 说明达到了最大迭代次数上限
+            logger.warning(
+                f"{Fore.YELLOW}[{request_id}] ⚠️ 工具调用循环达到最大迭代次数上限 "
+                f"({self._max_tool_iterations} 次)，强制退出。"
+                f"这可能意味着 LLM 持续请求工具调用，请检查工具实现或调整迭代次数。{Style.RESET_ALL}"
+            )
+        
+        logger.info(
+            f"{Fore.GREEN}[{request_id}] 工具调用循环结束，"
+            f"对话历史共 {len(current_messages)} 条消息{Style.RESET_ALL}"
+        )
+        
+        return current_response, current_messages
+    
+    def _extract_assistant_message(self, raw_response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        从 LLM 原始响应中提取 assistant 消息体（包含 tool_calls）
+        
+        当 LLM 返回 finish_reason=tool_calls 时，响应体的 choices[0].message 包含：
+        - role: "assistant"
+        - content: null 或 空字符串
+        - tool_calls: [{id, type, function: {name, arguments}}]
+        
+        必须将这个消息追加到对话历史中，才能让 LLM 知道它之前请求了哪些工具。
+        
+        Args:
+            raw_response: LLM 的原始响应字典
+            
+        Returns:
+            assistant 消息字典，如果无法提取则返回 None
+        """
+        try:
+            # OpenAI 格式: {"choices": [{"message": {...}}]}
+            if "choices" in raw_response and raw_response["choices"]:
+                choice = raw_response["choices"][0]
+                message = choice.get("message")
+                
+                if message and isinstance(message, dict):
+                    # 确保消息有正确的 role 字段
+                    if "role" not in message:
+                        message = {"role": "assistant", **message}
+                    
+                    logger.debug(
+                        f"{Fore.CYAN}提取 assistant 消息成功，"
+                        f"tool_calls 数量: {len(message.get('tool_calls', []))}{Style.RESET_ALL}"
+                    )
+                    return message
+            
+            # Anthropic 格式暂不支持提取 assistant 消息（其工具调用格式不同）
+            # Anthropic 使用 content blocks 而不是 tool_calls 字段
+            logger.debug(
+                f"{Fore.YELLOW}响应格式不是 OpenAI 标准格式，无法提取 assistant 消息{Style.RESET_ALL}"
+            )
+            return None
+            
+        except Exception as e:
+            logger.warning(
+                f"{Fore.YELLOW}提取 assistant 消息时发生异常: {e}{Style.RESET_ALL}"
+            )
+            return None
     
     def _select_model(
         self,
@@ -561,15 +806,34 @@ class InferenceEngine:
         获取推理引擎统计信息
         
         Returns:
-            统计信息字典
+            统计信息字典，包含请求数量、错误率、工具调用网关状态等
         """
-        return {
+        stats = {
             "total_requests": self._request_count,
             "successful_requests": self._request_count - self._error_count,
             "failed_requests": self._error_count,
             "error_rate": self._error_count / max(1, self._request_count),
-            "provider": type(self._provider).__name__
+            "provider": type(self._provider).__name__,
+            # 工具调用网关状态
+            "tool_gateway_enabled": self._tool_gateway is not None,
+            "max_tool_iterations": self._max_tool_iterations
         }
+        
+        # 如果工具调用网关已配置，也返回网关的统计信息
+        if self._tool_gateway is not None:
+            try:
+                gateway_stats = self._tool_gateway.get_stats()
+                stats["tool_gateway_stats"] = gateway_stats
+                logger.debug(
+                    f"{Fore.CYAN}推理引擎统计信息中包含工具调用网关数据: "
+                    f"total_tool_calls={gateway_stats.get('total_calls', 0)}{Style.RESET_ALL}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"{Fore.YELLOW}获取工具调用网关统计信息失败: {e}{Style.RESET_ALL}"
+                )
+        
+        return stats
     
     def reset_stats(self) -> None:
         """
@@ -587,7 +851,9 @@ class InferenceEngine:
 
 def create_inference_engine(
     provider: LLMProvider,
-    model_registry: Any
+    model_registry: Any,
+    tool_gateway: Optional[Any] = None,
+    max_tool_iterations: int = 5
 ) -> InferenceEngine:
     """
     创建推理引擎实例的便捷函数
@@ -595,14 +861,28 @@ def create_inference_engine(
     Args:
         provider: LLM 供应商实例
         model_registry: 模型注册中心
+        tool_gateway: 工具调用网关实例（可选）。
+                     传入后，推理引擎将支持 LLM 原生工具调用循环。
+                     当 LLM 响应包含 tool_calls 时，网关将自动执行工具并重新调用 LLM。
+        max_tool_iterations: 工具调用循环最大迭代次数（默认 5 次）
         
     Returns:
         新的 InferenceEngine 实例
     """
-    return InferenceEngine(
+    engine = InferenceEngine(
         provider=provider,
-        model_registry=model_registry
+        model_registry=model_registry,
+        tool_gateway=tool_gateway,
+        max_tool_iterations=max_tool_iterations
     )
+    
+    if tool_gateway is not None:
+        logger.info(
+            f"{Fore.GREEN}已创建集成工具调用网关的推理引擎，"
+            f"最大工具调用迭代次数: {max_tool_iterations}{Style.RESET_ALL}"
+        )
+    
+    return engine
 
 
 # =============================================================================
