@@ -1525,6 +1525,121 @@ REFUND_AGENT = WorkerAgent(
 )
 ```
 
+### 6.10 流式执行与实时轨迹推送（SSE）
+
+Agent 执行过程中的每个阶段都可以通过 **Server-Sent Events（SSE）** 实时推送给前端，实现"思考过程可视化"。
+
+#### 6.10.1 流式事件架构
+
+```
+前端（Vue.js）
+  ↑ SSE 流：text/event-stream
+FastAPI StreamingResponse
+  ↑ async for event in execute_stream()
+LangGraphAgentExecutor.execute_stream()
+  │
+  ├── asyncio.Queue（协程安全事件通道）
+  │       ↑ await stream_callback(event)
+  └── LangGraph 状态图节点（_plan_node / _execute_node / _reflect_node）
+              └── _emit_stream_event() 统一发射
+```
+
+#### 6.10.2 标准化流式事件格式
+
+每个事件以如下 JSON 结构传输（SSE `data:` 字段）：
+
+```json
+{
+  "event":      "plan_complete",
+  "iteration":  1,
+  "step_index": 0,
+  "step_total": 3,
+  "timestamp":  1709000000000,
+  "data": {
+    "reasoning": "用户需要查询订单，委派子 Agent 处理",
+    "steps": [
+      {"type": "delegate", "agent": "order_agent", "task": "查询订单 1002"},
+      {"type": "final_answer"}
+    ]
+  }
+}
+```
+
+#### 6.10.3 事件类型全览
+
+| 事件类型             | 触发时机                   | 关键 data 字段                              |
+|---------------------|--------------------------|---------------------------------------------|
+| `plan_start`        | 规划阶段开始               | `message`                                   |
+| `plan_complete`     | 规划完成                   | `reasoning`, `steps`（步骤列表）             |
+| `step_start`        | 单步执行开始               | `step_type`, `step_name`                    |
+| `tool_complete`     | 工具调用完成               | `tool_name`, `result`, `execution_time_ms`  |
+| `skill_complete`    | 技能调用完成               | `skill_name`, `result`, `execution_time_ms` |
+| `delegate_complete` | 子 Agent 委派完成          | `agent_name`, `step_results`, `result`      |
+| `step_complete`     | 单步完成                   | `step_name`, `message`, 进度信息             |
+| `execute_complete`  | 执行阶段全部完成           | `step_summary`（步骤摘要列表）               |
+| `reflection_start`  | 反思阶段开始               | `message`                                   |
+| `reflection_complete`| 反思完成                  | `needs_replanning`, `summary`               |
+| `final_answer`      | 最终答案生成               | `answer`                                    |
+| `complete`          | 全流程完成                 | `result`, `iterations`                      |
+| `step_error`        | 步骤执行失败               | `error`, `step_name`                        |
+
+#### 6.10.4 API 端点
+
+```python
+@router.post("/agents/{agent_id}/execute/stream")
+async def execute_agent_stream(
+    agent_id: str,
+    request: AgentExecuteRequest
+) -> StreamingResponse:
+    """
+    流式执行 Agent（Server-Sent Events）
+    Content-Type: text/event-stream
+    Cache-Control: no-cache
+    X-Accel-Buffering: no
+    """
+    async def generate():
+        async for event in executor.execute_stream(agent=agent, task=request.task):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+#### 6.10.5 前端接入
+
+前端通过 `Fetch API` + `ReadableStream` 消费 SSE 流：
+
+```typescript
+// web/src/api/modules/agents.ts
+async function* executeAgentStream(agentId: string, task: string) {
+  const response = await fetch(`/api/v1/agents/${agentId}/execute/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task })
+  })
+  
+  const reader = response.body!.getReader()
+  let buffer = ''
+  
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    
+    buffer += new TextDecoder().decode(value)
+    // 按 SSE 消息边界 \n\n 分割，防止粘包
+    const messages = buffer.split('\n\n')
+    buffer = messages.pop() || ''
+    
+    for (const msg of messages) {
+      const dataLine = msg.split('\n').find(l => l.startsWith('data: '))
+      if (dataLine) {
+        yield JSON.parse(dataLine.slice(6))
+      }
+    }
+  }
+}
+```
+
+
 ---
 
 ## 7. 非 Agent AI 服务

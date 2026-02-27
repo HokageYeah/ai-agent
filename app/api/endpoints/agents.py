@@ -5,18 +5,22 @@ Agent API Endpoints (Agent 接口)
 本模块提供 Agent 相关的 REST API 端点。
 
 功能特点：
-1. POST /agents/{agent_id}/execute - 执行 Agent
-2. GET /agents - 列出所有 Agent
-3. GET /agents/{agent_id} - 获取 Agent 详情
+1. POST /agents/{agent_id}/execute - 执行 Agent（非流式，返回完整结果）
+2. POST /agents/{agent_id}/execute/stream - 流式执行 Agent（实时推送执行轨迹）
+3. GET /agents - 列出所有 Agent
+4. GET /agents/{agent_id} - 获取 Agent 详情
 
 作者: AI Agent Team
 创建时间: 2026-02-17
+更新时间: 2026-02-27（添加流式执行端点）
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi.responses import StreamingResponse
+from typing import List, AsyncIterator
 from loguru import logger
 from colorama import Fore, Style
+import json
 
 from app.schemas.agent_data import (
     AgentExecuteRequest, AgentExecuteResponse,
@@ -142,6 +146,122 @@ async def execute_agent(
     except Exception as e:
         logger.error(f"{Fore.RED}【Agent接口】Agent 执行失败: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=500, detail=f"Agent 执行失败: {str(e)}")
+
+
+@router.post("/agents/{agent_id}/execute/stream")
+async def execute_agent_stream(
+    agent_id: str,
+    request: AgentExecuteRequest,
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+    agent_executor: LangGraphAgentExecutor = Depends(get_agent_executor)
+):
+    """
+    流式执行 Agent（Server-Sent Events）
+    
+    这是一个流式端点，通过 Server-Sent Events (SSE) 实时推送 Agent 执行过程中的各个阶段事件，
+    让前端可以逐步展示 Agent 的思考、计划、工具调用等执行轨迹。
+
+    消息流向：
+      前端 HTTP 请求
+        ↓
+      LangGraphAgentExecutor.execute_stream()
+        ↓
+      逐个 yield 执行事件（SSE）
+        ↓
+      前端 EventSource 接收并展示
+
+    事件类型：
+      - plan_start: 开始规划
+      - plan_reasoning: 规划推理过程
+      - plan_complete: 规划完成
+      - step_start: 开始执行步骤
+      - step_progress: 步骤执行中
+      - step_complete: 步骤执行完成
+      - tool_start: 开始调用工具
+      - tool_complete: 工具调用完成
+      - delegate_start: 开始委派子 Agent
+      - delegate_complete: 委派子 Agent 完成
+      - reflection_start: 开始反思
+      - reflection_complete: 反思完成
+      - final_answer: 最终答案
+      - error: 执行错误
+      - complete: 执行完成
+
+    Args:
+        agent_id: Agent ID
+        request: 执行请求体
+        agent_registry: Agent 注册表（依赖注入）
+        agent_executor: Agent 执行器（依赖注入）
+
+    Returns:
+        StreamingResponse: Server-Sent Events 流
+    """
+    logger.info(
+        f"{Fore.CYAN}【Agent流式接口】接收到 Agent 流式执行请求 — "
+        f"Agent ID: {agent_id}{Style.RESET_ALL}"
+    )
+    logger.info(f"{Fore.CYAN}【Agent流式接口】任务: {request.task[:100]}{Style.RESET_ALL}")
+
+    # 验证 Agent 是否存在
+    agent = agent_registry.get_agent(agent_id)
+    if not agent:
+        logger.error(f"{Fore.RED}【Agent流式接口】Agent 不存在: {agent_id}{Style.RESET_ALL}")
+        raise HTTPException(status_code=404, detail=f"Agent 不存在: {agent_id}")
+
+    async def generate_stream() -> AsyncIterator[str]:
+        """
+        内部生成器：从 AgentExecutor 获取流式事件
+        
+        使用 SSE (Server-Sent Events) 格式发送事件：
+        data: {json}
+        
+        Yields:
+            str: SSE 格式的事件数据
+        """
+        try:
+            # 使用 execute_stream 方法获取异步生成器
+            async for event in agent_executor.execute_stream(
+                agent=agent,
+                task=request.task,
+                conversation_history=request.conversation_history
+            ):
+                # 将事件序列化为 JSON 并用 SSE 格式发送
+                event_json = json.dumps(event, ensure_ascii=False)
+                yield f"data: {event_json}\n\n"
+                
+                # 记录日志
+                event_type = event.get("event", "unknown")
+                iteration = event.get("iteration", 0)
+                logger.debug(
+                    f"{Fore.BLUE}[Agent流式接口] 发送事件: {event_type}, "
+                    f"迭代: {iteration}{Style.RESET_ALL}"
+                )
+
+            logger.info(
+                f"{Fore.GREEN}【Agent流式接口】Agent 流式执行完成{Style.RESET_ALL}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"{Fore.RED}【Agent流式接口】Agent 流式执行失败: {e}{Style.RESET_ALL}"
+            )
+            # 发送错误事件
+            error_event = {
+                "event": "error",
+                "error": str(e),
+                "timestamp": __import__("time").time() * 1000
+            }
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用 Nginx 缓冲
+        }
+    )
 
 
 @router.get("/agents")

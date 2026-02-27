@@ -493,15 +493,24 @@
     - **输入**: 设计文档第 9 章
     - **输出**: `app/agents/langgraph_executor.py`
     - **需求**:
-        1. 实现 `AgentState` TypedDict
+        1. 实现 `AgentState` TypedDict（含 `task`、`agent` 字段）
         2. 实现 `LangGraphAgentExecutor` 类
         3. 实现状态图构建（plan -> execute -> reflect）
         4. 实现条件边和状态转换
+        5. 实现 `execute_stream()` 异步生成器，支持 SSE 实时流式输出
+        6. 实现 `_emit_stream_event()` 统一事件发射（含 timestamp）
+        7. 使用 `asyncio.Queue` + 哨兵对象实现协程安全的异步事件通道
+        8. 各节点通过 `stream_callback` 发射标准化事件：
+           `plan_start` / `plan_complete` / `step_start` / `tool_complete` /
+           `skill_complete` / `delegate_complete` / `step_complete` /
+           `execute_complete` / `reflection_start` / `reflection_complete` /
+           `final_answer` / `complete` / `step_error`
     - **验收标准**:
         - [x] 单元测试：`pytest tests/unit/test_langgraph_executor.py` 通过
         - [x] 验证 StateGraph 正确执行 Agent 生命周期
+        - [x] 验证 `execute_stream()` 能实时逐步 yield 各阶段事件
     - **依赖**: Task 4.1, Task 4.2, Task 4.3
-    - **工时估算**: 2 天
+    - **工时估算**: 2 天（含流式扩展 +0.5 天）
 
 |||- [x] **Task 5.2: Chat Service**
     - **输入**: 设计文档第 10 章
@@ -578,15 +587,17 @@
     - **输入**: 设计文档 13.1 节
     - **输出**: `app/api/endpoints/agents.py`
     - **需求**:
-        1. 实现 `POST /agents/{agent_id}/execute` 端点
-        2. 实现 `GET /agents` 端点
-        3. 实现 `GET /agents/{agent_id}` 端点
+        1. 实现 `POST /agents/{agent_id}/execute` 端点（非流式）
+        2. 实现 `POST /agents/{agent_id}/execute/stream` 端点（SSE 流式）
+        3. 实现 `GET /agents` 端点
+        4. 实现 `GET /agents/{agent_id}` 端点
     - **验收标准**:
         - [x] API 测试：`pytest tests/api/test_agents.py` 通过
         - [x] 验证 Agent 执行功能
-    - **依赖**: Task 4.5
-    - **工时估算**: 1 天
-    - **完成日期**: 2026-02-17
+        - [x] 验证流式端点能以 SSE 格式实时推送执行轨迹事件
+    - **依赖**: Task 4.5, Task 5.1
+    - **工时估算**: 1 天（含流式扩展 +0.5 天）
+    - **完成日期**: 2026-02-27
 
 |||- [x] **Task 6.3: Workflow API Endpoints**
     - **输入**: 设计文档 13.1 节
@@ -643,6 +654,31 @@
     - **工时估算**: 2 天
     - **完成日期**: 2026-02-17
 
+|||- [x] **Task 6.7: Agent 流式执行前端展示**
+    - **输入**: `web/src/views/agents/AgentsView.vue`, `web/src/api/modules/agents.ts`
+    - **输出**: 前端 Agent 思考与执行轨迹实时可视化页面
+    - **需求**:
+        1. 实现 `executeAgentStream()` 函数（基于 Fetch API + ReadableStream 解析 SSE）
+        2. 修复 SSE 分块缓冲区解析（按 `\n\n` 分割消息边界，防止粘包/丢包）
+        3. 在 `AgentsView.vue` 中实现"Agent 思考与执行轨迹"可视化面板，包含：
+           - 阶段进度指示条（规划 → 执行 → 反思 → 完成）
+           - 各步骤事件卡片（plan / step / tool / skill / delegate / reflect / final_answer）
+           - 工具调用结果表格展示（数据库查询结果）
+           - 子 Agent 委派展示（含子步骤明细、反思摘要、最终结果）
+           - step_complete 步骤完成信息（step_name + 进度）
+           - execute_complete 执行摘要（step_summary 列表）
+           - 实时自动滚动至最新事件
+        4. 使用 UI/UX Pro Max 设计规范（Minimal + Flat + 清新渐变，与主题配色一致）
+        5. 修复 `<el-icon>` 与文字的水平对齐问题（inline-flex + align-items: center）
+    - **验收标准**:
+        - [x] 前端页面能实时展示 Agent 执行的每一步事件
+        - [x] 各类事件（工具调用、技能调用、子 Agent 委派）均有对应的可视化卡片
+        - [x] 步骤编号显示正确（1-indexed）
+        - [x] 数据库查询结果以表格形式展示
+        - [x] 图标与文字水平对齐正常
+    - **依赖**: Task 6.2, Task 5.1
+    - **工时估算**: 2 天
+    - **完成日期**: 2026-02-27
 ---
 
 ## 任务统计
@@ -654,9 +690,9 @@
 || Phase 2: Tool Hub 与内置工具 | 7 | 7 天 |
 || Phase 3: Skill Library 与 Workflow | 5 | 4 天 |
 || Phase 4: Agent 核心系统 | 5 | 6 天 |
-|| Phase 5: LangGraph 集成与 Services | 5 | 7 天 |
-|| Phase 6: API Endpoints 与集成测试 | 6 | 6.5 天 |
-|| **总计** | **43** | **约 46.5 天** |
+|| Phase 5: LangGraph 集成与 Services | 5 | 7.5 天（+流式扩展） |
+|| Phase 6: API Endpoints 与集成测试 | 7 | 9 天（+流式端点+前端展示） |
+|| **总计** | **44** | **约 49.5 天** |
 
 ---
 

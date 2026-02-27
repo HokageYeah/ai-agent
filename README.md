@@ -73,6 +73,7 @@ graph TD
     subgraph APILayer ["REST API 中枢点 (app/api)"]
         API_Chat["POST /api/v1/chat (基础通用多轮对话)"]
         API_Agent["POST /api/v1/agents/{id}/execute (指定专门Agent执行)"]
+        API_AgentStream["POST /api/v1/agents/{id}/execute/stream (流式执行+SSE轨迹推送)"]
         API_Workflow["POST /api/v1/workflows/... (定式流程引擎执行)"]
         API_Skill["POST /api/v1/skills/{id}/execute (特定AI技能独立调用)"]
         API_Config["GET /tools, /skills, /agents (配置化获取平台能力)"]
@@ -228,9 +229,9 @@ sequenceDiagram
 #### 二、 Agent 代理引擎接口
 当你不需要聊天，而是需要派发一个明确的**专业任务**给系统后台的某个特定专家 (Agent) 时使用。
 
-4. **指定专家 Agent 执行深度任务**
+4. **指定专家 Agent 执行深度任务（非流式）**
    - **请求端点**: `POST /api/v1/agents/{agent_id}/execute`
-   - **作用介绍**: 跳过通用对话外壳，直接唤起特定领域的 Agent（例如专做代码审计的 Agent，专做翻译的 Agent）处理长耗时任务。
+   - **作用介绍**: 跳过通用对话外壳，直接唤起特定领域的 Agent 处理长耗时任务，完整结果一次性返回。
    - **请求体示例**:
      ```json
      {
@@ -239,13 +240,32 @@ sequenceDiagram
      }
      ```
 
-5. **获取所有可用专家 Agent 列表**
-   - **请求端点**: `GET /api/v1/agents`
-   - **作用介绍**: 返回后端在 `AgentRegistry` 中注册的所有 Agent 详细信息，可用于前端构建“Agent 专家应用商店”。
+5. **指定专家 Agent 流式执行（SSE 实时轨迹推送）**
+   - **请求端点**: `POST /api/v1/agents/{agent_id}/execute/stream`
+   - **作用介绍**: 与端点 4 的 Agent 执行逻辑完全相同，但以 **Server-Sent Events（SSE）** 格式实时流式推送执行轨迹的每一个阶段——规划步骤、工具调用结果、子 Agent 委派进度、反思过程和最终答案，适合前端实现"Agent 思考过程实时可视化"。
+   - **请求体**: 同端点 4。
+   - **响应格式**（SSE，`Content-Type: text/event-stream`）:
+     ```
+     data: {"event": "plan_start", "iteration": 1, ...}
+     
+     data: {"event": "plan_complete", "data": {"steps": [...]}, ...}
+     
+     data: {"event": "tool_complete", "data": {"tool_name": "database_query", ...}, ...}
+     
+     data: {"event": "final_answer", "data": {"answer": "..."}, ...}
+     
+     data: {"event": "complete", ...}
+     ```
+   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `final_answer` / `complete` / `step_error`
 
-6. **获取单个 Agent 详情**
+6. **获取所有可用专家 Agent 列表**
+   - **请求端点**: `GET /api/v1/agents`
+   - **作用介绍**: 返回后端在 `AgentRegistry` 中注册的所有 Agent 详细信息，可用于前端构建"Agent 专家应用商店"。
+
+7. **获取单个 Agent 详情**
    - **请求端点**: `GET /api/v1/agents/{agent_id}`
    - **作用介绍**: 查询某一个特型 Agent 的具体能力说明与默认配置。
+
 
 #### 三、 Skill 技能库接口
 有时不需要大模型复杂的 Planning（规划步骤），外部系统就是有一个明确的 “点击翻译此文” 按钮。可以通过此通道一键强制调用技能。
@@ -298,6 +318,82 @@ sequenceDiagram
 12. **搜索公众号文章**: `GET /api/v1/wx/search?query=关键词`
 13. **提交处理文章列表**: `POST /api/v1/wx/articles`
 14. **获取单篇文章详情**: `POST /api/v1/wx/article/detail`
+
+## 🖥️ 前端 Web 管理界面
+
+项目内置了一个基于 **Vue 3 + Element Plus** 的现代化前端管理界面，位于 `web/` 目录。
+
+### 核心功能
+
+- **Agent 列表与执行**：浏览所有可用 Agent，发起任务并实时查看执行轨迹
+- **Agent 思考与执行轨迹可视化**：以时间轴卡片的形式，实时展示 Agent 执行的每一步：
+  - 📋 规划阶段：可视化展示 LLM 生成的执行计划和推理过程
+  - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）
+  - 🔍 反思阶段：展示反思结论与是否重新规划的决策
+  - ✅ 完成阶段：最终答案的 Markdown 渲染
+- **阶段进度指示条**：顶部动态展示当前所在阶段（规划 → 执行 → 反思 → 完成）
+- **Chat 对话**：普通多轮对话（含打字机流式效果）
+- **工具/技能/工作流管理**：查看已注册的工具、技能和工作流定义
+
+### Agent 流式执行调用时序
+
+以下序列图展示了 SSE 流式模式下前端与后端的完整交互过程：
+
+```mermaid
+sequenceDiagram
+    participant Web as Vue 前端 (AgentsView.vue)
+    participant API as FastAPI (execute/stream)
+    participant Exec as LangGraphAgentExecutor
+    participant LLM as LLM Hub
+    participant Tools as Tool/Skill/ChildAgent
+
+    Web->>API: POST /agents/cs_master/execute/stream
+    API->>Exec: execute_stream(agent, task)
+    
+    Note over Exec: 创建 asyncio.Queue 事件通道
+
+    Exec-->>Web: SSE: plan_start
+    Exec->>LLM: 规划阶段：生成执行步骤
+    LLM-->>Exec: steps: [delegate → order_agent, final_answer]
+    Exec-->>Web: SSE: plan_complete (含步骤列表)
+
+    Exec-->>Web: SSE: step_start (委派 order_agent)
+    Exec->>Tools: 委派 order_agent 执行订单查询
+    Tools->>LLM: order_agent 规划 + 执行
+    Tools-->>Exec: 子步骤结果 + 最终结果
+    Exec-->>Web: SSE: delegate_complete (含子步骤明细)
+
+    Exec-->>Web: SSE: step_complete (步骤 1/2 完成)
+    Exec-->>Web: SSE: execute_complete (执行摘要)
+
+    Exec-->>Web: SSE: reflection_start
+    Exec->>LLM: 反思：结果是否满足需求？
+    LLM-->>Exec: needs_replanning=false
+    Exec-->>Web: SSE: reflection_complete
+
+    Exec-->>Web: SSE: final_answer (最终答案)
+    Exec-->>Web: SSE: complete
+```
+
+### 启动前端开发服务器
+
+```bash
+cd web
+npm install
+npm run dev
+# 访问 http://localhost:5173
+```
+
+### 前端技术栈
+
+| 框架/库 | 版本 | 用途 |
+|---------|------|------|
+| Vue 3 | 3.x | 前端框架（Composition API）|
+| Element Plus | 2.x | UI 组件库 |
+| Vite | 5.x | 构建工具 |
+| Vue Router | 4.x | 路由管理 |
+| Marked | 12.x | Markdown 渲染 |
+
 
 ## 💻 安装和运行
 

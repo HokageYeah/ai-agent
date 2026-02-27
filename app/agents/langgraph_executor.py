@@ -9,12 +9,16 @@ LangGraph Agent Executor (基于 LangGraph 的 Agent 执行器)
 2. 实现 Plan -> Execute -> Reflect 循环
 3. 支持条件边和状态转换
 4. 集成现有的 Planning、Execution、Reflection 引擎
+5. 支持流式事件输出，实时推送执行轨迹
 
 作者: AI Agent Team
 创建时间: 2026-02-15
+更新时间: 2026-02-27（添加流式事件支持）
 """
 
-from typing import TypedDict, Dict, List, Any, Optional, Annotated
+import json
+import time
+from typing import TypedDict, Dict, List, Any, Optional, Annotated, AsyncIterator, Callable
 from typing_extensions import TypedDict as TypedDictExt
 from loguru import logger
 from colorama import Fore, Style
@@ -26,6 +30,7 @@ from app.agents.base import Agent
 from app.agents.planning import PlanningEngine, Plan
 from app.agents.execution import ExecutionEngine, ExecutionResult
 from app.agents.reflection import ReflectionEngine
+import asyncio
 
 
 class AgentState(TypedDict):
@@ -50,11 +55,16 @@ class AgentState(TypedDict):
     agent: Optional[Agent]
 
 
+# 流式事件回调函数类型
+StreamCallback = Optional[Callable[[Dict[str, Any]], None]]
+
+
 class LangGraphAgentExecutor:
     """
     基于 LangGraph 的 Agent 执行器
     
-    使用 StateGraph 管理 Agent 的执行生命周期
+    使用 StateGraph 管理 Agent 的执行生命周期。
+    支持流式事件输出，实时推送执行轨迹到前端。
     """
     
     def __init__(
@@ -107,12 +117,161 @@ class LangGraphAgentExecutor:
             f"[工具网关: {gateway_status}]{Style.RESET_ALL}"
         )
     
-    def _build_graph(self) -> StateGraph:
+    def _create_stream_event(
+        self,
+        event_type: str,
+        iteration: int = 0,
+        step_index: Optional[int] = None,
+        step_total: Optional[int] = None,
+        data: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        创建流式事件数据
+        
+        Args:
+            event_type: 事件类型
+            iteration: 当前迭代次数
+            step_index: 当前步骤索引
+            step_total: 步骤总数
+            data: 事件数据
+            error: 错误信息
+            
+        Returns:
+            Dict[str, Any]: 事件数据字典
+        """
+        event = {
+            "event": event_type,
+            "iteration": iteration,
+            "timestamp": time.time() * 1000,  # 毫秒时间戳
+        }
+        
+        if step_index is not None:
+            event["step_index"] = step_index
+        if step_total is not None:
+            event["step_total"] = step_total
+        if data is not None:
+            event["data"] = data
+        if error is not None:
+            event["error"] = error
+            
+        return event
+    
+    async def _emit_stream_event(
+        self,
+        stream_callback: Optional[Callable],
+        event_type: str,
+        iteration: int = 0,
+        step_index: Optional[int] = None,
+        step_total: Optional[int] = None,
+        data: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
+    ):
+        """
+        发送流式事件到回调函数（支持同步和异步回调）
+
+        Args:
+            stream_callback: 流式回调函数
+            event_type: 事件类型
+            iteration: 当前迭代次数
+            step_index: 当前步骤索引
+            step_total: 步骤总数
+            data: 事件数据
+            error: 错误信息
+        """
+        if stream_callback is None:
+            return
+
+        event = self._create_stream_event(
+            event_type=event_type,
+            iteration=iteration,
+            step_index=step_index,
+            step_total=step_total,
+            data=data,
+            error=error
+        )
+
+        try:
+            # 检查回调是否为异步函数
+            if asyncio.iscoroutinefunction(stream_callback):
+                await stream_callback(event)
+            else:
+                stream_callback(event)
+        except Exception as e:
+            # 流式回调出错不影响主流程，只记录日志
+            logger.warning(
+                f"{Fore.YELLOW}[流式事件] 发送事件失败: {e}{Style.RESET_ALL}"
+            )
+
+    def _emit_stream_event_sync(
+        self,
+        stream_callback: Optional[Callable],
+        event_type: str,
+        iteration: int = 0,
+        step_index: Optional[int] = None,
+        step_total: Optional[int] = None,
+        data: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
+    ):
+        """
+        同步版本的发送流式事件（在同步节点函数中使用）
+        通过 asyncio.get_event_loop() 在同步环境中调用异步回调
+
+        Args:
+            stream_callback: 流式回调函数
+            event_type: 事件类型
+            iteration: 当前迭代次数
+            step_index: 当前步骤索引
+            step_total: 步骤总数
+            data: 事件数据
+            error: 错误信息
+        """
+        if stream_callback is None:
+            return
+
+        event = self._create_stream_event(
+            event_type=event_type,
+            iteration=iteration,
+            step_index=step_index,
+            step_total=step_total,
+            data=data,
+            error=error
+        )
+
+        try:
+            # 检查回调是否为异步函数
+            if asyncio.iscoroutinefunction(stream_callback):
+                # 在同步环境中调用异步回调
+                try:
+                    loop = asyncio.get_running_loop()
+                    # 如果已经有运行中的循环，创建一个任务
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(
+                            asyncio.run,
+                            stream_callback(event)
+                        )
+                        future.result()
+                except RuntimeError:
+                    # 没有运行中的循环，可以直接创建新循环
+                    asyncio.run(stream_callback(event))
+            else:
+                stream_callback(event)
+        except Exception as e:
+            # 流式回调出错不影响主流程，只记录日志
+            logger.warning(
+                f"{Fore.YELLOW}[流式事件] 发送事件失败: {e}{Style.RESET_ALL}"
+            )
+
+    def _build_graph(self, stream_callback: Optional[Callable] = None) -> StateGraph:
         """
         构建 LangGraph 状态图
         
         定义节点、边和条件边
         
+        Args:
+            stream_callback: 流式事件回调函数（可选）
+            
         Returns:
             StateGraph: 编译后的状态图
         """
@@ -121,10 +280,23 @@ class LangGraphAgentExecutor:
         # 创建状态图
         workflow = StateGraph(AgentState)
         
+        # 创建带有流式回调的异步节点包装函数
+        async def plan_node_wrapper(state: AgentState) -> AgentState:
+            """包装规划节点，添加流式回调支持"""
+            return await self._plan_node(state, stream_callback)
+        
+        async def execute_node_wrapper(state: AgentState) -> AgentState:
+            """包装执行节点，添加流式回调支持"""
+            return await self._execute_node(state, stream_callback)
+        
+        async def reflect_node_wrapper(state: AgentState) -> AgentState:
+            """包装反思节点，添加流式回调支持"""
+            return await self._reflect_node(state, stream_callback)
+        
         # 添加节点
-        workflow.add_node("plan", self._plan_node)
-        workflow.add_node("execute", self._execute_node)
-        workflow.add_node("reflect", self._reflect_node)
+        workflow.add_node("plan", plan_node_wrapper)
+        workflow.add_node("execute", execute_node_wrapper)
+        workflow.add_node("reflect", reflect_node_wrapper)
         
         # 设置入口点
         workflow.set_entry_point("plan")
@@ -150,7 +322,11 @@ class LangGraphAgentExecutor:
         
         return compiled_graph
     
-    async def _plan_node(self, state: AgentState) -> AgentState:
+    async def _plan_node(
+        self, 
+        state: AgentState,
+        stream_callback: Optional[Callable] = None
+    ) -> AgentState:
         """
         规划节点
         
@@ -158,11 +334,21 @@ class LangGraphAgentExecutor:
         
         Args:
             state: 当前状态
+            stream_callback: 流式事件回调函数
             
         Returns:
             AgentState: 更新后的状态
         """
-        logger.info(f"{Fore.BLUE}[Plan Node] 开始规划{Style.RESET_ALL}")
+        iteration = state.get("iterations", 0)
+        logger.info(f"{Fore.BLUE}[Plan Node] 开始规划 (迭代 {iteration}){Style.RESET_ALL}")
+        
+        # 发送开始规划事件（await 必须加，否则 async 方法不执行）
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="plan_start",
+            iteration=iteration,
+            data={"message": "Agent 正在分析任务并制定执行计划..."}
+        )
         
         agent = state["agent"]
         task = state["task"]
@@ -209,16 +395,34 @@ class LangGraphAgentExecutor:
         
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
         
+        # 发送规划完成事件（含推理过程和步骤列表）
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="plan_complete",
+            iteration=iteration,
+            data={
+                "reasoning": plan.reasoning,
+                "steps": [step.to_dict() for step in plan.steps]
+            }
+        )
+        
         # 更新状态
         state["current_plan"] = plan
         state["messages"].append({
             "role": "system",
-            "content": f"Created plan with {len(plan.steps)} steps"
+            "type": "plan",
+            "content": f"Created plan with {len(plan.steps)} steps",
+            "reasoning": plan.reasoning,
+            "steps": [step.to_dict() for step in plan.steps]
         })
         
         return state
     
-    async def _execute_node(self, state: AgentState) -> AgentState:
+    async def _execute_node(
+        self, 
+        state: AgentState,
+        stream_callback: Optional[Callable] = None
+    ) -> AgentState:
         """
         执行节点
         
@@ -226,14 +430,29 @@ class LangGraphAgentExecutor:
         
         Args:
             state: 当前状态
+            stream_callback: 流式事件回调函数
             
         Returns:
             AgentState: 更新后的状态
         """
-        logger.info(f"{Fore.BLUE}[Execute Node] 开始执行计划{Style.RESET_ALL}")
+        iteration = state.get("iterations", 0)
+        logger.info(f"{Fore.BLUE}[Execute Node] 开始执行计划 (迭代 {iteration}){Style.RESET_ALL}")
         
         agent = state["agent"]
         plan = state["current_plan"]
+        
+        # 获取步骤总数
+        step_total = len(plan.steps) if plan and plan.steps else 0
+        
+        # 发送开始执行事件（通知前端执行阶段开始）
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="step_start",
+            iteration=iteration,
+            step_index=0,
+            step_total=step_total,
+            data={"message": f"开始执行 {step_total} 个计划步骤..."}
+        )
         
         # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
         execution_result = await self.execution_engine.execute_plan(
@@ -244,20 +463,140 @@ class LangGraphAgentExecutor:
         
         logger.info(f"{Fore.GREEN}[Execute Node] 计划执行完成{Style.RESET_ALL}")
         
+        # 遍历步骤结果，逐个发送流式事件（每个步骤对应前端一个时间轴节点）
+        if execution_result.step_results:
+            for idx, step_result in enumerate(execution_result.step_results, 1):
+                action = step_result.get("action", "unknown")
+                
+                logger.debug(
+                    f"{Fore.CYAN}[Execute Node] 发送步骤事件 {idx}/{step_total}: "
+                    f"action={action}{Style.RESET_ALL}"
+                )
+                
+                # 根据步骤类型发送对应事件（await 必须加）
+                if action == "tool":
+                    # 工具调用完成事件
+                    await self._emit_stream_event(
+                        stream_callback,
+                        event_type="tool_complete",
+                        iteration=iteration,
+                        step_index=idx,
+                        step_total=step_total,
+                        data=step_result
+                    )
+                elif action == "delegate":
+                    # 子 Agent 委派完成事件
+                    await self._emit_stream_event(
+                        stream_callback,
+                        event_type="delegate_complete",
+                        iteration=iteration,
+                        step_index=idx,
+                        step_total=step_total,
+                        data=step_result
+                    )
+                elif action == "skill":
+                    # 技能调用完成事件（使用专用 skill_complete 事件类型）
+                    await self._emit_stream_event(
+                        stream_callback,
+                        event_type="skill_complete",
+                        iteration=iteration,
+                        step_index=idx,
+                        step_total=step_total,
+                        data=step_result
+                    )
+                else:
+                    # 其他步骤（如 final_answer 合成），添加步骤名称描述
+                    step_action = step_result.get("action", "unknown")
+                    step_name = ""
+                    if step_action == "tool":
+                        step_name = f"调用工具: {step_result.get('tool_name', 'unknown')}"
+                    elif step_action == "skill":
+                        step_name = f"使用技能: {step_result.get('skill_id', 'unknown')}"
+                    elif step_action == "delegate":
+                        step_name = f"委派子Agent: {step_result.get('agent_id', 'unknown')}"
+                    elif step_action == "final_answer":
+                        step_name = "合成最终答案"
+                    else:
+                        step_name = f"执行步骤: {step_action}"
+                    
+                    await self._emit_stream_event(
+                        stream_callback,
+                        event_type="step_complete",
+                        iteration=iteration,
+                        step_index=idx,
+                        step_total=step_total,
+                        data={
+                            **step_result,
+                            "step_name": step_name,
+                            "message": f"步骤 {idx}/{step_total} 完成: {step_name}"
+                        }
+                    )
+                
+                # 若步骤失败，额外发送错误事件
+                if not step_result.get("success", True):
+                    await self._emit_stream_event(
+                        stream_callback,
+                        event_type="step_error",
+                        iteration=iteration,
+                        step_index=idx,
+                        step_total=step_total,
+                        error=step_result.get("error", "Unknown error"),
+                        data=step_result
+                    )
+        
         # 更新状态
         state["tool_outputs"].extend(execution_result.step_results)
         state["messages"].append({
             "role": "system",
-            "content": f"Executed plan: success={execution_result.success}"
+            "type": "execution",
+            "content": f"Executed plan: success={execution_result.success}",
+            "step_results": execution_result.step_results
         })
         
         # 如果执行成功，保存结果
         if execution_result.success:
             state["final_result"] = execution_result.to_dict()
         
+        # 发送整个执行阶段完成事件，添加步骤摘要信息
+        # 构建步骤摘要列表
+        step_summary_list = []
+        if execution_result.step_results:
+            for i, sr in enumerate(execution_result.step_results, 1):
+                action = sr.get("action", "unknown")
+                if action == "tool":
+                    step_summary_list.append(f"{i}. 工具: {sr.get('tool_name', 'unknown')}")
+                elif action == "skill":
+                    step_summary_list.append(f"{i}. 技能: {sr.get('skill_id', 'unknown')}")
+                elif action == "delegate":
+                    step_summary_list.append(f"{i}. 委派: {sr.get('agent_id', 'unknown')}")
+                elif action == "final_answer":
+                    step_summary_list.append(f"{i}. 合成答案")
+                else:
+                    step_summary_list.append(f"{i}. {action}")
+        
+        step_summary = "\n".join(step_summary_list) if step_summary_list else "无"
+        
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="execute_complete",
+            iteration=iteration,
+            step_index=step_total,
+            step_total=step_total,
+            data={
+                "success": execution_result.success,
+                "message": "所有步骤执行完毕，准备进入反思阶段",
+                "step_summary": step_summary_list,
+                "steps_count": len(execution_result.step_results) if execution_result.step_results else 0
+            }
+        )
+        
         return state
     
-    async def _reflect_node(self, state: AgentState) -> AgentState:
+    async def _reflect_node(
+        self, 
+        state: AgentState,
+        stream_callback: Optional[Callable] = None
+    ) -> AgentState:
         """
         反思节点
         
@@ -265,22 +604,41 @@ class LangGraphAgentExecutor:
         
         Args:
             state: 当前状态
+            stream_callback: 流式事件回调函数
             
         Returns:
             AgentState: 更新后的状态
         """
-        logger.info(f"{Fore.BLUE}[Reflect Node] 开始反思{Style.RESET_ALL}")
+        iteration = state.get("iterations", 0)
+        logger.info(f"{Fore.BLUE}[Reflect Node] 开始反思 (迭代 {iteration}){Style.RESET_ALL}")
+        
+        # 发送开始反思事件（通知前端进入自我反思阶段）
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="reflection_start",
+            iteration=iteration,
+            data={"message": "Agent 正在评估执行结果..."}
+        )
         
         agent = state["agent"]
         task = state["task"]
         final_result = state.get("final_result")
-        
+
         if not final_result:
             logger.warning(f"{Fore.YELLOW}[Reflect Node] 没有执行结果，跳过反思{Style.RESET_ALL}")
             state["messages"].append({
                 "role": "system",
+                "type": "reflection",
                 "content": "No execution result to reflect on"
             })
+            
+            # 发送反思完成事件（无结果时跳过反思）
+            await self._emit_stream_event(
+                stream_callback,
+                event_type="reflection_complete",
+                iteration=iteration,
+                data={"skipped": True, "message": "无执行结果，跳过反思"}
+            )
             return state
         
         # 将字典转换为 ExecutionResult 对象
@@ -300,12 +658,22 @@ class LangGraphAgentExecutor:
         
         logger.info(f"{Fore.GREEN}[Reflect Node] 反思完成{Style.RESET_ALL}")
         
+        # 发送反思完成事件（含反思结果：是否成功、是否需要重规划、反馈建议）
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="reflection_complete",
+            iteration=iteration,
+            data=reflection_result.to_dict()
+        )
+        
         # 更新状态
         state["iterations"] += 1
         state["messages"].append({
             "role": "system",
+            "type": "reflection",
             "content": f"Reflection: success={reflection_result.success}, "
-                      f"needs_replanning={reflection_result.needs_replanning}"
+                      f"needs_replanning={reflection_result.needs_replanning}",
+            "reflection": reflection_result.to_dict()
         })
         
         # 将反思结果保存到 final_result (作为字典)
@@ -479,6 +847,249 @@ class LangGraphAgentExecutor:
                 "error": str(e),
                 "iterations": 0
             }
+
+    async def execute_stream(
+        self,
+        agent: Agent,
+        task: str,
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        流式执行 Agent 任务（使用 asyncio.Queue + 哨兵模式）
+        
+        这是一个异步生成器方法，逐步 yield 出 Agent 执行过程中的各个阶段事件，
+        让前端可以实时展示 Agent 的思考、计划、工具调用等执行轨迹。
+        
+        核心设计：
+        - 使用 asyncio.Queue 作为事件通道（与 event loop 同线程，无锁无竞争）
+        - stream_callback 是异步函数，await queue.put() 将事件入队
+        - 主生成器循环 await queue.get() 实时取出事件并 yield 给 SSE
+        - 图执行完成后向队列放入 SENTINEL 哨兵值，通知主循环退出
+        - 使用 asyncio.create_task 并发运行图执行与事件泵
+        
+        事件流向：
+          plan_start → plan_complete
+          step_start → tool_complete/skill_complete/delegate_complete → execute_complete
+          reflection_start → reflection_complete
+          final_answer → complete
+        
+        Args:
+            agent: Agent 实例
+            task: 任务描述
+            conversation_history: 对话历史（可选）
+            
+        Yields:
+            Dict[str, Any]: 流式事件字典，字段：
+                - event: 事件类型
+                - iteration: 当前迭代次数
+                - step_index: 当前步骤索引
+                - step_total: 步骤总数
+                - data: 事件数据
+                - error: 错误信息
+                - timestamp: 时间戳（毫秒）
+        """
+        logger.info(
+            f"{Fore.BLUE}开始流式执行 Agent 任务 - Agent: {agent.name}{Style.RESET_ALL}"
+        )
+        logger.info(f"{Fore.CYAN}任务: {task[:200]}{Style.RESET_ALL}")
+
+        # ─────────────────────────────────────────────────────────────────────
+        # 1. 创建 asyncio.Queue 作为事件通道
+        #    asyncio.Queue 是协程安全的，不需要 threading.Queue + to_thread
+        # ─────────────────────────────────────────────────────────────────────
+        event_queue: asyncio.Queue = asyncio.Queue()
+        
+        # 哨兵对象：放入队列表示图执行已完成，主循环应退出
+        _SENTINEL = object()
+
+        async def stream_callback(event: Dict[str, Any]):
+            """
+            异步流式回调：将事件放入 asyncio.Queue
+            
+            被 _plan_node / _execute_node / _reflect_node 中的
+            await self._emit_stream_event(...) 间接调用。
+            由于是 async 函数，_emit_stream_event 内部会 await 它，
+            从而保证事件在 yield 之前就被写入队列。
+            """
+            await event_queue.put(event)
+            logger.debug(
+                f"{Fore.BLUE}[流式回调] 事件已入队: "
+                f"type={event.get('event')}, iter={event.get('iteration')}{Style.RESET_ALL}"
+            )
+
+        # ─────────────────────────────────────────────────────────────────────
+        # 2. 构建带有流式回调的状态图（每次 execute_stream 创建独立图实例）
+        # ─────────────────────────────────────────────────────────────────────
+        graph = self._build_graph(stream_callback=stream_callback)
+
+        # 初始化 Agent 状态
+        initial_state: AgentState = {
+            "messages": conversation_history or [],
+            "current_plan": None,
+            "tool_outputs": [],
+            "iterations": 0,
+            "final_result": None,
+            "task": task,
+            "agent": agent
+        }
+
+        # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量
+        recursion_limit = self.max_iterations * 4 + 10
+        logger.info(
+            f"{Fore.BLUE}开始执行状态图，recursion_limit={recursion_limit}，"
+            f"max_iterations={self.max_iterations}{Style.RESET_ALL}"
+        )
+
+        # ─────────────────────────────────────────────────────────────────────
+        # 3. 图执行后台任务：执行完毕后放入 SENTINEL 通知主循环
+        # ─────────────────────────────────────────────────────────────────────
+        final_state_holder: Dict[str, Any] = {}
+
+        async def run_graph():
+            """
+            后台任务：运行 LangGraph 状态图
+            - 图内节点通过 stream_callback 将事件放入队列
+            - 执行完毕（或出错）后，放入 SENTINEL 通知主循环退出
+            """
+            try:
+                logger.info(f"{Fore.BLUE}[后台任务] 图执行开始{Style.RESET_ALL}")
+                result = await graph.ainvoke(
+                    initial_state,
+                    config={"recursion_limit": recursion_limit}
+                )
+                final_state_holder["result"] = result
+                logger.info(
+                    f"{Fore.GREEN}[后台任务] 图执行完成，"
+                    f"迭代次数: {result.get('iterations', 0)}{Style.RESET_ALL}"
+                )
+            except Exception as e:
+                final_state_holder["error"] = str(e)
+                logger.error(
+                    f"{Fore.RED}[后台任务] 图执行异常: {e}{Style.RESET_ALL}"
+                )
+            finally:
+                # 无论成功还是失败，都放入 SENTINEL 让主循环退出
+                await event_queue.put(_SENTINEL)
+                logger.debug(f"{Fore.YELLOW}[后台任务] SENTINEL 已入队{Style.RESET_ALL}")
+
+        # ─────────────────────────────────────────────────────────────────────
+        # 4. 启动后台图执行任务，主循环实时读取并 yield 事件
+        # ─────────────────────────────────────────────────────────────────────
+        graph_task = asyncio.create_task(run_graph())
+        
+        try:
+            # 主循环：持续从队列取事件并 yield 给 SSE 连接
+            # 遇到 SENTINEL 时退出循环
+            event_count = 0
+            while True:
+                # await queue.get() 会让出控制权给 event loop，
+                # 使 run_graph() 中的图节点得以执行和产生事件
+                raw_event = await event_queue.get()
+                
+                # 收到哨兵，说明图执行已完成
+                if raw_event is _SENTINEL:
+                    logger.debug(
+                        f"{Fore.YELLOW}[主循环] 收到 SENTINEL，"
+                        f"共处理 {event_count} 个事件{Style.RESET_ALL}"
+                    )
+                    break
+                
+                # yield 真实事件给 SSE 连接
+                event_count += 1
+                logger.debug(
+                    f"{Fore.CYAN}[主循环] yield 事件 #{event_count}: "
+                    f"{raw_event.get('event')}{Style.RESET_ALL}"
+                )
+                yield raw_event
+            
+            # ── 等待图任务完全结束（此时应已完成）────────────────────────────
+            await graph_task
+            
+        except Exception as e:
+            # 主循环异常：取消图任务，发送错误事件
+            logger.error(f"{Fore.RED}[主循环] 事件读取异常: {e}{Style.RESET_ALL}")
+            graph_task.cancel()
+            try:
+                await graph_task
+            except asyncio.CancelledError:
+                pass
+            
+            yield self._create_stream_event(
+                event_type="error",
+                error=f"流式执行内部错误: {str(e)}"
+            )
+            yield self._create_stream_event(
+                event_type="complete",
+                data={"success": False, "error": str(e)}
+            )
+            return
+
+        # ─────────────────────────────────────────────────────────────────────
+        # 5. 图执行完成后，发送最终答案和完成事件
+        # ─────────────────────────────────────────────────────────────────────
+        
+        # 检查是否有错误
+        if "error" in final_state_holder:
+            error_msg = final_state_holder["error"]
+            logger.error(f"{Fore.RED}[流式执行] 图执行失败: {error_msg}{Style.RESET_ALL}")
+            yield self._create_stream_event(
+                event_type="error",
+                error=error_msg
+            )
+            yield self._create_stream_event(
+                event_type="complete",
+                data={"success": False, "error": error_msg}
+            )
+            return
+        
+        # 获取最终状态和结果
+        final_state = final_state_holder.get("result", {})
+        final_result = final_state.get("final_result")
+        total_iterations = final_state.get("iterations", 0)
+        
+        logger.info(
+            f"{Fore.GREEN}[流式执行] 准备发送最终答案, "
+            f"迭代次数={total_iterations}, "
+            f"has_result={final_result is not None}{Style.RESET_ALL}"
+        )
+        
+        if final_result:
+            # 提取执行结果和反思数据
+            result_data = final_result.get("result")
+            reflection_data = final_result.get("reflection")
+            
+            logger.info(
+                f"{Fore.GREEN}[流式执行] 发送 final_answer 事件, "
+                f"result_type={type(result_data).__name__}{Style.RESET_ALL}"
+            )
+            
+            # 发送最终答案事件（包含完整结果和反思）
+            yield self._create_stream_event(
+                event_type="final_answer",
+                iteration=total_iterations,
+                data={
+                    "result": result_data,
+                    "reflection": reflection_data
+                }
+            )
+        else:
+            logger.warning(
+                f"{Fore.YELLOW}[流式执行] 没有最终结果（final_result=None）{Style.RESET_ALL}"
+            )
+        
+        # 发送执行完成事件（表示整个流式会话结束）
+        success_flag = final_result.get("success", False) if final_result else False
+        yield self._create_stream_event(
+            event_type="complete",
+            iteration=total_iterations,
+            data={
+                "success": success_flag,
+                "iterations": total_iterations
+            }
+        )
+        
+        logger.info(f"{Fore.GREEN}Agent 流式执行完成{Style.RESET_ALL}")
+        logger.info(f"{Fore.GREEN}总迭代次数: {total_iterations}{Style.RESET_ALL}")
 
 
 # =============================================================================

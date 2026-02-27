@@ -246,7 +246,7 @@ class InferenceEngine:
                 tools=config.tools
             )
             
-            logger.info(f"{Fore.CYAN}[{request_id}] 构建 Prompt: {prompt_messages}{Style.RESET_ALL}")
+            # logger.info(f"{Fore.CYAN}[{request_id}] 构建 Prompt: {prompt_messages}{Style.RESET_ALL}")
             # 步骤 2: 选择模型和供应商
             logger.info(f"{Fore.BLUE}[{request_id}] 步骤 2/4: 选择模型{Style.RESET_ALL}")
             model_info, provider = self._select_model(config)
@@ -269,7 +269,8 @@ class InferenceEngine:
             
             raw_response = await provider.chat(prompt_messages, provider_config)
 
-            logger.info(f"{Fore.CYAN}[{request_id}] 原始响应: {raw_response}{Style.RESET_ALL}")
+            # todo 一会解开注释
+            # logger.info(f"{Fore.CYAN}[{request_id}] 原始响应: {raw_response}{Style.RESET_ALL}")
             elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(
                 f"{Fore.GREEN}[{request_id}] 首次推理完成，耗时: {elapsed_ms:.2f}ms{Style.RESET_ALL}"
@@ -284,8 +285,11 @@ class InferenceEngine:
             #   4. 再次调用 LLM，让其基于工具结果生成最终回复
             #   5. 重复上述步骤，直到 LLM 不再请求工具或达到最大迭代次数
             # ─────────────────────────────────────────────────────────────────
-            logger.info(f"{Fore.CYAN}[{request_id}] 工具调用网关: {self._tool_gateway}{Style.RESET_ALL}")
-            logger.info(f"{Fore.CYAN}[{request_id}] 工具定义传入: {config.tools}{Style.RESET_ALL}")
+
+            # todo 一会解开注释
+            # logger.info(f"{Fore.CYAN}[{request_id}] 工具调用网关: {self._tool_gateway}{Style.RESET_ALL}")
+            # todo 一会解开注释
+            # logger.info(f"{Fore.CYAN}[{request_id}] 工具定义传入: {config.tools}{Style.RESET_ALL}")
             if self._tool_gateway is not None and config.tools:
                 logger.info(
                     f"{Fore.BLUE}[{request_id}] 步骤 3.5: 检测工具调用循环条件："
@@ -320,7 +324,8 @@ class InferenceEngine:
                 f"{Fore.GREEN}[{request_id}] 推理请求成功完成，结果长度: {len(result.content)} 字符{Style.RESET_ALL}"
             )
             # 打印推理结果
-            logger.info(f"{Fore.GREEN}[{request_id}] 推理结果: {result.content}{Style.RESET_ALL}")
+            # todo 一会解开注释
+            # logger.info(f"{Fore.GREEN}[{request_id}] 推理结果: {result.content}{Style.RESET_ALL}")
             
             return result
             

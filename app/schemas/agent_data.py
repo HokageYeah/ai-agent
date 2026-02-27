@@ -182,3 +182,59 @@ class ToolInfo(BaseModel):
     name: str = Field(..., description="工具名称")
     description: str = Field(..., description="工具描述")
     parameters: Dict[str, Any] = Field(..., description="参数 Schema")
+
+
+# =============================================================================
+# Agent 流式 API Schema
+# =============================================================================
+
+class AgentStreamEventType(str, Enum):
+    """Agent 流式事件类型枚举"""
+    PLAN_START = "plan_start"           # 开始规划
+    PLAN_REASONING = "plan_reasoning"   # 规划推理过程（流式）
+    PLAN_COMPLETE = "plan_complete"     # 规划完成
+    STEP_START = "step_start"           # 开始执行步骤
+    STEP_PROGRESS = "step_progress"     # 步骤执行中
+    STEP_COMPLETE = "step_complete"     # 步骤执行完成
+    TOOL_START = "tool_start"           # 开始调用工具
+    TOOL_COMPLETE = "tool_complete"     # 工具调用完成
+    DELEGATE_START = "delegate_start"  # 开始委派子 Agent
+    DELEGATE_COMPLETE = "delegate_complete"  # 委派子 Agent 完成
+    REFLECTION_START = "reflection_start"  # 开始反思
+    REFLECTION_COMPLETE = "reflection_complete"  # 反思完成
+    FINAL_ANSWER = "final_answer"      # 最终答案
+    ERROR = "error"                    # 执行错误
+    COMPLETE = "complete"               # 执行完成
+
+
+class AgentStreamEvent(BaseModel):
+    """
+    Agent 流式事件模型
+    
+    用于实时推送 Agent 执行过程中的各个阶段事件，
+    让前端可以逐步展示 Agent 的思考、计划、工具调用等执行轨迹。
+    
+    事件流向示例：
+    1. plan_start -> plan_reasoning(多次) -> plan_complete
+    2. step_start -> tool_start -> tool_complete -> step_complete (循环)
+    3. reflection_start -> reflection_complete
+    4. final_answer
+    5. complete
+    """
+    # 事件类型
+    event: AgentStreamEventType = Field(..., description="事件类型")
+    # 迭代次数
+    iteration: int = Field(0, description="当前迭代次数")
+    # 步骤索引（从 1 开始）
+    step_index: Optional[int] = Field(None, description="当前步骤索引")
+    # 步骤总数
+    step_total: Optional[int] = Field(None, description="步骤总数")
+    # 事件数据（不同类型事件包含不同数据）
+    data: Dict[str, Any] = Field(default_factory=dict, description="事件携带的数据")
+    # 错误信息（仅 error 类型事件）
+    error: Optional[str] = Field(None, description="错误信息")
+    # 时间戳
+    timestamp: float = Field(..., description="事件时间戳（毫秒）")
+
+    class Config:
+        use_enum_values = True
