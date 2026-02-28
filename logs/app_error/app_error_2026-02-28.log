@@ -1,0 +1,785 @@
+2026-02-28 08:28:40 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APITimeoutError: Request timed out.[0m
+2026-02-28 08:28:40 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Request timed out.[0m
+2026-02-28 08:28:40 | ERROR    | app.agents.planning:create_plan:165 - [31m创建计划失败: Request timed out.[0m
+2026-02-28 09:56:36 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-02-28 09:56:36 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Connection error.[0m
+2026-02-28 09:56:36 | ERROR    | app.agents.planning:create_plan:165 - [31m创建计划失败: Connection error.[0m
+2026-02-28 09:56:40 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-02-28 09:56:40 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Connection error.[0m
+2026-02-28 09:56:40 | ERROR    | app.agents.reflection:reflect:142 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-02-28 09:57:36 | ERROR    | app.llm_hub.providers.openai:stream:286 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-02-28 09:57:36 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-02-28 09:57:36 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-02-28 09:57:36 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Connection error.[0m
+2026-02-28 09:57:36 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-02-28 09:58:54 | ERROR    | app.llm_hub.providers.openai:stream:286 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-02-28 09:58:54 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-02-28 09:58:54 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000002] 流式推理请求失败: Connection error.[0m
+2026-02-28 09:58:54 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Connection error.[0m
+2026-02-28 09:58:54 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-02-28 11:14:11 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-02-28 11:37:07 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-02-28 11:56:01 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212c397817722509599274721e154d', 'requestId': '41a37d25f78b2a7b97e03f8d309b5a2b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 92684b97-075a-4fd8-a482-e6825e18cbb6'}[0m
+2026-02-28 11:56:01 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000019] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212c397817722509599274721e154d', 'requestId': '41a37d25f78b2a7b97e03f8d309b5a2b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 92684b97-075a-4fd8-a482-e6825e18cbb6'}，退出循环[0m
+2026-02-28 11:56:01 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 11:56:01 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 11:58:14 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2132e98b17722510922278379e0f8a', 'requestId': 'e80a60542d4fbbd612a9749e413f3689'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: fbd772cf-eb09-426f-a79f-3d93fe09e581'}[0m
+2026-02-28 11:58:14 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000022] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2132e98b17722510922278379e0f8a', 'requestId': 'e80a60542d4fbbd612a9749e413f3689'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: fbd772cf-eb09-426f-a79f-3d93fe09e581'}，退出循环[0m
+2026-02-28 11:58:14 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 11:58:14 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 11:59:47 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: Request URL is missing an 'http://' or 'https://' protocol.
+Traceback (most recent call last):
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 207, in handle_async_request
+    raise UnsupportedProtocol(
+
+httpcore.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 141, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 336, in _execute_step
+    return await self._execute_tool(step, agent)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 440, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 650, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+
+httpx.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+2026-02-28 12:01:50 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2167786d17722513087167600e0e26', 'requestId': 'e3b469228a0df5f15cf9caab1c56c0ac'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6ebf3916-c89a-411f-a50c-722ad0798cc8'}[0m
+2026-02-28 12:01:50 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000028] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2167786d17722513087167600e0e26', 'requestId': 'e3b469228a0df5f15cf9caab1c56c0ac'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6ebf3916-c89a-411f-a50c-722ad0798cc8'}，退出循环[0m
+2026-02-28 12:02:00 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2167786d17722513174257840e0e26', 'requestId': '59d30309b9ebafc7ce3b36909636447c'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: b5c0d9b9-5322-4ba9-9b7b-3da400fbf9f4'}[0m
+2026-02-28 12:02:00 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000029] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2167786d17722513174257840e0e26', 'requestId': '59d30309b9ebafc7ce3b36909636447c'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: b5c0d9b9-5322-4ba9-9b7b-3da400fbf9f4'}，退出循环[0m
+2026-02-28 12:02:30 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: Request URL is missing an 'http://' or 'https://' protocol.
+Traceback (most recent call last):
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 207, in handle_async_request
+    raise UnsupportedProtocol(
+
+httpcore.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 141, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 336, in _execute_step
+    return await self._execute_tool(step, agent)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 440, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 650, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+
+httpx.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+2026-02-28 12:04:04 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212c393517722514423812686e0ce5', 'requestId': 'b286a9069b66e06de5167dfe3db83ad1'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 93c150aa-c6a3-4d1e-a956-711c3284fa75'}[0m
+2026-02-28 12:04:04 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000037] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212c393517722514423812686e0ce5', 'requestId': 'b286a9069b66e06de5167dfe3db83ad1'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 93c150aa-c6a3-4d1e-a956-711c3284fa75'}，退出循环[0m
+2026-02-28 12:04:22 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212c393517722514517622891e0ce5', 'requestId': '9a42711716fbe29e28047f3bd5ff6b36'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 98bc1382-7028-46f8-9441-d9f9d021b96a'}[0m
+2026-02-28 12:04:22 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000038] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212c393517722514517622891e0ce5', 'requestId': '9a42711716fbe29e28047f3bd5ff6b36'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 98bc1382-7028-46f8-9441-d9f9d021b96a'}，退出循环[0m
+2026-02-28 12:04:22 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 12:04:22 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 12:07:05 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722516245014424e0f87', 'requestId': '2d0fb6cae39f32a13b941230e6e1cb4b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: c2e214e9-9bc7-4c6b-9090-6c471c69b62b'}[0m
+2026-02-28 12:07:05 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722516245014424e0f87', 'requestId': '2d0fb6cae39f32a13b941230e6e1cb4b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: c2e214e9-9bc7-4c6b-9090-6c471c69b62b'}，退出循环[0m
+2026-02-28 12:07:15 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722516341524648e0f87', 'requestId': '97a2f4cb32dca8c08290a500e4b9bb11'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 19b690b6-1a17-437f-8e7d-200b8420e4cc'}[0m
+2026-02-28 12:07:15 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000004] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722516341524648e0f87', 'requestId': '97a2f4cb32dca8c08290a500e4b9bb11'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 19b690b6-1a17-437f-8e7d-200b8420e4cc'}，退出循环[0m
+2026-02-28 12:07:15 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 12:07:15 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 12:08:03 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '213f41fc17722516824164921e0e0e', 'requestId': '8c024854c30b00d1c6c3dd9132c77baa'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: cce6f87c-50d3-4acb-8438-b81db5800891'}[0m
+2026-02-28 12:08:03 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '213f41fc17722516824164921e0e0e', 'requestId': '8c024854c30b00d1c6c3dd9132c77baa'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: cce6f87c-50d3-4acb-8438-b81db5800891'}，退出循环[0m
+2026-02-28 12:08:13 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '213f41fc17722516917155197e0e0e', 'requestId': '31b630f0e5e6ec1c5ee955f82583726b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 5155bc5b-535b-45bc-bd23-ccbe1bdd4a5b'}[0m
+2026-02-28 12:08:13 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000004] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '213f41fc17722516917155197e0e0e', 'requestId': '31b630f0e5e6ec1c5ee955f82583726b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 5155bc5b-535b-45bc-bd23-ccbe1bdd4a5b'}，退出循环[0m
+2026-02-28 12:08:13 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 12:08:13 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 12:08:59 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '216663f017722517366414111e0d61', 'requestId': 'f1e4e3671e371f3f59bc2bbb1abb7a1e'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: b20ef2d5-2522-4126-9bc8-8eed1e58739b'}[0m
+2026-02-28 12:08:59 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '216663f017722517366414111e0d61', 'requestId': 'f1e4e3671e371f3f59bc2bbb1abb7a1e'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: b20ef2d5-2522-4126-9bc8-8eed1e58739b'}，退出循环[0m
+2026-02-28 12:09:05 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '216663f017722517436194280e0d61', 'requestId': 'a359c3272dd5a6755faee4e54989bee8'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6fc8f118-487c-4951-b3ee-3272257399ff'}[0m
+2026-02-28 12:09:05 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '216663f017722517436194280e0d61', 'requestId': 'a359c3272dd5a6755faee4e54989bee8'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6fc8f118-487c-4951-b3ee-3272257399ff'}，退出循环[0m
+2026-02-28 12:09:21 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '0b513def17722517595415070e0dba', 'requestId': 'cf34673ce33f735def4c74a17b1b3851'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: f38bbb9c-a8c9-42cd-b43c-0db8086f8008'}[0m
+2026-02-28 12:09:21 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000004] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '0b513def17722517595415070e0dba', 'requestId': 'cf34673ce33f735def4c74a17b1b3851'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: f38bbb9c-a8c9-42cd-b43c-0db8086f8008'}，退出循环[0m
+2026-02-28 12:09:21 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 12:09:21 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 12:09:21 | ERROR    | logging:callHandlers:1736 - Traceback (most recent call last):
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+    ~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 70, in serve
+    with self.capture_signals():
+         ~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 331, in capture_signals
+    signal.raise_signal(captured_signal)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 157, in _on_sigint
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 701, in lifespan
+    await receive()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+2026-02-28 12:09:21 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 70, in serve
+    with self.capture_signals():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 331, in capture_signals
+    signal.raise_signal(captured_signal)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 157, in _on_sigint
+    raise KeyboardInterrupt()
+
+KeyboardInterrupt
+
+
+During handling of the above exception, another exception occurred:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 194, in run
+    with Runner(debug=debug, loop_factory=loop_factory) as runner:
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 62, in __exit__
+    self.close()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 70, in close
+    _cancel_all_tasks(loop)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 206, in _cancel_all_tasks
+    loop.run_until_complete(tasks.gather(*to_cancel, return_exceptions=True))
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 192, in __call__
+    async with anyio.create_task_group() as task_group:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 787, in __aexit__
+    raise exc_val
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 755, in __aexit__
+    await self._on_completed_fut
+
+asyncio.exceptions.CancelledError
+2026-02-28 12:10:35 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APITimeoutError: Request timed out.[0m
+2026-02-28 12:10:35 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Request timed out.[0m
+2026-02-28 12:10:35 | ERROR    | app.agents.planning:create_plan:165 - [31m创建计划失败: Request timed out.[0m
+2026-02-28 12:14:10 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: Request URL is missing an 'http://' or 'https://' protocol.
+Traceback (most recent call last):
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 207, in handle_async_request
+    raise UnsupportedProtocol(
+
+httpcore.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 141, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 336, in _execute_step
+    return await self._execute_tool(step, agent)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 440, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 650, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+
+httpx.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+2026-02-28 12:14:28 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212b9fc917722520670057186e0fb8', 'requestId': '7895ed20b767bc1f49e16debb758e6aa'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: a213de2c-4a65-4ea4-bf56-d069f53ecd83'}[0m
+2026-02-28 12:14:28 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212b9fc917722520670057186e0fb8', 'requestId': '7895ed20b767bc1f49e16debb758e6aa'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: a213de2c-4a65-4ea4-bf56-d069f53ecd83'}，退出循环[0m
+2026-02-28 12:21:16 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2648)
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 150, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 483, in _execute_step
+    return await self._execute_skill(step, context, agent, prev_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 792, in _execute_skill
+    response = await self.llm_hub.infer(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/inference.py", line 299, in infer
+    raw_response, prompt_messages = await self._handle_tool_calling_loop(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/inference.py", line 484, in _handle_tool_calling_loop
+    tool_results = await self._tool_gateway.execute_tool_calls(current_response)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 272, in execute_tool_calls
+    result = await self._execute_single_call(tool_call, context)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1643, in send
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1637, in send
+    await response.aread()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_models.py", line 979, in aread
+    self._content = b"".join([part async for part in self.aiter_bytes()])
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_models.py", line 997, in aiter_bytes
+    async for raw_bytes in self.aiter_raw():
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_models.py", line 1055, in aiter_raw
+    async for raw_stream_bytes in self.stream:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 176, in __aiter__
+    async for chunk in self._stream:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 271, in __aiter__
+    async for part in self._httpcore_stream:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 407, in __aiter__
+    raise exc from None
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 403, in __aiter__
+    async for part in self._stream:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/http11.py", line 342, in __aiter__
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/http11.py", line 334, in __aiter__
+    async for chunk in self._connection._receive_response_body(**kwargs):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/http11.py", line 203, in _receive_response_body
+    event = await self._receive_event(timeout=timeout)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 35, in read
+    return await self._stream.receive(max_bytes=max_bytes)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/anyio/streams/tls.py", line 244, in receive
+    data = await self._call_sslobject_method(self._ssl_object.read, max_bytes)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/anyio/streams/tls.py", line 180, in _call_sslobject_method
+    result = func(*args)
+  File "/Users/yuye/miniconda3/lib/python3.13/ssl.py", line 868, in read
+    v = self._sslobj.read(len)
+
+ssl.SSLError: [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2648)
+2026-02-28 12:21:24 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '214178b117722524830301109e0fce', 'requestId': '7b35c89ba458efd5a90c518ee3f4719d'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: a2aa0e7e-d78e-4ba6-b5fd-b2a4da366347'}[0m
+2026-02-28 12:21:24 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '214178b117722524830301109e0fce', 'requestId': '7b35c89ba458efd5a90c518ee3f4719d'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: a2aa0e7e-d78e-4ba6-b5fd-b2a4da366347'}，退出循环[0m
+2026-02-28 12:21:28 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '214178b117722524877471230e0fce', 'requestId': '0859c0336bd8750f2fd686d209709dc0'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 878925dd-8647-4f54-91a8-904270458b21'}[0m
+2026-02-28 12:21:28 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '214178b117722524877471230e0fce', 'requestId': '0859c0336bd8750f2fd686d209709dc0'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 878925dd-8647-4f54-91a8-904270458b21'}，退出循环[0m
+2026-02-28 12:25:39 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: Request URL is missing an 'http://' or 'https://' protocol.
+Traceback (most recent call last):
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 207, in handle_async_request
+    raise UnsupportedProtocol(
+
+httpcore.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 150, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 475, in _execute_step
+    return await self._execute_tool(step, agent)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 579, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 650, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+
+httpx.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+2026-02-28 12:25:44 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212ba22917722527426214520e0c62', 'requestId': 'c033ca85cd515ff8b2e8b0224e551e00'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: ad8e107b-4359-4b17-84b0-319fec423e37'}[0m
+2026-02-28 12:25:44 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212ba22917722527426214520e0c62', 'requestId': 'c033ca85cd515ff8b2e8b0224e551e00'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: ad8e107b-4359-4b17-84b0-319fec423e37'}，退出循环[0m
+2026-02-28 12:25:48 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212ba22917722527470704621e0c62', 'requestId': '84332332dffba3b45a794970b3457b7f'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 2dac993d-b8a6-4665-aaa1-ac1e8ff3f2d2'}[0m
+2026-02-28 12:25:48 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212ba22917722527470704621e0c62', 'requestId': '84332332dffba3b45a794970b3457b7f'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 2dac993d-b8a6-4665-aaa1-ac1e8ff3f2d2'}，退出循环[0m
+2026-02-28 12:26:38 | ERROR    | app.tools.builtin.http:execute:338 - [HTTPRequestTool] 请求发生未知错误: Request URL is missing an 'http://' or 'https://' protocol.
+Traceback (most recent call last):
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 207, in handle_async_request
+    raise UnsupportedProtocol(
+
+httpcore.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 290, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/langgraph_executor.py", line 458, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 150, in execute_plan
+    step_result = await self._execute_step(agent, step, context, step_results)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 475, in _execute_step
+    return await self._execute_tool(step, agent)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/agents/execution.py", line 579, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 650, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/llm_hub/tool_gateway.py", line 451, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AI Agent 项目/ai-agent/app/tools/builtin/http.py", line 262, in execute
+    response = await client.request(
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-i8QhE-cx-py3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+
+httpx.UnsupportedProtocol: Request URL is missing an 'http://' or 'https://' protocol.
+2026-02-28 12:26:43 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528017486632e0c44', 'requestId': 'aa6a15deb0cc856da6c7b3343d9c0eba'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 41c990eb-3983-4448-a283-563e023f38b4'}[0m
+2026-02-28 12:26:43 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528017486632e0c44', 'requestId': 'aa6a15deb0cc856da6c7b3343d9c0eba'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 41c990eb-3983-4448-a283-563e023f38b4'}，退出循环[0m
+2026-02-28 12:26:46 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528056876710e0c44', 'requestId': '410fbfbd3b815c4d8d0dc994a55fd5a1'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6e231e53-1f89-4b47-81de-c706086f9d1f'}[0m
+2026-02-28 12:26:46 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000003] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528056876710e0c44', 'requestId': '410fbfbd3b815c4d8d0dc994a55fd5a1'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 6e231e53-1f89-4b47-81de-c706086f9d1f'}，退出循环[0m
+2026-02-28 12:26:52 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528117306856e0c44', 'requestId': '4d35e8a84547ee31835414bc4c6a6882'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 866ccf63-c0d1-4e9f-a1d4-5813478345eb'}[0m
+2026-02-28 12:26:52 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000004] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212b740217722528117306856e0c44', 'requestId': '4d35e8a84547ee31835414bc4c6a6882'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 866ccf63-c0d1-4e9f-a1d4-5813478345eb'}，退出循环[0m
+2026-02-28 12:26:52 | ERROR    | app.agents.reflection:_parse_reflection:265 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-02-28 12:26:52 | ERROR    | app.agents.reflection:_parse_reflection:266 - [31mLLM 输出: ...[0m
+2026-02-28 12:31:23 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '212c2b4317722530823616116e0e7c', 'requestId': '88a40851c525c4604827ac850a07e2b3'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 7967c3de-e6ff-410a-b394-d816c5d220ff'}[0m
+2026-02-28 12:31:23 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000006] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '212c2b4317722530823616116e0e7c', 'requestId': '88a40851c525c4604827ac850a07e2b3'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: 7967c3de-e6ff-410a-b394-d816c5d220ff'}，退出循环[0m
+2026-02-28 16:27:50 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '21666d2f17722672524396778e0cc1', 'requestId': 'e1fd671916ddcc2c093fd8201f0db955'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: e964471a-1a1a-4506-95c9-b36f7cd84ba4'}[0m
+2026-02-28 16:27:50 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:526 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '21666d2f17722672524396778e0cc1', 'requestId': 'e1fd671916ddcc2c093fd8201f0db955'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 131072], dash_request_id: e964471a-1a1a-4506-95c9-b36f7cd84ba4'}，退出循环[0m
+2026-02-28 16:37:42 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2133ebf417722678621365507e0f34', 'requestId': '1b3bdd78aadea2c32ee1a5f8b2da06e7'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Role must be in ["user", "assistant", "system", "function", "plugin", "tool"] and the role in last message must be in ["user", "function", "tool"], dash_request_id: fe621291-fb9a-4a68-9085-a35c681eeaff'}[0m
+2026-02-28 16:37:42 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:529 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2133ebf417722678621365507e0f34', 'requestId': '1b3bdd78aadea2c32ee1a5f8b2da06e7'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Role must be in ["user", "assistant", "system", "function", "plugin", "tool"] and the role in last message must be in ["user", "function", "tool"], dash_request_id: fe621291-fb9a-4a68-9085-a35c681eeaff'}，退出循环[0m
+2026-02-28 16:38:01 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2133ebf417722678814505986e0f34', 'requestId': '1ecb016744bf6fbaffcedfdc0c80644b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Role must be in ["user", "assistant", "system", "function", "plugin", "tool"] and the role in last message must be in ["user", "function", "tool"], dash_request_id: 40c321e4-cf47-4987-98d9-996de639f552'}[0m
+2026-02-28 16:38:01 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:529 - [31m[req-000006] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2133ebf417722678814505986e0f34', 'requestId': '1ecb016744bf6fbaffcedfdc0c80644b'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: Role must be in ["user", "assistant", "system", "function", "plugin", "tool"] and the role in last message must be in ["user", "function", "tool"], dash_request_id: 40c321e4-cf47-4987-98d9-996de639f552'}，退出循环[0m
+2026-02-28 16:46:02 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: BadRequestError: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722683628502122e0ff2', 'requestId': 'ab6b9efff5e5b3cbb9c38b48d2e1fb92'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: messages with role "tool" must be a response to a preceeding message with "tool_calls"., dash_request_id: 4d44f19b-414e-417c-bfe6-fb8a0758027f'}[0m
+2026-02-28 16:46:02 | ERROR    | app.llm_hub.inference:_handle_tool_calling_loop:529 - [31m[req-000002] 工具调用循环中 LLM 调用失败: Error code: 400 - {'extend_fields': {'traceId': '2150b49e17722683628502122e0ff2', 'requestId': 'ab6b9efff5e5b3cbb9c38b48d2e1fb92'}, 'error_code': 400, 'message': 'Bad request!: InvalidParameter: <400> InternalError.Algo.InvalidParameter: messages with role "tool" must be a response to a preceeding message with "tool_calls"., dash_request_id: 4d44f19b-414e-417c-bfe6-fb8a0758027f'}，退出循环[0m
+2026-02-28 16:46:43 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-02-28 16:52:38 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-02-28 16:52:38 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Connection error.[0m
+2026-02-28 16:52:38 | ERROR    | app.agents.planning:create_plan:165 - [31m创建计划失败: Connection error.[0m
+2026-02-28 16:52:42 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-02-28 16:52:42 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Connection error.[0m
+2026-02-28 16:52:42 | ERROR    | app.agents.reflection:reflect:142 - [31m反思失败（LLM 调用异常）: Connection error.[0m

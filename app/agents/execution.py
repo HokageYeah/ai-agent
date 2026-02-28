@@ -17,6 +17,8 @@
 import re
 import json as _json
 from typing import Dict, List, Any, Optional
+from typing import Dict as DictType
+from typing import List as ListType
 from loguru import logger
 from colorama import Fore, Style
 
@@ -136,6 +138,13 @@ class ExecutionEngine:
                     f"{Fore.CYAN}执行步骤 {i}/{len(plan.steps)}: "
                     f"action={step.action}{Style.RESET_ALL}"
                 )
+                
+                # ═══════════════════════════════════════════════════════════════
+                # 【步骤参数占位符替换】
+                # LLM 规划时可能使用占位符如 {{first_search_result_url}}，
+                # 需要根据已执行步骤的结果动态替换为真实数据
+                # ═══════════════════════════════════════════════════════════════
+                step = self._resolve_step_placeholders(step, step_results)
                 
                 # 执行步骤（把已完成步骤结果传入，供 skill 等使用）
                 step_result = await self._execute_step(agent, step, context, step_results)
@@ -311,6 +320,154 @@ class ExecutionEngine:
                 for r in tool_results
                 if r.get("result")
             ) or template or "执行完成，但未能生成最终答案。"
+
+    def _resolve_step_placeholders(
+        self,
+        step: PlanStep,
+        prev_results: List[Dict[str, Any]]
+    ) -> PlanStep:
+        """
+        解析并替换步骤参数中的占位符
+        
+        LLM 在规划阶段可能使用占位符（如 {{first_search_result_url}}）来引用前序步骤的结果。
+        本方法在执行前将这些占位符替换为真实数据。
+        
+        支持的占位符格式：
+        - {{first_search_result_url}} - 第一个搜索结果的 URL
+        - {{first_search_result_title}} - 第一个搜索结果的标题
+        - {{first_search_result}} - 第一个搜索结果的完整信息
+        - {{last_tool_result}} - 最后一个工具的执行结果
+        - {{last_tool_result_url}} - 最后一个工具结果中的 URL（如果存在）
+        
+        Args:
+            step: 当前执行的计划步骤
+            prev_results: 已完成步骤的结果列表
+            
+        Returns:
+            PlanStep: 替换占位符后的步骤（副本）
+        """
+        import re
+        import copy
+        
+        # 创建步骤的深拷贝，避免修改原始计划
+        resolved_step = copy.deepcopy(step)
+        
+        # 获取前序步骤中有用的数据
+        search_result_url = None
+        search_result_title = None
+        search_result_snippet = None
+        last_tool_result = None
+        
+        for result in prev_results:
+            if not result.get("success"):
+                continue
+            
+            # 提取搜索结果信息
+            if result.get("action") == "tool" and result.get("tool_name") == "search":
+                tool_result = result.get("result", {})
+                if isinstance(tool_result, dict):
+                    results_list = tool_result.get("results", [])
+                    if results_list:
+                        first_result = results_list[0]
+                        search_result_url = first_result.get("url")
+                        search_result_title = first_result.get("title")
+                        search_result_snippet = first_result.get("snippet")
+            
+            # 记录最后一个工具结果
+            if result.get("action") == "tool":
+                last_tool_result = result.get("result")
+        
+        # 如果没有搜索结果，检查是否可以从任何工具结果中提取 URL
+        if not search_result_url and last_tool_result:
+            if isinstance(last_tool_result, dict):
+                search_result_url = last_tool_result.get("url") or last_tool_result.get("first_url")
+        
+        # 定义替换映射（支持两种格式：{{...}} 和 {...}）
+        replacements = [
+            # 格式一：双花括号 {{...}}
+            ("{{first_search_result_url}}", search_result_url or ""),
+            ("{{first_search_result_title}}", search_result_title or ""),
+            ("{{first_search_result_snippet}}", search_result_snippet or ""),
+            ("{{first_search_result}}", str({
+                "url": search_result_url,
+                "title": search_result_title,
+                "snippet": search_result_snippet
+            }) if search_result_url else ""),
+            ("{{last_tool_result}}", str(last_tool_result) if last_tool_result else ""),
+            ("{{last_tool_result_url}}", search_result_url or ""),
+            # 格式二：单花括号 {...}
+            ("{first_search_result_url}", search_result_url or ""),
+            ("{first_search_result_title}", search_result_title or ""),
+            ("{first_search_result_snippet}", search_result_snippet or ""),
+            ("{first_search_result}", str({
+                "url": search_result_url,
+                "title": search_result_title,
+                "snippet": search_result_snippet
+            }) if search_result_url else ""),
+            ("{last_tool_result}", str(last_tool_result) if last_tool_result else ""),
+            ("{last_tool_result_url}", search_result_url or ""),
+        ]
+        
+        # 对 params 中的每个参数进行占位符替换
+        if hasattr(resolved_step, 'params') and resolved_step.params:
+            for key, value in resolved_step.params.items():
+                if isinstance(value, str):
+                    original_value = value
+                    for placeholder, replacement in replacements:
+                        if placeholder in value:
+                            value = value.replace(placeholder, replacement)
+                    
+                    # 只有值发生变化时才记录日志
+                    if original_value != value:
+                        logger.info(
+                            f"{Fore.GREEN}[占位符替换] 参数 '{key}': "
+                            f"'{original_value[:80]}' -> '{value[:80]}'{Style.RESET_ALL}"
+                        )
+                    
+                    resolved_step.params[key] = value
+                elif isinstance(value, dict):
+                    # 递归处理字典类型的参数值
+                    resolved_step.params[key] = self._resolve_dict_placeholders(value, dict(replacements))
+        
+        return resolved_step
+
+    def _resolve_dict_placeholders(
+        self,
+        data: Any,
+        replacements
+    ) -> Any:
+        """
+        递归解析字典中的占位符
+        
+        Args:
+            data: 需要处理的数据（可能是 dict, list, str 等）
+            replacements: 占位符替换映射（可以是 dict 或 list of tuples）
+            
+        Returns:
+            处理后的数据
+        """
+        import copy
+        
+        # 统一转换为 list 格式
+        if isinstance(replacements, dict):
+            replacements_list = list(replacements.items())
+        else:
+            replacements_list = replacements
+        
+        if isinstance(data, dict):
+            result = {}
+            for key, value in data.items():
+                result[key] = self._resolve_dict_placeholders(value, replacements_list)
+            return result
+        elif isinstance(data, list):
+            return [self._resolve_dict_placeholders(item, replacements_list) for item in data]
+        elif isinstance(data, str):
+            for placeholder, replacement in replacements_list:
+                if placeholder in data:
+                    data = data.replace(placeholder, replacement)
+            return data
+        else:
+            return data
 
     async def _execute_step(
         self,
@@ -537,7 +694,8 @@ class ExecutionEngine:
         skill_id = step.params.get("skill_id")
         params = step.params.get("params", {})
         
-        logger.info(f"{Fore.CYAN}调用技能: {skill_id}{Style.RESET_ALL}")
+        # ====== 【调试日志】显示技能调用前的参数 ======
+        logger.info(f"{Fore.CYAN}调用技能: {skill_id}, 原始参数: {params}{Style.RESET_ALL}")
         
         # 获取技能
         skill = self.skill_manager.get_skill(skill_id)
@@ -576,6 +734,27 @@ class ExecutionEngine:
                 
                 if real_data_parts:
                     injected_data = "\n\n".join(real_data_parts)
+                    
+                    # ====== 【关键修复】先进行占位符替换 ======
+                    # 将 params 中的所有占位符替换为真实数据
+                    for key in safe_params:
+                        if isinstance(safe_params[key], str):
+                            original = safe_params[key]
+                            # 先替换占位符（支持双花括号和单花括号格式）
+                            for placeholder, replacement in [
+                                ("{{last_tool_result}}", injected_data),
+                                ("{last_tool_result}", injected_data),
+                                ("{{first_search_result}}", injected_data),
+                                ("{first_search_result}", injected_data),
+                            ]:
+                                if placeholder in safe_params[key]:
+                                    safe_params[key] = safe_params[key].replace(placeholder, replacement)
+                                    logger.info(
+                                        f"{Fore.GREEN}[技能数据注入] 参数 '{key}': "
+                                        f"'{original[:50]}...' 已替换为真实数据{Style.RESET_ALL}"
+                                    )
+                                    break  # 找到一个匹配就退出，避免重复替换
+                    
                     # 对于需要数据输入的技能（data_analysis 等），用真实数据替换描述
                     if skill_id in ("data_analysis",):
                         safe_params["data"] = injected_data
@@ -583,11 +762,16 @@ class ExecutionEngine:
                             f"{Fore.BLUE}[执行引擎] 向技能 {skill_id} 注入前序步骤真实数据"
                             f"（{len(real_data_parts)} 条）{Style.RESET_ALL}"
                         )
-                    # 通用：若参数里有 content/topic 是简短描述，也追加真实数据
-                    for key in ("content", "topic", "input"):
+                    # 通用：若参数里有 content/topic/input/text 是简短描述，也追加真实数据
+                    for key in ("content", "topic", "input", "text", "task", "source_text"):
                         if key in safe_params and isinstance(safe_params[key], str):
-                            if len(safe_params[key]) < 200:  # 短描述，不是真实数据
+                            # 如果包含换行符，说明已经是长文本（可能是已替换的数据），不再追加
+                            if "\n" not in safe_params[key] and len(safe_params[key]) < 200:
                                 safe_params[key] = safe_params[key] + "\n\n" + injected_data
+                                logger.info(
+                                    f"{Fore.BLUE}[执行引擎] 向技能 {skill_id} 的参数 '{key}' "
+                                    f"追加前序步骤真实数据{Style.RESET_ALL}"
+                                )
                                 break
             
             # 通用回退逻辑：如果缺 topic 用 content，反之亦然

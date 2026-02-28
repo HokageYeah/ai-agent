@@ -149,7 +149,7 @@ def get_automation_service():
             provider=provider,
             model_registry=model_registry,
             tool_gateway=tool_calling_gateway,  # 集成工具调用网关（核心新增）
-            max_tool_iterations=5  # 最大工具调用循环次数，防止无限循环
+            max_tool_iterations=20  # 最大工具调用循环次数，防止无限循环
         )
         logger.debug(
             f"{Fore.CYAN}【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine{Style.RESET_ALL}"
@@ -284,7 +284,7 @@ def get_agent_executor():
             provider=provider,
             model_registry=model_registry,
             tool_gateway=tool_calling_gateway,  # 集成工具调用网关（备用，不影响主流程）
-            max_tool_iterations=5
+            max_tool_iterations=20
         )
         logger.debug(
             f"{Fore.CYAN}【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine{Style.RESET_ALL}"
@@ -387,7 +387,7 @@ def get_chat_service():
             provider=provider,
             model_registry=model_registry,
             tool_gateway=tool_calling_gateway,  # 集成工具调用网关（核心新增）
-            max_tool_iterations=5
+            max_tool_iterations=20
         )
         logger.debug(
             f"{Fore.CYAN}【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine{Style.RESET_ALL}"

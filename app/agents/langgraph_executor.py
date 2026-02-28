@@ -744,12 +744,13 @@ class LangGraphAgentExecutor:
         
         # ── 5. 反思结果要求执行成功但标记需要重规划时，检查底层执行是否已成功 ──
         # HACK: 防止因反思 LLM 误判而无限重试已经成功执行的计划
-        if final_result.get("success", False) and reflection.get("needs_replanning", False):
-            logger.warning(
-                f"{Fore.YELLOW}[Should Continue] 执行已成功但反思要求重规划，"
-                f"直接结束以避免无效重试{Style.RESET_ALL}"
-            )
-            return "end"
+        # todo 一会解开注释
+        # if final_result.get("success", False) and reflection.get("needs_replanning", False):
+        #     logger.warning(
+        #         f"{Fore.YELLOW}[Should Continue] 执行已成功但反思要求重规划，"
+        #         f"直接结束以避免无效重试{Style.RESET_ALL}"
+        #     )
+        #     return "end"
         
         # ── 6. 反思结果要求重规划 → 继续 ──
         if reflection.get("needs_replanning", False):

@@ -246,6 +246,12 @@ class PlanningEngine:
    - 数据库查询：必须用 JOIN 或子查询合并多表，不能使用 ? 占位符，禁止把前一步结果作为参数
    - 计算器：只能计算纯数学表达式（如 "1+2*3"），不能引用数据库字段名或变量
    - 如果需要先查询再计算，请在一条 SQL 里直接用 SUM/COUNT/AVG 等聚合函数完成
+   - 【重要】如果后续步骤需要使用前序搜索结果的 URL 地址，必须使用以下占位符格式：
+     * 使用 {{first_search_result_url}} 表示第一个搜索结果的 URL
+     * 使用 {{first_search_result_title}} 表示第一个搜索结果的标题
+     * 使用 {{first_search_result}} 表示第一个搜索结果的完整信息（包含 url, title, snippet）
+     * 使用 {{last_tool_result}} 表示最后一个工具的执行结果
+     * 例如：http_request 工具的 url 参数应该写成 "url": "{{first_search_result_url}}"
 
 请只返回 JSON，不要包含其他文本。
 """

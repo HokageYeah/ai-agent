@@ -137,7 +137,7 @@ class InferenceEngine:
         prompt_builder: Optional[PromptBuilder] = None,
         streaming_manager: Optional[StreamingManager] = None,
         tool_gateway: Optional[Any] = None,  # ToolCallingGateway 实例（可选）
-        max_tool_iterations: int = 5  # 工具调用循环的最大迭代次数，防止无限循环
+        max_tool_iterations: int = 20  # 工具调用循环的最大迭代次数，防止无限循环
     ):
         """
         初始化推理引擎
@@ -510,6 +510,9 @@ class InferenceEngine:
                 )
             
             # ── 步骤 D: 携带工具结果再次调用 LLM ─────────────────────────
+            # ====== 【关键修复】在再次调用 LLM 前，截断过长的对话历史 ======
+            current_messages = self._truncate_messages(current_messages, max_tokens=60000)
+            
             logger.info(
                 f"{Fore.BLUE}[{request_id}] 🤖 携带工具结果再次调用 LLM（对话历史共 {len(current_messages)} 条消息）{Style.RESET_ALL}"
             )
@@ -683,6 +686,185 @@ class InferenceEngine:
         logger.info(
             f"{Fore.BLUE}后处理完成: content_len={len(content)}, "
             f"finish_reason={finish_reason}{Style.RESET_ALL}"
+        )
+        
+        return result
+
+    def _truncate_messages(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int = 60000
+    ) -> List[Dict[str, Any]]:
+        """
+        截断对话历史，防止超过模型的上下文限制
+        
+        当对话历史过长时，保留：
+        - 第一条系统消息（如果有的消息）
+        - 最近的消息（优先保留 user 消息和 tool 结果）        
+        重要：必须保持消息的完整性——tool 消息必须紧跟在对应的 assistant 消息后面
+        
+        Args:
+            messages: 对话消息列表
+            max_tokens: 最大 token 数量（近似值）
+            
+        Returns:
+            截断后的消息列表
+        """
+        if not messages:
+            return messages
+        
+        # 简单估算：假设平均每个字符等于 1/4 token
+        max_chars = max_tokens * 4
+        
+        # 计算当前总字符数
+        total_chars = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            if content:
+                total_chars += len(str(content))
+        
+        # 如果没有超过限制，直接返回
+        if total_chars <= max_chars:
+            return messages
+        
+        logger.warning(
+            f"{Fore.YELLOW}对话历史过长（{total_chars} 字符），"
+            f"进行截断（目标: {max_chars} 字符）{Style.RESET_ALL}"
+        )
+        
+        # 保留策略：
+        # 1. 保留第一条系统消息
+        # 2. 从后往前保留消息块（每个 block 包含 assistant+tool 或单个 user）
+        # 3. 确保 tool 消息不会被单独保留
+        
+        system_message = None
+        remaining_messages = []
+        
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "system" and system_message is None:
+                system_message = msg
+            else:
+                remaining_messages.append(msg)
+        
+        # 从后往前保留消息块
+        # 规则：
+        # - user 消息可以单独保留
+        # - assistant 消息如果有 tool_calls，必须和它的 tool 响应一起保留
+        # - tool 消息必须和前面的 assistant 消息一起保留
+        truncated_remaining = []
+        current_chars = 0
+        
+        i = len(remaining_messages) - 1
+        while i >= 0:
+            msg = remaining_messages[i]
+            role = msg.get("role", "")
+            content = str(msg.get("content", ""))
+            msg_chars = len(content)
+            
+            # 如果当前消息是 tool，需要把前面的 assistant 也一起保留
+            if role == "tool":
+                # 找到对应的 assistant 消息
+                block_chars = msg_chars
+                block_msgs = [msg]
+                
+                j = i - 1
+                while j >= 0:
+                    prev_msg = remaining_messages[j]
+                    prev_role = prev_msg.get("role", "")
+                    if prev_role == "assistant" and prev_msg.get("tool_calls"):
+                        # 找到带 tool_calls 的 assistant，添加到 block
+                        block_chars += len(str(prev_msg.get("content", "")))
+                        block_msgs.insert(0, prev_msg)
+                        break
+                    elif prev_role == "user":
+                        # 遇到 user 消息，停止
+                        break
+                    else:
+                        j -= 1
+                
+                # 检查是否可以添加这个 block
+                if current_chars + block_chars <= max_chars * 0.8:
+                    for bm in block_msgs:
+                        truncated_remaining.insert(0, bm)
+                    current_chars += block_chars
+                    i = j  # 更新索引
+                else:
+                    break
+            
+            # 如果是 assistant 带 tool_calls
+            elif role == "assistant" and msg.get("tool_calls"):
+                # 这个 assistant 必须和后面的 tool 消息一起保留
+                block_chars = msg_chars
+                block_msgs = [msg]
+                
+                j = i + 1
+                while j < len(remaining_messages):
+                    next_msg = remaining_messages[j]
+                    next_role = next_msg.get("role", "")
+                    if next_role == "tool":
+                        block_chars += len(str(next_msg.get("content", "")))
+                        block_msgs.append(next_msg)
+                        j += 1
+                    else:
+                        break
+                
+                if current_chars + block_chars <= max_chars * 0.8:
+                    for bm in block_msgs:
+                        truncated_remaining.insert(0, bm)
+                    current_chars += block_chars
+                    i = j - 1
+                else:
+                    break
+            
+            # 其他消息（user 或不带 tool_calls 的 assistant）
+            else:
+                if current_chars + msg_chars <= max_chars * 0.8:
+                    truncated_remaining.insert(0, msg)
+                    current_chars += msg_chars
+                else:
+                    break
+            
+            i -= 1
+        
+        # 组合最终结果
+        result = []
+        if system_message:
+            result.append(system_message)
+        result.extend(truncated_remaining)
+        
+        # 确保有内容且最后一条是 user/function/tool
+        if not result or (result and result[-1].get("role") not in ("user", "function", "tool", "assistant")):
+            # 如果没有内容，添加一个默认 user 消息
+            if not result:
+                result = [{"role": "user", "content": "继续"}]
+            else:
+                # 找到最后一条 user/function/tool 消息，确保它在最后
+                valid_msg = None
+                for msg in reversed(result):
+                    if msg.get("role") in ("user", "function", "tool"):
+                        valid_msg = msg
+                        break
+                if valid_msg and valid_msg != result[-1]:
+                    result.remove(valid_msg)
+                    result.append(valid_msg)
+        
+        # 组合最终结果
+        result = []
+        if system_message:
+            result.append(system_message)
+        result.extend(truncated_remaining)
+        
+        # 确保有内容
+        if not result:
+            # 如果所有消息都被删除了，至少保留一条 user 消息
+            result = [{"role": "user", "content": "继续"}]
+        
+        # 重新计算字符数
+        new_chars = sum(len(str(msg.get("content", ""))) for msg in result)
+        logger.info(
+            f"{Fore.GREEN}对话历史截断完成: {len(messages)} 条 -> {len(result)} 条，"
+            f"{total_chars} 字符 -> {new_chars} 字符{Style.RESET_ALL}"
         )
         
         return result
@@ -869,7 +1051,7 @@ def create_inference_engine(
     provider: LLMProvider,
     model_registry: Any,
     tool_gateway: Optional[Any] = None,
-    max_tool_iterations: int = 5
+    max_tool_iterations: int = 20
 ) -> InferenceEngine:
     """
     创建推理引擎实例的便捷函数

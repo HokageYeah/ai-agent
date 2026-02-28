@@ -9,6 +9,7 @@
 3. 包含结果来源链接和摘要
 4. 支持限制返回结果数量
 5. 完善的错误处理和日志记录
+6. 支持中文搜索（使用 HTML 解析方式）
 
 使用示例：
     tool = SearchTool()
@@ -18,8 +19,9 @@
     })
 """
 
+import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urljoin
 import httpx
 from app.tools.base import Tool, ToolSchema
 from loguru import logger
@@ -30,7 +32,7 @@ class SearchTool(Tool):
     网络搜索工具
     
     继承自 Tool 抽象基类，提供基于 DuckDuckGo 的网络搜索功能。
-    使用 DuckDuckGo 的 JSON API 获取搜索结果，无需 API Key。
+    使用 DuckDuckGo HTML 搜索页面进行解析，能够更好地支持中文搜索。
     
     属性：
         name: 工具名称，固定为 "search"
@@ -49,10 +51,12 @@ class SearchTool(Tool):
         """
         self._name = "search"
         self._description = "执行网络搜索，查找相关信息。支持多关键词查询，返回结构化的搜索结果。"
-        # DuckDuckGo Instant Answer API 端点
+        # DuckDuckGo HTML 搜索端点（支持中文搜索）
+        self._html_search_url = "https://html.duckduckgo.com/html/"
+        # DuckDuckGo Instant Answer API 端点（作为备用）
         self._api_url = "https://api.duckduckgo.com/"
-        # self._api_url = "https://api.qwant.com/api/search/text"
         logger.info("[SearchTool] 网络搜索工具初始化完成")
+        logger.info("[SearchTool] 搜索模式: DuckDuckGo HTML 解析（支持中文）")
     
     @property
     def name(self) -> str:
@@ -104,12 +108,13 @@ class SearchTool(Tool):
         执行网络搜索
         
         根据传入的参数执行搜索查询，返回结构化的搜索结果。
+        使用 DuckDuckGo HTML 页面解析方式，能够更好地支持中文搜索。
         
         参数处理逻辑：
         1. 提取搜索关键词 query
         2. 提取并验证 max_results 参数
-        3. 调用 DuckDuckGo API
-        4. 解析并格式化返回结果
+        3. 调用 DuckDuckGo HTML 搜索页面
+        4. 解析 HTML 获取搜索结果
         
         Args:
             params: 参数字典，必须包含 "query" 键，可选包含 "max_results" 键
@@ -140,18 +145,270 @@ class SearchTool(Tool):
         logger.info(f"[SearchTool] 开始搜索，关键词: '{query}'，最大结果数: {max_results}")
         
         try:
-            # ========== API 调用阶段 ==========
+            # ========== 方案一：HTML 解析搜索（主要方式，支持中文）==========
+            logger.debug(f"[SearchTool] 尝试使用 DuckDuckGo HTML 搜索，关键词: '{query}'")
+            html_results = await self._search_via_html(query, max_results)
+            
+            if html_results:
+                logger.info(f"[SearchTool] HTML 搜索成功，找到 {len(html_results)} 条结果")
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": html_results,
+                    "total_count": len(html_results),
+                    "metadata": {
+                        "engine": "duckduckgo_html",
+                        "max_results_requested": max_results
+                    }
+                }
+            
+            # ========== 方案二：备用 API 搜索 ==========
+            logger.warning(f"[SearchTool] HTML 搜索未找到结果，尝试备用 API 搜索")
+            api_results = await self._search_via_api(query, max_results)
+            
+            if api_results:
+                logger.info(f"[SearchTool] API 搜索成功，找到 {len(api_results)} 条结果")
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": api_results,
+                    "total_count": len(api_results),
+                    "metadata": {
+                        "engine": "duckduckgo_api",
+                        "max_results_requested": max_results
+                    }
+                }
+            
+            # ========== 两种方式都失败 ==========
+            logger.warning(f"[SearchTool] 搜索未找到任何结果，关键词: '{query}'")
+            return {
+                "success": True,  # 仍然返回成功，只是结果为空
+                "query": query,
+                "results": [],
+                "total_count": 0,
+                "metadata": {
+                    "engine": "duckduckgo",
+                    "max_results_requested": max_results,
+                    "note": "未找到相关搜索结果，建议尝试其他关键词"
+                }
+            }
+            
+        except Exception as e:
+            logger.exception(f"[SearchTool] 搜索发生未知错误: {str(e)}")
+            return {
+                "success": False,
+                "error": f"搜索失败: {str(e)}",
+                "query": query
+            }
+
+    async def _search_via_html(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        """
+        通过 DuckDuckGo HTML 页面搜索
+        
+        解析 DuckDuckGo HTML 搜索结果页面，能够更好地支持中文搜索。
+        
+        Args:
+            query: 搜索关键词
+            max_results: 最大结果数
+            
+        Returns:
+            List[Dict[str, Any]]: 格式化后的搜索结果列表
+        """
+        try:
+            # 构建 HTML 搜索 URL
+            # 使用 html.duckduckgo.com 页面进行搜索
+            encoded_query = quote_plus(query)
+            search_url = f"{self._html_search_url}?q={encoded_query}&b=1"
+            
+            logger.debug(f"[SearchTool] 发送 HTML 搜索请求: {search_url}")
+            
+            # 发送 HTTP 请求
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(
+                    search_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+                    }
+                )
+            
+            # 检查响应状态
+            response.raise_for_status()
+            html_content = response.text
+            
+            logger.debug(f"[SearchTool] HTML 搜索响应长度: {len(html_content)} 字符")
+            
+            # 解析 HTML 结果
+            results = self._parse_html_results(html_content, max_results)
+            
+            if results:
+                logger.info(f"[SearchTool] HTML 解析成功，找到 {len(results)} 条结果")
+            else:
+                logger.warning(f"[SearchTool] HTML 解析未找到结果")
+            
+            return results
+            
+        except httpx.TimeoutException:
+            logger.error(f"[SearchTool] HTML 搜索超时: '{query}'")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[SearchTool] HTML 搜索 HTTP 错误: {e.response.status_code}")
+            return []
+        except Exception as e:
+            logger.error(f"[SearchTool] HTML 搜索解析错误: {str(e)}")
+            return []
+
+    def _parse_html_results(self, html_content: str, max_results: int) -> List[Dict[str, Any]]:
+        """
+        解析 DuckDuckGo HTML 搜索结果
+        
+        使用正则表达式解析 HTML 内容，提取搜索结果。
+        
+        Args:
+            html_content: HTML 内容
+            max_results: 最大结果数
+            
+        Returns:
+            List[Dict[str, Any]]: 格式化后的搜索结果列表
+        """
+        results = []
+        
+        # 正则表达式匹配搜索结果
+        # 匹配模式: <a class="result__a" href="URL">标题</a>
+        # 和相邻的 <a class="result__snippet" href="...">摘要</a>
+        
+        # 匹配结果行（包括标题和摘要）
+        result_pattern = re.compile(
+            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>.*?'
+            r'(?:<a[^>]*class="result__snippet"[^>]*href="[^"]*"[^>]*>([^<]*)</a>)?',
+            re.DOTALL | re.IGNORECASE
+        )
+        
+        matches = result_pattern.findall(html_content)
+        logger.debug(f"[SearchTool] 正则匹配到 {len(matches)} 个潜在结果")
+        
+        for match in matches[:max_results]:
+            url = match[0].strip()
+            title = match[1].strip()
+            snippet = match[2].strip() if match[2] else ""
+            
+            # 清理 HTML 实体
+            title = self._clean_html_entities(title)
+            snippet = self._clean_html_entities(snippet)
+            
+            # 跳过无效结果
+            if not url or not title:
+                continue
+            
+            # 清理 URL（移除重定向参数）
+            if "uddg=" in url:
+                import urllib.parse
+                parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+                url = parsed.get("uddg", [url])[0]
+            
+            results.append({
+                "title": title[:200],  # 限制标题长度
+                "url": url,
+                "snippet": snippet[:500] if snippet else "",  # 限制摘要长度
+                "source": "duckduckgo"
+            })
+        
+        # 如果正则匹配失败，尝试备用匹配模式
+        if not results:
+            logger.debug(f"[SearchTool] 尝试备用解析模式")
+            # 备用模式：匹配更多变体
+            alt_pattern = re.compile(
+                r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>',
+                re.IGNORECASE
+            )
+            alt_matches = alt_pattern.findall(html_content)
+            
+            seen_urls = set()
+            for match in alt_matches[:max_results]:
+                url = match[0]
+                title = match[1].strip()
+                title = self._clean_html_entities(title)
+                
+                # 去重并过滤无效结果
+                if url and title and url not in seen_urls and "duckduckgo" not in url:
+                    seen_urls.add(url)
+                    results.append({
+                        "title": title[:200],
+                        "url": url,
+                        "snippet": "",
+                        "source": "duckduckgo"
+                    })
+        
+        return results
+
+    def _clean_html_entities(self, text: str) -> str:
+        """
+        清理 HTML 实体
+        
+        将 HTML 实体转换为正常字符。
+        
+        Args:
+            text: 包含 HTML 实体的文本
+            
+        Returns:
+            str: 清理后的文本
+        """
+        if not text:
+            return ""
+        
+        # 替换常见的 HTML 实体
+        replacements = {
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": '"',
+            "&#39;": "'",
+            "&nbsp;": " ",
+            "&#x27;": "'",
+            "&#x2F;": "/",
+            "&ldquo;": """,
+            "&rdquo;": """,
+            "&lsquo;": "'",
+            "&rsquo;": "'",
+            "&mdash;": "—",
+            "&ndash;": "–",
+            "&hellip;": "...",
+        }
+        
+        for entity, char in replacements.items():
+            text = text.replace(entity, char)
+        
+        # 移除剩余的 HTML 标签
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # 清理多余的空白
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+
+    async def _search_via_api(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        """
+        通过 DuckDuckGo API 搜索（备用方案）
+        
+        Args:
+            query: 搜索关键词
+            max_results: 最大结果数
+            
+        Returns:
+            List[Dict[str, Any]]: 格式化后的搜索结果列表
+        """
+        try:
             # 构建 API 请求 URL
-            # 编码搜索关键词
             encoded_query = quote_plus(query)
             api_params = {
                 "q": encoded_query,
                 "format": "json",
-                "no_html": "1",      # 不返回 HTML 格式
-                "skip_disambig": "1"  # 跳过消歧义页面
+                "no_html": "1",
+                "skip_disambig": "1"
             }
             
-            logger.debug(f"[SearchTool] 发送请求到 DuckDuckGo API，URL: {self._api_url}")
+            logger.debug(f"[SearchTool] 发送 API 请求到 {self._api_url}")
             
             # 使用 httpx 发送异步 HTTP 请求
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -164,26 +421,31 @@ class SearchTool(Tool):
             # 检查 HTTP 响应状态
             response.raise_for_status()
             
-            # ========== 结果解析阶段 ==========
+            # 解析 JSON 数据
             data = response.json()
             
             # 解析搜索结果
-            # DuckDuckGo API 返回的 RelatedTopics 包含搜索结果
-            raw_results = data.get("RelatedTopics", [])
-            
-            # 格式化结果
             formatted_results = []
-            for item in raw_results[:max_results]:
-                # 跳过不包含 URL 的结果（如消歧义信息）
-                if not item.get("URL"):
-                    continue
-                
+            
+            # 优先尝试从 Answer 字段获取结果
+            if data.get("Answer"):
                 formatted_results.append({
-                    "title": item.get("Text", "")[:200],  # 限制标题长度
-                    "url": item.get("URL", ""),
-                    "snippet": item.get("Text", "")[:500],  # 限制摘要长度
+                    "title": data.get("Heading", query),
+                    "url": data.get("AnswerURL", ""),
+                    "snippet": data.get("Answer", ""),
                     "source": "duckduckgo"
                 })
+            
+            # 从 RelatedTopics 获取结果
+            raw_results = data.get("RelatedTopics", [])
+            for item in raw_results[:max_results]:
+                if isinstance(item, dict) and item.get("URL"):
+                    formatted_results.append({
+                        "title": item.get("Text", "")[:200],
+                        "url": item.get("URL", ""),
+                        "snippet": item.get("Text", "")[:500],
+                        "source": "duckduckgo"
+                    })
             
             # 如果 RelatedTopics 为空，尝试从 Abstract 获取结果
             if not formatted_results and data.get("Abstract"):
@@ -194,43 +456,11 @@ class SearchTool(Tool):
                     "source": "duckduckgo"
                 })
             
-            logger.info(f"[SearchTool] 搜索完成，找到 {len(formatted_results)} 条结果")
-            
-            # ========== 返回结果 ==========
-            return {
-                "success": True,
-                "query": query,
-                "results": formatted_results,
-                "total_count": len(formatted_results),
-                "metadata": {
-                    "engine": "duckduckgo",
-                    "max_results_requested": max_results
-                }
-            }
-            
-        except httpx.TimeoutException:
-            logger.error(f"[SearchTool] 搜索超时: '{query}'")
-            return {
-                "success": False,
-                "error": "搜索请求超时，请稍后重试",
-                "query": query
-            }
-            
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[SearchTool] HTTP 错误: {e.response.status_code} - '{query}'")
-            return {
-                "success": False,
-                "error": f"搜索请求失败，HTTP 状态码: {e.response.status_code}",
-                "query": query
-            }
+            return formatted_results[:max_results]
             
         except Exception as e:
-            logger.exception(f"[SearchTool] 搜索发生未知错误: {str(e)}")
-            return {
-                "success": False,
-                "error": f"搜索失败: {str(e)}",
-                "query": query
-            }
+            logger.error(f"[SearchTool] API 搜索失败: {str(e)}")
+            return []
 
 
 # ============================================================

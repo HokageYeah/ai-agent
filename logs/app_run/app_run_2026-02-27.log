@@ -29990,3 +29990,5 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 2026-02-27 16:10:05 | INFO     | app.agents.langgraph_executor:execute_stream:1091 - [32mAgent 流式执行完成[0m
 2026-02-27 16:10:05 | INFO     | app.agents.langgraph_executor:execute_stream:1092 - [32m总迭代次数: 1[0m
 2026-02-27 16:10:05 | INFO     | app.api.endpoints.agents:generate_stream:240 - [32m【Agent流式接口】Agent 流式执行完成[0m
+2026-02-27 20:01:38 | INFO     | logging:callHandlers:1736 - Shutting down
+2026-02-27 20:01:39 | INFO     | logging:callHandlers:1736 - Finished server process [56465]
