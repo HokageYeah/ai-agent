@@ -115,6 +115,61 @@ graph TD
     CapabilityLayer -->|依赖解析| InfraLayer
 ```
 
+
+## 🛡️ 错误感知与自我纠错机制
+
+本项目实现了一套完整的 **LLM 错误感知自我纠错（Error-Aware Self-Correction）** 架构，核心解决"Agent 反复尝试被禁止的操作"问题。
+
+### 工作原理
+
+```mermaid
+flowchart TD
+    E[执行步骤] --> S{执行结果}
+    S -->|成功| NC[继续下一步]
+    S -->|失败| ER[生成 error_record\n追加到 error_context]
+    ER --> AE[_analyze_errors\nLLM 根因分析]
+    AE --> SSE[推送 SSE: error_analysis 事件\n前端实时展示根因与建议]
+    SSE --> RF[反思节点\n携带 error_context]
+    RF --> NR{needs_replanning}
+    NR -->|false| Done[返回结果]
+    NR -->|true| PN[规划节点\n携带 error_context + error_analysis]
+    PN --> Filter[工具 Schema 白名单过滤\nLLM 只看到授权工具]
+    Filter --> NewPlan[生成新方案\n规避已知失败路径]
+    NewPlan --> E
+```
+
+### 核心防线：工具 Schema 白名单过滤
+
+**根本性机制**：规划引擎在向 LLM 传递 function calling 工具列表时，**只传入该 Agent 有权限使用的工具 Schema**。这从根源上杜绝了 LLM 规划禁用工具的可能：
+
+| 位置 | 机制 | 效果 |
+|------|------|------|
+| `planning.py` | `available_tools` 白名单过滤全量 `tool_hub.get_schemas()` | LLM 完全看不到禁用工具 |
+| `reflection.py` | 同上，`reflect()` 增加 `available_tools` 参数 | 反思阶段也不会建议使用禁用工具 |
+| `langgraph_executor.py` | `_analyze_errors()` 生成结构化根因分析 | 为重规划提供准确的错误原因与建议 |
+
+### AgentState 新增字段
+
+```typescript
+interface AgentState {
+  // ...原有字段...
+  error_context: ErrorRecord[];  // 历史失败步骤（跨迭代累积）
+  error_analysis: {              // LLM 根因分析结果
+    root_cause: string;
+    suggestions: string[];
+    corrective_plan: string;
+  } | null;
+}
+```
+
+### SSE 错误事件
+
+| 事件 | 时机 | 前端展示 |
+|------|------|----------|
+| `step_error` | 单步骤失败 | 🔴 红色错误卡片 |
+| `error_analysis_start` | 开始 LLM 根因分析 | 🟠 分析中通知 |
+| `error_analysis` | 分析完成 | 🔴 详细根因分析卡片（含步骤、根因、建议、纠正方案） |
+
 ## 🧪 内置客服 + 订单查询 Demo
 
 本项目内置了一组完整的客服场景 Agent 与订单演示数据，方便直接体验“主 Agent 协调 + 子 Agent 落地执行 + 数据库查询”的全流程能力：
@@ -256,7 +311,7 @@ sequenceDiagram
      
      data: {"event": "complete", ...}
      ```
-   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `final_answer` / `complete` / `step_error`
+   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `final_answer` / `complete`
 
 6. **获取所有可用专家 Agent 列表**
    - **请求端点**: `GET /api/v1/agents`
@@ -329,6 +384,7 @@ sequenceDiagram
 - **Agent 思考与执行轨迹可视化**：以时间轴卡片的形式，实时展示 Agent 执行的每一步：
   - 📋 规划阶段：可视化展示 LLM 生成的执行计划和推理过程
   - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）
+  - 🔴 错误分析阶段：当步骤失败时，实时展示 LLM 根因分析卡片（根因、建议、纠正方案）
   - 🔍 反思阶段：展示反思结论与是否重新规划的决策
   - ✅ 完成阶段：最终答案的 Markdown 渲染
 - **阶段进度指示条**：顶部动态展示当前所在阶段（规划 → 执行 → 反思 → 完成）
@@ -370,6 +426,12 @@ sequenceDiagram
     Exec->>LLM: 反思：结果是否满足需求？
     LLM-->>Exec: needs_replanning=false
     Exec-->>Web: SSE: reflection_complete
+
+    Note over Exec: 若执行中有步骤失败
+    Exec-->>Web: SSE: error_analysis_start
+    Exec->>LLM: 分析失败根因
+    LLM-->>Exec: root_cause + suggestions + corrective_plan
+    Exec-->>Web: SSE: error_analysis (根因卡片)
 
     Exec-->>Web: SSE: final_answer (最终答案)
     Exec-->>Web: SSE: complete

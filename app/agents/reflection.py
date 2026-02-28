@@ -15,7 +15,7 @@
 """
 
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from loguru import logger
 from colorama import Fore, Style
 
@@ -80,16 +80,19 @@ class ReflectionEngine:
         self,
         agent: Agent,
         task: str,
-        execution_result: ExecutionResult
+        execution_result: ExecutionResult,
+        error_context: Optional[List[Dict[str, Any]]] = None,
+        available_tools: Optional[List] = None
     ) -> ReflectionResult:
         """
         反思执行结果
-        
+
         Args:
             agent: Agent 实例
             task: 原始任务
             execution_result: 执行结果
-            
+            error_context: 错误上下文（所有失败步骤的详情），可选
+
         Returns:
             ReflectionResult: 反思结果
         """
@@ -101,8 +104,14 @@ class ReflectionEngine:
             f"{Fore.CYAN}执行状态: {'成功' if execution_result.success else '失败'}{Style.RESET_ALL}"
         )
         
+        # 查看是否携带错误上下文（多步骤失败场景）
+        if error_context:
+            logger.info(
+                f"{Fore.YELLOW}[反思引擎] 本次反思携带 {len(error_context)} 条错误信息，将提升判断质量{Style.RESET_ALL}"
+            )
+
         # 构建反思 Prompt
-        prompt = self._build_reflection_prompt(task, execution_result)
+        prompt = self._build_reflection_prompt(task, execution_result, error_context)
         
         # 使用 LLM 进行反思
         logger.info(f"{Fore.BLUE}调用 LLM 进行反思...{Style.RESET_ALL}")
@@ -110,11 +119,24 @@ class ReflectionEngine:
         try:
             from app.llm_hub.inference import InferenceConfig
             
-            # 获取工具定义（用于 LLM function calling）
+            # NOTE: 同规划阶段，反思阶段也只向 LLM 传递该 Agent 有权使用的工具定义。
+            # 若传入禁用工具的定义，LLM 可能在 feedback 中建议使用禁用工具，误导重规划。
             tools = []
             if self.tool_hub:
-                tools = self.tool_hub.get_schemas()
-                logger.debug(f"{Fore.CYAN}[反思引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+                if available_tools:
+                    allowed_tool_names = {t.name for t in available_tools}
+                    all_schemas = self.tool_hub.get_schemas()
+                    tools = [
+                        s for s in all_schemas
+                        if s.get("function", {}).get("name") in allowed_tool_names
+                    ]
+                    logger.debug(
+                        f"{Fore.CYAN}[反思引擎] 工具定义已过滤: "
+                        f"授权 {len(tools)}/{len(all_schemas)} 个{Style.RESET_ALL}"
+                    )
+                else:
+                    tools = self.tool_hub.get_schemas()
+                    logger.debug(f"{Fore.CYAN}[反思引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
             
             config = InferenceConfig(
                 model=agent.agent_config.execution_model,
@@ -154,7 +176,8 @@ class ReflectionEngine:
     def _build_reflection_prompt(
         self,
         task: str,
-        execution_result: ExecutionResult
+        execution_result: ExecutionResult,
+        error_context: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         构建反思 Prompt
@@ -182,7 +205,30 @@ class ReflectionEngine:
 
 执行结果:
 {result_text}
+"""
 
+        # NOTE: 若携带错误上下文，将具体失败步骤注入 Prompt，让 LLM 知情所有错误
+        if error_context:
+            error_lines = []
+            for idx, err in enumerate(error_context, 1):
+                step_desc = err.get("step_desc", "未知步骤")
+                error_msg = err.get("error_msg", "")
+                error_type = err.get("error_type", "")
+                suggestion = err.get("suggestion", "")
+                line = f"{idx}. [{error_type}] {step_desc}: {error_msg}"
+                if suggestion:
+                    line += f" (建议: {suggestion})"
+                error_lines.append(line)
+            error_summary = "\n".join(error_lines)
+            prompt += f"""
+执行过程中发现以下{len(error_context)}个错误：
+{error_summary}
+"""
+            logger.info(
+                f"{Fore.YELLOW}[反思引擎] 已将 {len(error_context)} 条错误信息注入反思 Prompt{Style.RESET_ALL}"
+            )
+
+        prompt += """
 请回答以下问题：
 1. 任务是否完成？
 2. 结果质量如何？

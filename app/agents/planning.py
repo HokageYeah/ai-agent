@@ -101,8 +101,10 @@ class PlanningEngine:
         task: str,
         available_tools: List[Tool],
         available_skills: List[Skill],
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        error_context: Optional[List[Dict[str, Any]]] = None
     ) -> Plan:
+        """（如有 error_context，则为重规划调用）"""
         """
         创建执行计划
         
@@ -121,9 +123,13 @@ class PlanningEngine:
         )
         logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
         
-        # 构建规划 Prompt
+        # 构建规划 Prompt（重规划时携带错误上下文，提升修正质量）
+        if error_context:
+            logger.info(
+                f"{Fore.YELLOW}[规划引擎] 本次为错误感知重规划，携带 {len(error_context)} 条错误记录{Style.RESET_ALL}"
+            )
         prompt = self._build_planning_prompt(
-            agent, task, available_tools, available_skills, context
+            agent, task, available_tools, available_skills, context, error_context
         )
         
         # 使用 LLM 生成计划
@@ -132,11 +138,22 @@ class PlanningEngine:
         try:
             from app.llm_hub.inference import InferenceConfig
             
-            # 获取工具定义（用于 LLM function calling）
+            # NOTE: 只向 LLM 提供该 Agent 实际有权限使用的工具定义。
+            # 禁止使用全量 tool_hub.get_schemas()，否则 LLM 会看到被禁止的工具（如 database_query）
+            # 并在计划中反复规划调用它，导致无限迭代直到达到最大次数。
             tools = []
-            if self.tool_hub:
-                tools = self.tool_hub.get_schemas()
-                logger.debug(f"{Fore.CYAN}[规划引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            if self.tool_hub and available_tools:
+                # 构建授权工具名称集合，用于过滤
+                allowed_tool_names = {t.name for t in available_tools}
+                all_schemas = self.tool_hub.get_schemas()
+                tools = [
+                    s for s in all_schemas
+                    if s.get("function", {}).get("name") in allowed_tool_names
+                ]
+                logger.debug(
+                    f"{Fore.CYAN}[规划引擎] 工具定义已过滤: "
+                    f"授权 {len(tools)}/{len(all_schemas)} 个（过滤掉了未授权工具）{Style.RESET_ALL}"
+                )
             
             config = InferenceConfig(
                 model=agent.agent_config.planning_model,
@@ -180,7 +197,8 @@ class PlanningEngine:
         task: str,
         available_tools: List[Tool],
         available_skills: List[Skill],
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        error_context: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         构建规划 Prompt
@@ -255,14 +273,30 @@ class PlanningEngine:
 
 请只返回 JSON，不要包含其他文本。
 """
-        # todo 一会解开注释
-        # logger.info(f"{Fore.CYAN}规划 Prompt: {prompt}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}工具列表: {tools_text}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}技能列表: {skills_text}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}子 Agent: {child_agents_text}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}角色定义: {agent.role}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}额外上下文: {context}{Style.RESET_ALL}")
+        # NOTE: 若本次规划携带了上一轮的错误上下文（重规划场景），则在 Prompt 末尾
+        # 追加失败详情，引导 LLM 在新计划中规避已知问题路径
+        if error_context:
+            error_lines = []
+            for idx, err in enumerate(error_context, 1):
+                step_desc = err.get("step_desc", "未知步骤")
+                error_msg = err.get("error_msg", "")
+                error_type = err.get("error_type", "")
+                suggestion = err.get("suggestion", "")
+                line = f"{idx}. [{error_type}] {step_desc}: {error_msg}"
+                if suggestion:
+                    line += f" → 建议: {suggestion}"
+                error_lines.append(line)
+            error_block = "\n".join(error_lines)
+            prompt += f"""
+
+# ⚠️ 上一轮执行发现以下错误，请在新计划中规避（不要重复同样的失败步骤）：
+{error_block}
+
+请根据以上错误信息，调整执行策略，确保新计划能够避开已知问题。
+请只返回 JSON，不要包含其他文本。"""
+            logger.info(
+                f"{Fore.YELLOW}[规划引擎] 已将 {len(error_context)} 条错误信息注入规划 Prompt{Style.RESET_ALL}"
+            )
 
         return prompt
     

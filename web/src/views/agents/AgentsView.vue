@@ -521,6 +521,97 @@
                         {{ event.error || event.data?.error || '未知错误' }}
                       </div>
                     </template>
+
+                    <!-- ⑬ 错误分析开始（error_analysis_start） -->
+                    <template v-else-if="event.event === 'error_analysis_start'">
+                      <div style="margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <el-tag size="small" type="danger" effect="plain">
+                          🔴 开始错误智能分析
+                        </el-tag>
+                        <span style="font-size: 0.8rem; color: var(--color-text-muted);">
+                          迭代 {{ event.iteration + 1 }}
+                        </span>
+                        <el-tag v-if="event.data?.failed_count" size="small" type="danger" effect="dark">
+                          {{ event.data.failed_count }} 个步骤失败
+                        </el-tag>
+                      </div>
+                      <div style="font-size: 0.85rem; color: var(--el-color-warning-dark-2); padding: 8px 12px; background: var(--el-color-warning-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-warning);">
+                        {{ event.data?.message || 'Agent 正在分析错误根因并制定修复方案...' }}
+                      </div>
+                    </template>
+
+                    <!-- ⑭ 错误根因分析结果（error_analysis 核心卡片） -->
+                    <template v-else-if="event.event === 'error_analysis'">
+                      <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <el-tag size="small" type="danger" effect="dark">🧠 错误根因分析</el-tag>
+                        <el-tag size="small" type="warning" effect="plain">
+                          {{ event.data?.failed_count || 0 }} 个步骤失败
+                        </el-tag>
+                        <span style="font-size: 0.75rem; color: var(--color-text-muted);">
+                          迭代 {{ event.iteration + 1 }}
+                        </span>
+                      </div>
+
+                      <!-- 失败步骤列表 -->
+                      <div v-if="event.data?.errors?.length" style="margin-bottom: 12px;">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-danger); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
+                          失败步骤详情
+                        </div>
+                        <div
+                          v-for="(err, eIdx) in event.data.errors"
+                          :key="'err-'+eIdx"
+                          style="margin-bottom: 8px; padding: 8px 10px; background: var(--el-color-danger-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-danger); font-size: 0.82rem;"
+                        >
+                          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap;">
+                            <el-tag size="small" type="danger" effect="plain">{{ err.error_type || 'Error' }}</el-tag>
+                            <span style="font-weight: 600; color: var(--color-text-primary);">{{ err.step_desc }}</span>
+                          </div>
+                          <div style="color: var(--el-color-danger-dark-2); margin-bottom: 4px;">
+                            <strong>错误：</strong>{{ err.error_msg }}
+                          </div>
+                          <div v-if="err.suggestion" style="color: var(--color-text-secondary);">
+                            <strong>建议：</strong>{{ err.suggestion }}
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- LLM 分析的根本原因 -->
+                      <div v-if="event.data?.root_cause" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 6px; background: var(--el-color-warning-light-9); border-left: 3px solid var(--el-color-warning);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-warning-dark-2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
+                          🔍 根本原因 (LLM 分析)
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--color-text-primary); line-height: 1.6;">
+                          {{ event.data.root_cause }}
+                        </div>
+                      </div>
+
+                      <!-- 改进建议列表 -->
+                      <div v-if="event.data?.suggestions?.length" style="margin-bottom: 12px;">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
+                          💡 改进建议
+                        </div>
+                        <div
+                          v-for="(sug, sIdx) in event.data.suggestions"
+                          :key="'sug-'+sIdx"
+                          style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; font-size: 0.83rem; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 6px;"
+                        >
+                          <span style="color: var(--el-color-primary); font-weight: 700; flex-shrink: 0;">{{ sIdx + 1 }}.</span>
+                          <span style="color: var(--color-text-primary);">{{ sug }}</span>
+                        </div>
+                      </div>
+
+                      <!-- 修正执行计划 -->
+                      <div v-if="event.data?.corrective_plan" style="padding: 10px 12px; border-radius: 6px; background: var(--el-color-primary-light-9); border-left: 3px solid var(--el-color-primary-light-5);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-primary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
+                          🔄 修正执行计划
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--color-text-primary); line-height: 1.6;">
+                          {{ event.data.corrective_plan }}
+                        </div>
+                      </div>
+                    </template>
+
+
                     
                     <!-- ⑬ 全局错误 -->
                     <template v-else-if="event.event === 'error'">
@@ -1147,6 +1238,9 @@ function getEventTimelineType(eventType: string): string {
       return 'success'
     case 'step_error':
     case 'error':
+    // NOTE: 错误分析事件统一使用 danger 类型，与整体异常风格一致
+    case 'error_analysis_start':
+    case 'error_analysis':
       return 'danger'
     default:
       return 'info'
@@ -1166,6 +1260,8 @@ function isImportantEvent(eventType: string): boolean {
     'skill_complete',
     'delegate_complete',
     'reflection_complete',
+    // NOTE: error_analysis 包含 LLM 分析结果，内容较多，标记为重要事件以实心圆点显示
+    'error_analysis',
     'final_answer',
     'complete'
   ].includes(eventType)
@@ -1185,12 +1281,15 @@ function getEventTimelineSize(eventType: string): 'normal' | 'large' | 'small' {
     case 'skill_complete':
     case 'delegate_complete':
     case 'reflection_complete':
+    // NOTE: error_analysis 内容丰富，使用 large 尺寸使其在时间轴上较为显眼
+    case 'error_analysis':
     case 'final_answer':
     case 'complete':
       return 'large'
     case 'step_start':
     case 'execute_complete':
     case 'reflection_start':
+    case 'error_analysis_start':
       return 'normal'
     default:
       return 'normal'

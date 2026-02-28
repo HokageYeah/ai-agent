@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.1
-- **最后更新**: 2026-02-24
+- **版本号**: v1.2
+- **最后更新**: 2026-02-28
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -17,9 +17,10 @@
 4. **技能系统**：预定义可复用的 AI 技能
 5. **工作流引擎**：支持顺序、并行、条件分支执行
 6. **Agent 系统**：具备规划、执行、反思能力的智能体，支持子 Agent 协作
-7. **对话服务**：支持普通对话场景
-8. **渠道接入**：支持多渠道接入
-9. **REST API**：提供标准化的接口
+7. **错误感知自我纠错**：收集执行错误，通过 LLM 分析根因并指导重规划，防止反复触碰失败路径
+8. **对话服务**：支持普通对话场景
+9. **渠道接入**：支持多渠道接入
+10. **REST API**：提供标准化的接口
 
 ---
 
@@ -842,9 +843,11 @@ class ReflectionEngine:
         self,
         agent: Agent,
         task: str,
-        execution_result: dict
+        execution_result: dict,
+        error_context: list[dict] = None,    # 历史失败步骤列表（跨迭代累积）
+        available_tools: list[Tool] = None   # 授权工具（过滤 LLM function calling 列表）
     ) -> dict:
-        """反思执行结果"""
+        """反思执行结果，携带 error_context 时进行错误感知反思"""
         
         prompt = f"""
 任务: {task}
@@ -872,6 +875,7 @@ class ReflectionEngine:
         
         return self._parse_reflection(result)
 ```
+
 
 ### 8.6 子 Agent 管理器
 
@@ -980,7 +984,101 @@ REFUND_AGENT = Agent(
 4. 执行引擎收集工具结果，调用 LLM 合成自然语言答案，返回给用户（不再包含 `{status}`、`[customer_name]` 这类占位符，而是落地的真实字段值）。
 
 > 总结：`available_tools` 和 `available_skills` 不仅是元数据声明，实际在 **规划阶段用于过滤可见能力**，在 **执行阶段用于强制授权校验**，从而实现“主 Agent 负责协调，子 Agent 负责落地”的多智能体协作模式。
+
+
+### 8.9 错误感知机制（Error-Aware Self-Correction）
+
+在 Agent 执行过程中，步骤可能由于以下原因失败：工具执行异常、工具权限被拒绝、技能调用失败、子 Agent 委派错误等。若不加处理，LLM 在重规划时会继续尝试相同的失败路径，导致死循环直至达到 `max_iterations` 上限。
+
+#### 错误记录结构（error_context）
+
+每次步骤执行失败，均生成一条结构化错误记录并追加到 `AgentState.error_context` 列表（跨迭代累积）：
+
+```python
+error_record = {
+    "step": step.action,           # 步骤类型: tool / skill / delegate
+    "tool_name": step.tool_name,   # 工具名称（如 database_query）
+    "error": str(error),           # 错误消息
+    "iteration": iteration,        # 发生的迭代轮次
+    "params": step.params          # 调用参数（便于根因分析）
+}
 ```
+
+#### LLM 根因分析（_analyze_errors → error_analysis）
+
+当 `error_context` 非空时，执行引擎额外调用 LLM 进行根因分析，生成结构化的 `error_analysis`：
+
+```python
+error_analysis = {
+    "root_cause": "database_query 工具未在该 Agent 的授权列表中",
+    "suggestions": ["将任务委派给具有数据库权限的子 Agent"],
+    "corrective_plan": "重规划时生成 delegate 步骤，而不是直接调用工具"
+}
+```
+
+分析结果通过 SSE 推送 `error_analysis` 事件，前端实时展示根因、建议和纠正方案。
+
+#### 规划阶段工具 Schema 白名单过滤（核心防线）
+
+**从根源上防止 LLM 规划禁用工具**：规划引擎在构建 LLM function calling 工具列表时，只传入 `available_tools` 白名单中的工具 Schema，被禁止的工具在 LLM 视角中完全不可见：
+
+```python
+# planning.py — create_plan() 核心过滤逻辑
+allowed_tool_names = {t.name for t in available_tools}   # 白名单
+all_schemas = self.tool_hub.get_schemas()                 # 全量
+tools = [
+    s for s in all_schemas
+    if s.get("function", {}).get("name") in allowed_tool_names  # 白名单过滤
+]
+# reflection.py 中 reflect() 的 available_tools 参数用于同样的过滤
+```
+
+#### 错误感知完整流程
+
+```
+[执行步骤]
+    │
+    ├─ 步骤成功 ──────────────────────────────→ [继续执行下一步]
+    │
+    └─ 步骤失败
+           │
+           ↓
+    生成 error_record，追加到 AgentState.error_context
+           │
+           ↓
+    调用 _analyze_errors（LLM 根因分析）
+       输出: root_cause / suggestions / corrective_plan
+       流式推送 SSE: error_analysis_start → error_analysis
+           │
+           ↓
+    [反思节点]  携带 error_context 调用反思 LLM
+       工具 Schema 已按 available_tools 过滤（禁用工具不可见）
+           │
+           ├─ needs_replanning=false → [返回结果]
+           │
+           └─ needs_replanning=true
+                   │
+                   ↓
+           [规划节点]  携带 error_context + error_analysis 重新规划
+              Prompt 包含: 错误历史 + 根因分析 + 纠正建议
+              工具列表: 白名单过滤，LLM 只看到授权工具
+                   │
+                   ↓
+           生成新方案（不包含被禁工具，规避已知失败路径）
+                   │
+                   ↓
+           [执行节点] 使用新方案继续执行
+```
+
+#### SSE 事件类型扩展
+
+错误处理流程新增以下 SSE 事件：
+
+| 事件名                 | 触发时机          | 数据内容                                               |
+| ---------------------- | ----------------- | ------------------------------------------------------ |
+| `error_analysis_start` | 开始 LLM 根因分析 | `{ message }`                                          |
+| `error_analysis`       | 分析完成          | `{ root_cause, suggestions, corrective_plan, errors }` |
+| `step_error`           | 单步骤执行失败    | `{ step, error, iteration }`                           |
 
 ---
 
@@ -999,6 +1097,8 @@ class AgentState(TypedDict):
     tool_outputs: list[dict]       # 工具输出
     iterations: int                # 迭代次数
     final_result: dict             # 最终结果
+    error_context: list[dict]      # 历史失败步骤（跨迭代累积）
+    error_analysis: dict           # LLM 对错误的根因分析结果
 
 class LangGraphAgentExecutor:
     """基于 LangGraph 的 Agent 执行器"""
@@ -1417,22 +1517,31 @@ app/
 更新记忆
 ```
 
-### 15.2 Agent 执行流程
+### 15.2 Agent 执行流程（含错误感知自我纠错）
 
 ```
 用户任务
   ↓
-规划引擎：创建执行计划
+[规划节点] 规划引擎：创建执行计划
+  │  工具列表按 available_tools 白名单过滤后传给 LLM
+  │  若有 error_context，携带历史错误与纠正建议一起生成计划
   ↓
-执行引擎：按计划执行
+[执行节点] 执行引擎：按计划逐步执行
+  │  ┌─ 步骤成功 → 收集结果，继续下一步
+  │  └─ 步骤失败 → 生成 error_record 追加到 error_context
+  │             → 调用 _analyze_errors（LLM 根因分析）
+  │             → 推送 error_analysis 事件到前端
   ↓
-反思引擎：评估结果
+[反思节点] 反思引擎：携带 error_context 评估结果
+  │  工具 Schema 同样按 available_tools 白名单过滤
+  ├─ 成功 + needs_replanning=false → 返回结果
+  └─ needs_replanning=true + 未超最大迭代 → 重新规划
+                                     ↓
+                             [规划节点]（携带 error_context）
+                                     ↓
+                        LLM 看到新方案，规避已知错误路径
   ↓
-成功？→ 返回结果
-  ↓ 否
-迭代次数 < 最大？ → 重新规划
-  ↓
-达到最大迭代 → 返回失败
+达到最大迭代（max_iterations=5） → 返回失败摘要
 ```
 
 ### 15.3 工作流执行流程
@@ -1517,3 +1626,5 @@ httpx = "^0.26.0"
 6. **向量记忆**：长期记忆、语义检索
 7. **EventBus**：事件驱动架构
 8. **Runtime Sandbox**：安全执行环境
+
+> ✅ **已完成（v1.2）**：错误感知自我纠错机制 — 包括执行错误收集（`error_context`）、LLM 根因分析（`_analyze_errors` + `error_analysis`）、规划阶段工具 Schema 白名单过滤（防止 LLM 重复规划禁用工具）、以及前端 SSE 实时推送错误分析结果（`error_analysis_start` / `error_analysis` 事件）。

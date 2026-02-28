@@ -53,6 +53,12 @@ class AgentState(TypedDict):
     task: str
     # Agent 实例
     agent: Optional[Agent]
+    # NOTE: 错误上下文列表，收集本轮所有执行步骤的失败信息
+    #       将传入重规划和反思 Prompt，提升 LLM 修正决策质量
+    error_context: List[Dict[str, Any]]
+    # NOTE: LLM 对本轮错误的分析结果（根因分析 + 修复建议）
+    #       通过流式事件实时推送到前端展示
+    error_analysis: Optional[Dict[str, Any]]
 
 
 # 流式事件回调函数类型
@@ -73,7 +79,7 @@ class LangGraphAgentExecutor:
         tool_hub,
         skill_manager,
         child_agent_manager=None,
-        max_iterations: int = 10,
+        max_iterations: int = 5,
         tool_gateway=None
     ):
         """
@@ -385,12 +391,21 @@ class LangGraphAgentExecutor:
             f"可用技能: {[s.skill_id for s in available_skills]}{Style.RESET_ALL}"
         )
         
-        # 创建计划
+        # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
+        # 使 LLM 在重规划时能规避已知失败路径
+        current_error_ctx = state.get("error_context", [])
+        if current_error_ctx:
+            logger.info(
+                f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
+                f"本次为错误感知重规划{Style.RESET_ALL}"
+            )
+        # 创建计划（携带 error_context 以提升重规划质量）
         plan = await self.planning_engine.create_plan(
             agent=agent,
             task=task,
             available_tools=available_tools,
-            available_skills=available_skills
+            available_skills=available_skills,
+            error_context=current_error_ctx if current_error_ctx else None
         )
         
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
@@ -415,6 +430,10 @@ class LangGraphAgentExecutor:
             "reasoning": plan.reasoning,
             "steps": [step.to_dict() for step in plan.steps]
         })
+
+        # NOTE: 重规划后清空上一轮的错误分析结果（错误已被 LLM 考虑到新计划中）
+        # 保留 error_context 以便后续迭代中继续累积错误历史
+        state["error_analysis"] = None
         
         return state
     
@@ -556,6 +575,96 @@ class LangGraphAgentExecutor:
         # 如果执行成功，保存结果
         if execution_result.success:
             state["final_result"] = execution_result.to_dict()
+
+        # ═══════════════════════════════════════════════════════════
+        # 【错误收集阶段】
+        # 遇历失败的步骤自动提取，构建结构化 error_context
+        # 后续传递给错误分析方法、反思引擎、下一轮规划引擎
+        # ═══════════════════════════════════════════════════════════
+        failed_steps = [
+            sr for sr in (execution_result.step_results or [])
+            if not sr.get("success", True)
+        ]
+
+        if failed_steps:
+            logger.warning(
+                f"{Fore.YELLOW}[错误收集] 本轮执行发现 {len(failed_steps)} 个失败步骤，"
+                f"开始构建错误上下文{Style.RESET_ALL}"
+            )
+
+            # 为每个失败步骤构建结构化错误记录
+            new_error_records = []
+            for sr in failed_steps:
+                action = sr.get("action", "unknown")
+                error_msg = sr.get("error", str(sr.get("result", "")))
+
+                # 构建描述性步骤名称
+                if action == "tool":
+                    step_desc = f"工具调用: {sr.get('tool_name', 'unknown')}"
+                    error_type = "ToolError"
+                    suggestion = f"检查工具 '{sr.get('tool_name')}' 的入参格式或权限"
+                elif action == "skill":
+                    step_desc = f"技能调用: {sr.get('skill_id', 'unknown')}"
+                    error_type = "SkillError"
+                    suggestion = f"检查技能 '{sr.get('skill_id')}' 的参数是否完整"
+                elif action == "delegate":
+                    step_desc = f"子Agent委派: {sr.get('agent_id', 'unknown')}"
+                    error_type = "DelegateError"
+                    suggestion = f"检查子Agent '{sr.get('agent_id')}' 是否已注册且可用"
+                else:
+                    step_desc = f"未知操作: {action}"
+                    error_type = "UnknownError"
+                    suggestion = "请检查操作类型是否正确"
+
+                new_error_records.append({
+                    "step_desc": step_desc,
+                    "error_msg": error_msg,
+                    "error_type": error_type,
+                    "suggestion": suggestion,
+                    "iteration": iteration
+                })
+
+                logger.debug(
+                    f"{Fore.RED}[错误收集] {step_desc} 失败: {error_msg[:100]}{Style.RESET_ALL}"
+                )
+
+            # 将本轮错误累加到 error_context（践代累积历史错误）
+            current_error_ctx = state.get("error_context", []) or []
+            current_error_ctx.extend(new_error_records)
+            state["error_context"] = current_error_ctx
+
+            logger.info(
+                f"{Fore.YELLOW}[错误收集] error_context 已更新，"
+                f"当前共有 {len(current_error_ctx)} 条错误记录{Style.RESET_ALL}"
+            )
+
+            # 发送错误分析开始事件（通知前端即将进入错误分析阶段）
+            await self._emit_stream_event(
+                stream_callback,
+                event_type="error_analysis_start",
+                iteration=iteration,
+                data={
+                    "message": f"检测到 {len(failed_steps)} 个步骤失败，Agent 正在分析错误根因并制定修复方案...",
+                    "failed_count": len(failed_steps)
+                }
+            )
+
+            # 调用 LLM 分析错误并将结果通过流式事件推送
+            error_analysis_result = await self._analyze_errors(
+                agent=state["agent"],
+                task=state["task"],
+                error_context=new_error_records,
+                stream_callback=stream_callback,
+                iteration=iteration
+            )
+
+            # 将错误分析结果写入状态（下一步可供反思引擎参考）
+            state["error_analysis"] = error_analysis_result
+        else:
+            # 本轮无失败步骤，保持 error_context 不变（可能有历史错误）
+            logger.info(
+                f"{Fore.GREEN}[错误收集] 本轮所有步骤均成功，无新增错误{Style.RESET_ALL}"
+            )
         
         # 发送整个执行阶段完成事件，添加步骤摘要信息
         # 构建步骤摘要列表
@@ -649,11 +758,31 @@ class LangGraphAgentExecutor:
         }
         execution_result_obj = ExecutionResult(**execution_result_args)
         
-        # 反思执行结果
+        # 反思执行结果（携带 error_context 提升反思质量）
+        current_error_ctx = state.get("error_context", []) or []
+        if current_error_ctx:
+            logger.info(
+                f"{Fore.YELLOW}[Reflect Node] 携带 {len(current_error_ctx)} 条错误信息进行反思{Style.RESET_ALL}"
+            )
+
+        # 复用 _plan_node 的工具过滤逻辑，确保反思阶段 LLM 只看到授权工具
+        # NOTE: 不将 available_tools 存入 state 以保持 state 简洁，直接重新计算代价很小
+        if self.tool_hub:
+            all_tools = self.tool_hub.list_tools()
+            reflect_available_tools = (
+                [t for t in all_tools if t.name in agent.available_tools]
+                if agent.available_tools
+                else all_tools
+            )
+        else:
+            reflect_available_tools = []
+
         reflection_result = await self.reflection_engine.reflect(
             agent=agent,
             task=task,
-            execution_result=execution_result_obj
+            execution_result=execution_result_obj,
+            error_context=current_error_ctx if current_error_ctx else None,
+            available_tools=reflect_available_tools if reflect_available_tools else None
         )
         
         logger.info(f"{Fore.GREEN}[Reflect Node] 反思完成{Style.RESET_ALL}")
@@ -682,7 +811,149 @@ class LangGraphAgentExecutor:
         
         return state
     
+    async def _analyze_errors(
+        self,
+        agent,
+        task: str,
+        error_context: List[Dict[str, Any]],
+        stream_callback=None,
+        iteration: int = 0
+    ) -> Dict[str, Any]:
+        """
+        使用 LLM 对本轮执行失败步骤进行根因分析，并通过流式事件推送给前端。
+
+        本方法在每次执行节点发现失败步骤后被调用，收集结构化错误信息，
+        构建 Prompt 让 LLM 进行根因分析，并将分析结果以 error_analysis 事件
+        推送给前端展示。这样用户可以实时看到 Agent 如何理解自己的错误。
+
+        Args:
+            agent: 当前 Agent 实例（获取模型配置）
+            task: 原始任务描述
+            error_context: 本轮失败步骤的结构化错误列表
+            stream_callback: 流式事件回调函数（可选）
+            iteration: 当前迭代轮次
+
+        Returns:
+            Dict[str, Any]: LLM 分析结果，包含 root_cause / suggestions / corrective_plan
+        """
+        logger.info(
+            f"{Fore.YELLOW}[错误分析] 开始调用 LLM 分析 {len(error_context)} 个错误{Style.RESET_ALL}"
+        )
+
+        # ── 格式化错误列表供 LLM 阅读 ────────────────────────────────
+        error_lines = []
+        for idx, err in enumerate(error_context, 1):
+            step_desc = err.get("step_desc", "未知步骤")
+            error_msg = err.get("error_msg", "")
+            error_type = err.get("error_type", "")
+            suggestion = err.get("suggestion", "")
+            line = f"{idx}. [{error_type}] {step_desc}\n   错误信息: {error_msg}"
+            if suggestion:
+                line += f"\n   初步建议: {suggestion}"
+            error_lines.append(line)
+
+        error_text = "\n\n".join(error_lines)
+
+        # ── 构建错误分析 Prompt ─────────────────────────────────────
+        analysis_prompt = f"""你是 {agent.name}，{agent.description}
+
+在执行以下任务的过程中遇到了一些错误：
+
+任务：{task}
+
+以下是本轮执行中发现的 {len(error_context)} 个失败步骤：
+
+{error_text}
+
+请对上述错误进行深度分析，以 JSON 格式返回：
+{{
+  "root_cause": "根本原因分析（一段话，解释为什么会发生这些错误，以及各错误之间的关联）",
+  "suggestions": [
+    "具体修复建议1",
+    "具体修复建议2",
+    "..."
+  ],
+  "corrective_plan": "修正计划（简要描述下一轮应该如何调整执行方案以避免同样的错误）"
+}}
+
+请只返回 JSON，不要包含其他文本。"""
+
+        # ── 调用 LLM 进行错误分析 ───────────────────────────────────
+        try:
+            from app.llm_hub.inference import InferenceConfig
+            import json as _json_parser
+
+            config = InferenceConfig(
+                model=agent.agent_config.execution_model,
+                temperature=0.3,   # 低温度保证分析一致性
+                max_tokens=1024,
+                stream=False
+            )
+
+            logger.info(f"{Fore.YELLOW}[错误分析] 调用 LLM 分析错误根因...{Style.RESET_ALL}")
+            response = await self.llm_hub.infer(
+                messages=[{"role": "user", "content": analysis_prompt}],
+                config=config
+            )
+
+            # ── 解析 LLM 返回的 JSON ─────────────────────────────────
+            raw_content = response.content.strip()
+
+            # 处理 markdown 代码块包裹的 JSON
+            if "```json" in raw_content:
+                start = raw_content.find("```json") + 7
+                end = raw_content.find("```", start)
+                raw_content = raw_content[start:end].strip()
+            elif "```" in raw_content:
+                start = raw_content.find("```") + 3
+                end = raw_content.find("```", start)
+                raw_content = raw_content[start:end].strip()
+
+            analysis_result = _json_parser.loads(raw_content)
+            logger.info(
+                f"{Fore.GREEN}[错误分析] LLM 分析完成，"
+                f"根因字数: {len(analysis_result.get('root_cause', ''))}{Style.RESET_ALL}"
+            )
+
+        except Exception as e:
+            # LLM 调用或 JSON 解析失败时用规则兜底，不影响主流程
+            logger.warning(
+                f"{Fore.YELLOW}[错误分析] LLM 分析异常（{e}），使用规则兜底{Style.RESET_ALL}"
+            )
+            analysis_result = {
+                "root_cause": f"自动分析失败（{str(e)}），请根据以下错误信息手动判断原因。",
+                "suggestions": [
+                    err.get("suggestion", "检查步骤参数是否正确")
+                    for err in error_context
+                ],
+                "corrective_plan": "请根据错误详情调整执行计划，修正入参格式或选择替代工具。"
+            }
+
+        # ── 通过流式事件将分析结果推送给前端 ──────────────────────────
+        event_data = {
+            "errors": error_context,        # 原始失败步骤列表（供前端逐条展示）
+            "root_cause": analysis_result.get("root_cause", ""),
+            "suggestions": analysis_result.get("suggestions", []),
+            "corrective_plan": analysis_result.get("corrective_plan", ""),
+            "failed_count": len(error_context)
+        }
+
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="error_analysis",
+            iteration=iteration,
+            data=event_data
+        )
+
+        logger.info(
+            f"{Fore.GREEN}[错误分析] error_analysis 事件已推送前端，"
+            f"建议条数: {len(analysis_result.get('suggestions', []))}{Style.RESET_ALL}"
+        )
+
+        return analysis_result
+
     def _should_continue(self, state: AgentState) -> str:
+
         """
         条件边判断
         
@@ -796,7 +1067,11 @@ class LangGraphAgentExecutor:
                 "iterations": 0,
                 "final_result": None,
                 "task": task,
-                "agent": agent
+                "agent": agent,
+                # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
+                "error_context": [],
+                # NOTE: 初始为 None，LLM 对错误的根因分析结果会写入这里
+                "error_analysis": None
             }
             
             # NOTE: LangGraph 默认 recursion_limit=25，每次 plan→execute→reflect 算 3 步
@@ -931,7 +1206,11 @@ class LangGraphAgentExecutor:
             "iterations": 0,
             "final_result": None,
             "task": task,
-            "agent": agent
+            "agent": agent,
+            # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
+            "error_context": [],
+            # NOTE: 初始为 None，LLM 对错误的根因分析结果会写入这里
+            "error_analysis": None
         }
 
         # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量
