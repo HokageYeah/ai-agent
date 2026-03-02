@@ -542,15 +542,15 @@
                           type="primary"
                           size="small"
                           :loading="confirmLoading === event.data?.confirm_id"
-                          :disabled="!!confirmLoading"
-                          @click="handleConfirm(event.data?.confirm_id, 'confirm')"
+                          :disabled="!!confirmLoading || confirmedIds.has(event.data?.confirm_id)"
+                          @click="console.log('[按钮点击] confirmLoading:', confirmLoading, 'confirmId:', event.data?.confirm_id) || handleConfirm(event.data?.confirm_id, 'confirm')"
                         >
                           <el-icon><Check /></el-icon> 确认执行
                         </el-button>
                         <el-button
                           size="small"
-                          :disabled="!!confirmLoading"
-                          @click="handleConfirm(event.data?.confirm_id, 'reject')"
+                          :disabled="!!confirmLoading || confirmedIds.has(event.data?.confirm_id)"
+                          @click="console.log('[按钮点击] confirmLoading:', confirmLoading, 'confirmId:', event.data?.confirm_id) || handleConfirm(event.data?.confirm_id, 'reject')"
                         >
                           取消
                         </el-button>
@@ -902,6 +902,7 @@ const streamEvents = ref<StreamEvent[]>([])  // 流式事件列表
 const isStreaming = ref<boolean>(false)      // 是否正在流式接收
 const currentStreamEvent = ref<StreamEvent | null>(null)  // 当前正在处理的事件
 const confirmLoading = ref<string | null>(null)  // 当前正在等待确认的 confirm_id
+const confirmedIds = ref<Set<string>>(new Set())  // 已确认过的 confirm_id 集合，防止重复点击
 
 // 计算当前执行阶段（用于进度指示器）
 type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'reflecting' | 'completed'
@@ -1095,15 +1096,14 @@ function handleStreamEvent(event: StreamEvent): void {
 
     case 'user_confirm_required':
       console.log(`[AgentView] ⚠️ 需要用户确认: ${event.data?.action_type}，confirm_id: ${event.data?.confirm_id}`)
-      // 设置当前等待确认的 ID
-      if (event.data?.confirm_id) {
-        confirmLoading.value = event.data.confirm_id
-      }
+      // 注意：不要在这里设置 confirmLoading，否则按钮一开始就会被禁用
+      // confirmLoading 只在用户点击按钮后设置为 loading 状态，防止重复提交
       break
 
     case 'user_confirm_result':
-      console.log(`[AgentView] 用户确认结果: ${event.data?.action}，message: ${event.data?.message}`)
+      console.log(`[AgentView] 用户确认结果: ${event.data?.action}，message: ${event.data?.message}，设置 confirmLoading = null`)
       confirmLoading.value = null
+      console.log(`[AgentView] confirmLoading 重置后: ${confirmLoading.value}`)
       break
 
     case 'reflection_start':
@@ -1181,8 +1181,13 @@ async function handleConfirm(confirmId: string | undefined, action: 'confirm' | 
     return
   }
 
-  // 设置加载状态
+  // 标记该 ID 已确认，防止重复点击
+  confirmedIds.value.add(confirmId)
+
+  // 设置加载状态，按钮将被禁用
+  console.log(`[handleConfirm] 设置 confirmLoading = ${confirmId}, 当前值: ${confirmLoading.value}`)
   confirmLoading.value = confirmId
+  console.log(`[handleConfirm] 设置后 confirmLoading = ${confirmLoading.value}`)
 
   try {
     console.log(`[AgentView] 用户${action === 'confirm' ? '确认' : '拒绝'}操作，confirmId:`, confirmId)
@@ -1191,10 +1196,12 @@ async function handleConfirm(confirmId: string | undefined, action: 'confirm' | 
 
     console.log('[AgentView] 确认操作结果:', result)
     ElMessage.success(action === 'confirm' ? '已确认执行' : '已拒绝执行')
+    // 注意：这里不立即重置 confirmLoading，而是等待 user_confirm_result 事件后再重置
+    // 这样可以防止用户重复点击
   } catch (error) {
     console.error('[AgentView] 确认操作失败:', error)
     ElMessage.error('确认操作失败: ' + (error instanceof Error ? error.message : '未知错误'))
-  } finally {
+    // API 调用失败时也需要重置按钮状态
     confirmLoading.value = null
   }
 }
@@ -1212,6 +1219,8 @@ async function handleExecute(): Promise<void> {
   executeError.value = ''
   streamEvents.value = []
   currentStreamEvent.value = null
+  confirmLoading.value = null
+  confirmedIds.value = new Set()  // 重置已确认的 ID 集合
 
   try {
     console.log('[AgentView] 开始流式执行 Agent:', selectedAgent.value.agent_id)
