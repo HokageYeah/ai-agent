@@ -257,7 +257,7 @@ export function executeAgentStream(
 /**
  * 使用 EventSource 原生 API 进行流式请求（GET 方式）
  * 注意：后端需要支持 GET 方式的 SSE
- * 
+ *
  * @deprecated 建议使用 executeAgentStream 函数
  */
 export function executeAgentStreamWithEventSource(
@@ -268,7 +268,7 @@ export function executeAgentStreamWithEventSource(
   onComplete?: (data: any) => void
 ): EventSource {
   console.log('[Agent API] 使用 EventSource 流式执行 Agent，agentId:', agentId)
-  
+
   // 将请求数据转换为 URL 参数
   const params = new URLSearchParams()
   params.append('task', data.task)
@@ -278,16 +278,16 @@ export function executeAgentStreamWithEventSource(
   if (data.config) {
     params.append('config', JSON.stringify(data.config))
   }
-  
+
   const url = `/api/v1/agents/${agentId}/execute/stream?${params.toString()}`
   const eventSource = new EventSource(url)
-  
+
   eventSource.onmessage = (e) => {
     try {
       const event = JSON.parse(e.data)
       console.log('[Agent API] EventSource 收到事件:', event.event)
       onMessage(event)
-      
+
       if (event.event === 'complete' && onComplete) {
         onComplete(event.data)
       }
@@ -295,12 +295,28 @@ export function executeAgentStreamWithEventSource(
       console.error('[Agent API] 解析事件失败:', error)
     }
   }
-  
+
   eventSource.onerror = (e) => {
     console.error('[Agent API] EventSource 错误:', e)
     if (onError) onError(e)
     eventSource.close()
   }
-  
+
   return eventSource
+}
+
+/**
+ * 用户确认/拒绝 Agent 即将执行的操作
+ * POST /api/v1/agents/confirm/{confirm_id}
+ *
+ * 当 Agent 计划执行需要用户确认的操作（如 file_write）时，
+ * 前端会展示确认卡片，用户点击「确认」或「取消」后调用本接口。
+ *
+ * @param confirmId - 确认请求的唯一 ID（由 user_confirm_required 事件携带）
+ * @param action - 用户操作："confirm"（确认执行）或 "reject"（拒绝执行）
+ * @returns 确认结果
+ */
+export function confirmAgentAction(confirmId: string, action: 'confirm' | 'reject'): Promise<any> {
+  console.log(`[Agent API] 用户确认操作 - confirmId: ${confirmId}, action: ${action}`)
+  return httpPost<any>(`/agents/confirm/${confirmId}`, { action })
 }

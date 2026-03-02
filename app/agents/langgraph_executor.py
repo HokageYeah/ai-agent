@@ -59,6 +59,15 @@ class AgentState(TypedDict):
     # NOTE: LLM 对本轮错误的分析结果（根因分析 + 修复建议）
     #       通过流式事件实时推送到前端展示
     error_analysis: Optional[Dict[str, Any]]
+    # NOTE: 历次迭代的反思结论列表。
+    #       每完成一次反思，将结果追加到此列表。
+    #       下一轮 _plan_node 将其作为历史上下文传入规划 Prompt，
+    #       防止 LLM 重复生成相同的无效计划。
+    reflection_history: List[Dict[str, Any]]
+    # NOTE: 等待用户确认的操作字典，key 为 confirm_id。
+    #       当执行引擎遇到需要用户确认的操作（如 file_write）时，
+    #       创建 asyncio.Event 并将其存入此字典，后端确认接口确认后 set 唤醒执行。
+    pending_confirmations: Dict[str, Any]
 
 
 # 流式事件回调函数类型
@@ -116,7 +125,12 @@ class LangGraphAgentExecutor:
         
         # 构建状态图
         self.graph = self._build_graph()
-        
+
+        # NOTE: 进程内用户确认映射表，key=confirm_id，value={"event": asyncio.Event, "action": str | None}
+        # 后端 confirm 接口收到用户确认后，写入 action 并 set event，唤醒挂起的执行节点
+        # HACK: 单进程开发环境适用；多实例部署时需改用 Redis 或其他分布式机制
+        self._pending_confirmations: Dict[str, Dict[str, Any]] = {}
+
         gateway_status = "已启用" if tool_gateway else "未配置"
         logger.info(
             f"{Fore.GREEN}LangGraph Agent 执行器初始化完成 "
@@ -399,13 +413,26 @@ class LangGraphAgentExecutor:
                 f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
                 f"本次为错误感知重规划{Style.RESET_ALL}"
             )
-        # 创建计划（携带 error_context 以提升重规划质量）
+
+        # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
+        # 这是解决「无效迭代循环」的核心修复点：
+        # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
+        # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
+        current_reflection_history = state.get("reflection_history", [])
+        if current_reflection_history:
+            logger.info(
+                f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
+                f"本次为历史感知重规划{Style.RESET_ALL}"
+            )
+
+        # 创建计划（携带 error_context 和 reflection_history 以提升重规划质量）
         plan = await self.planning_engine.create_plan(
             agent=agent,
             task=task,
             available_tools=available_tools,
             available_skills=available_skills,
-            error_context=current_error_ctx if current_error_ctx else None
+            error_context=current_error_ctx if current_error_ctx else None,
+            reflection_history=current_reflection_history if current_reflection_history else None
         )
         
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
@@ -473,6 +500,82 @@ class LangGraphAgentExecutor:
             data={"message": f"开始执行 {step_total} 个计划步骤..."}
         )
         
+        # NOTE: 在执行计划前，扫描步骤是否包含需要用户确认的操作（目前仅 file_write）。
+        # 若包含，则先推送 user_confirm_required 事件，挂起等待用户确认/拒绝后再执行。
+        # 这是用户确认交互机制的核心入口。
+        TOOLS_REQUIRING_CONFIRM = {"file_write"}  # 可扩展：如 email_send、shell_exec 等
+        confirm_required_steps = [
+            step for step in (plan.steps or [])
+            if step.action == "tool" and step.params.get("tool_name", "") in TOOLS_REQUIRING_CONFIRM
+        ] if plan else []
+
+        if confirm_required_steps and stream_callback:
+            import uuid
+            for step in confirm_required_steps:
+                confirm_id = str(uuid.uuid4())
+                tool_name = step.params.get("tool_name", "file_write")
+                tool_params = {k: v for k, v in step.params.items() if k != "tool_name"}
+
+                logger.info(
+                    f"{Fore.YELLOW}[Execute Node] 检测到需要用户确认的操作: {tool_name}，"
+                    f"confirm_id={confirm_id}{Style.RESET_ALL}"
+                )
+
+                # 推送待确认事件到前端（含操作描述和参数预览）
+                await self._emit_stream_event(
+                    stream_callback,
+                    event_type="user_confirm_required",
+                    iteration=iteration,
+                    data={
+                        "confirm_id": confirm_id,
+                        "tool_name": tool_name,
+                        "params": tool_params,
+                        "message": f"Agent 计划执行 [{tool_name}] 操作，请确认是否继续"
+                    }
+                )
+
+                # 创建 asyncio.Event，挂起等待用户确认（最多 300 秒超时）
+                confirm_event = asyncio.Event()
+                self._pending_confirmations[confirm_id] = {
+                    "event": confirm_event,
+                    "action": None  # "confirm" / "reject"，由后端接口写入
+                }
+
+                try:
+                    await asyncio.wait_for(confirm_event.wait(), timeout=300)
+                    action = self._pending_confirmations[confirm_id].get("action", "reject")
+                except asyncio.TimeoutError:
+                    action = "reject"
+                    logger.warning(
+                        f"{Fore.YELLOW}[Execute Node] 用户确认超时（confirm_id={confirm_id}），默认拒绝{Style.RESET_ALL}"
+                    )
+                finally:
+                    self._pending_confirmations.pop(confirm_id, None)
+
+                # 推送用户确认结果事件到前端
+                await self._emit_stream_event(
+                    stream_callback,
+                    event_type="user_confirm_result",
+                    iteration=iteration,
+                    data={
+                        "confirm_id": confirm_id,
+                        "action": action,
+                        "tool_name": tool_name,
+                        "message": "用户已确认" if action == "confirm" else "用户已拒绝，跳过该操作"
+                    }
+                )
+
+                # 用户拒绝时，将该 file_write 步骤从计划中移除，以免真实执行
+                if action != "confirm":
+                    logger.info(
+                        f"{Fore.RED}[Execute Node] 用户拒绝执行 {tool_name}（confirm_id={confirm_id}），"
+                        f"将从计划中移除该步骤{Style.RESET_ALL}"
+                    )
+                    plan.steps = [
+                        s for s in plan.steps
+                        if not (s.action == "tool" and s.params.get("tool_name") == tool_name)
+                    ]
+
         # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
@@ -804,7 +907,22 @@ class LangGraphAgentExecutor:
                       f"needs_replanning={reflection_result.needs_replanning}",
             "reflection": reflection_result.to_dict()
         })
-        
+
+        # NOTE: 将本轮反思结论追加到 reflection_history，供下一轮重规划时使用。
+        # 写入 iteration（当前轮次编号）便于规划 Prompt 中按序展示历史。
+        # 这是解决「repetitive planning」问题的关键写入点。
+        reflection_entry = {
+            **reflection_result.to_dict(),
+            "iteration": iteration  # 记录是在哪一轮反思的（0-indexed）
+        }
+        current_history = state.get("reflection_history", []) or []
+        current_history.append(reflection_entry)
+        state["reflection_history"] = current_history
+        logger.info(
+            f"{Fore.CYAN}[Reflect Node] 已将第 {iteration} 轮反思结论写入历史，"
+            f"当前共 {len(current_history)} 条记录{Style.RESET_ALL}"
+        )
+
         # 将反思结果保存到 final_result (作为字典)
         if state["final_result"]:
             state["final_result"]["reflection"] = reflection_result.to_dict()
@@ -1071,7 +1189,12 @@ class LangGraphAgentExecutor:
                 # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
                 "error_context": [],
                 # NOTE: 初始为 None，LLM 对错误的根因分析结果会写入这里
-                "error_analysis": None
+                "error_analysis": None,
+                # NOTE: 初始为空列表，每轮反思完成后会追加一条记录
+                #       用于下一轮重规划时给 LLM 提供历史上下文
+                "reflection_history": [],
+                # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
+                "pending_confirmations": {}
             }
             
             # NOTE: LangGraph 默认 recursion_limit=25，每次 plan→execute→reflect 算 3 步
@@ -1210,7 +1333,12 @@ class LangGraphAgentExecutor:
             # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
             "error_context": [],
             # NOTE: 初始为 None，LLM 对错误的根因分析结果会写入这里
-            "error_analysis": None
+            "error_analysis": None,
+            # NOTE: 初始为空列表，每轮反思完成后会追加一条记录
+            #       用于下一轮重规划时给 LLM 提供历史上下文
+            "reflection_history": [],
+            # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
+            "pending_confirmations": {}
         }
 
         # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量

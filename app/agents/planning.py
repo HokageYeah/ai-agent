@@ -102,19 +102,24 @@ class PlanningEngine:
         available_tools: List[Tool],
         available_skills: List[Skill],
         context: Optional[Dict[str, Any]] = None,
-        error_context: Optional[List[Dict[str, Any]]] = None
+        error_context: Optional[List[Dict[str, Any]]] = None,
+        reflection_history: Optional[List[Dict[str, Any]]] = None
     ) -> Plan:
-        """（如有 error_context，则为重规划调用）"""
         """
         创建执行计划
-        
+
+        若传入 error_context，则为错误感知重规划；
+        若传入 reflection_history，则为历史反思感知重规划。
+
         Args:
             agent: Agent 实例
             task: 任务描述
             available_tools: 可用工具列表
             available_skills: 可用技能列表
             context: 额外上下文信息
-            
+            error_context: 上一轮执行失败的步骤信息列表
+            reflection_history: 历次迭代的反思结论列表（{iteration, feedback, summary, success, needs_replanning}）
+
         Returns:
             Plan: 执行计划
         """
@@ -122,14 +127,18 @@ class PlanningEngine:
             f"{Fore.BLUE}开始为 Agent '{agent.name}' 创建执行计划{Style.RESET_ALL}"
         )
         logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
-        
-        # 构建规划 Prompt（重规划时携带错误上下文，提升修正质量）
+
+        # 构建规划 Prompt（重规划时携带错误上下文和历史反思，提升修正质量）
         if error_context:
             logger.info(
                 f"{Fore.YELLOW}[规划引擎] 本次为错误感知重规划，携带 {len(error_context)} 条错误记录{Style.RESET_ALL}"
             )
+        if reflection_history:
+            logger.info(
+                f"{Fore.YELLOW}[规划引擎] 本次携带 {len(reflection_history)} 条历史反思记录，引导改进规划方向{Style.RESET_ALL}"
+            )
         prompt = self._build_planning_prompt(
-            agent, task, available_tools, available_skills, context, error_context
+            agent, task, available_tools, available_skills, context, error_context, reflection_history
         )
         
         # 使用 LLM 生成计划
@@ -198,18 +207,21 @@ class PlanningEngine:
         available_tools: List[Tool],
         available_skills: List[Skill],
         context: Optional[Dict[str, Any]] = None,
-        error_context: Optional[List[Dict[str, Any]]] = None
+        error_context: Optional[List[Dict[str, Any]]] = None,
+        reflection_history: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         构建规划 Prompt
-        
+
         Args:
             agent: Agent 实例
             task: 任务描述
             available_tools: 可用工具列表
             available_skills: 可用技能列表
             context: 额外上下文
-            
+            error_context: 上一轮失败的步骤错误信息
+            reflection_history: 历次迭代的反思结论（累积列表）
+
         Returns:
             str: Prompt 文本
         """
@@ -296,6 +308,44 @@ class PlanningEngine:
 请只返回 JSON，不要包含其他文本。"""
             logger.info(
                 f"{Fore.YELLOW}[规划引擎] 已将 {len(error_context)} 条错误信息注入规划 Prompt{Style.RESET_ALL}"
+            )
+
+        # NOTE: 若携带了历史迭代反思记录（replan 场景），则将历次反思结论注入 Prompt。
+        # 这是解决"无效迭代"问题的核心机制：
+        # 当执行步骤技术上成功但任务未达成（如 Agent 因权限/能力边界无法完成任务），
+        # error_context 为空但 reflection 已记录了问题。通过将历史反思注入 Prompt，
+        # LLM 可从中学习改变策略，或在确实无法完成时明确告知用户原因而非无限循环。
+        if reflection_history:
+            history_lines = []
+            for hist in reflection_history:
+                iteration_num = hist.get("iteration", "?") + 1  # 显示时从 1 开始
+                success = hist.get("success", False)
+                feedback = hist.get("feedback", "")
+                summary = hist.get("summary", "")
+                needs_replan = hist.get("needs_replanning", False)
+                status_str = "成功" if success else "失败"
+                line = (
+                    f"第 {iteration_num} 轮 [{status_str}] "
+                    f"反馈: {feedback}" 
+                    + (f" | 总结: {summary}" if summary else "")
+                )
+                history_lines.append(line)
+            history_block = "\n".join(history_lines)
+            prompt += f"""
+
+# 📜 历史迭代反思记录
+以下是本任务之前各轮次的执行结果和反思结论，请仔细参考，避免重复无效策略：
+{history_block}
+
+【重要指引】
+- 如果历史记录显示之前的策略均无效，请尝试完全不同的方法或工具组合
+- 如果经过多轮尝试后仍然无法完成任务（例如因权限不足、工具缺失、能力边界等），
+  请在 final_answer 中诚实告知用户「当前 Agent 无法完成该任务」并解释原因
+- 不要重复已经失败的相同策略
+请只返回 JSON，不要包含其他文本。"""
+            logger.info(
+                f"{Fore.YELLOW}[规划引擎] 已将 {len(reflection_history)} 条历史反思注入规划 Prompt，"
+                f"引导 LLM 改进策略{Style.RESET_ALL}"
             )
 
         return prompt

@@ -364,3 +364,81 @@ async def get_agent(
     except Exception as e:
         logger.error(f"{Fore.RED}获取 Agent 详情失败: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=500, detail=f"获取 Agent 详情失败: {str(e)}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 用户确认接口
+# ─────────────────────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel
+
+
+class ConfirmRequest(BaseModel):
+    """用户确认请求体"""
+    action: str  # "confirm" 或 "reject"
+
+
+@router.post("/agents/confirm/{confirm_id}")
+async def confirm_agent_action(
+    confirm_id: str,
+    request: ConfirmRequest,
+    agent_executor: LangGraphAgentExecutor = Depends(get_agent_executor)
+) -> ApiResponseData:
+    """
+    用户确认/拒绝 Agent 即将执行的操作。
+
+    当 Agent 计划执行需要用户确认的操作（如 file_write）时，
+    前端会展示确认卡片，用户点击「确认」或「取消」后调用本接口。
+
+    本接口通过 confirm_id 找到进程内挂起的 asyncio.Event，
+    写入用户决定（confirm/reject）并 set event，唤醒挂起的执行节点继续流程。
+
+    Args:
+        confirm_id: 唯一确认 ID（由 user_confirm_required 事件携带）
+        request: 包含 action 字段（"confirm" 或 "reject"）
+        agent_executor: Agent 执行器（依赖注入）
+
+    Returns:
+        ApiResponseData: 统一响应格式
+    """
+    logger.info(
+        f"{Fore.CYAN}【确认接口】收到用户确认请求 — "
+        f"confirm_id: {confirm_id}, action: {request.action}{Style.RESET_ALL}"
+    )
+
+    # 校验 action 合法性
+    if request.action not in ("confirm", "reject"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的 action 值: {request.action}，必须为 'confirm' 或 'reject'"
+        )
+
+    # 在执行器的 _pending_confirmations 中查找挂起的确认事件
+    pending = agent_executor._pending_confirmations.get(confirm_id)
+    if not pending:
+        logger.warning(
+            f"{Fore.YELLOW}【确认接口】confirm_id 不存在或已超时: {confirm_id}{Style.RESET_ALL}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=f"确认 ID 不存在或已超时: {confirm_id}"
+        )
+
+    # 写入用户决定并唤醒挂起的执行节点
+    pending["action"] = request.action
+    pending["event"].set()
+
+    action_text = "已确认执行" if request.action == "confirm" else "已拒绝执行"
+    logger.info(
+        f"{Fore.GREEN}【确认接口】{action_text}，"
+        f"confirm_id={confirm_id}{Style.RESET_ALL}"
+    )
+
+    return ApiResponseData(
+        platform=PlatformEnum.WX_PUBLIC,
+        api=f"/agents/confirm/{confirm_id}",
+        data={"confirm_id": confirm_id, "action": request.action, "message": action_text},
+        ret=["success"],
+        v=1
+    )
+

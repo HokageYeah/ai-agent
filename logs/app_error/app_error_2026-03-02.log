@@ -1,0 +1,7 @@
+2026-03-02 16:53:09 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-02 16:53:09 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Connection error.[0m
+2026-03-02 16:53:09 | ERROR    | app.agents.planning:create_plan:182 - [31m创建计划失败: Connection error.[0m
+2026-03-02 16:53:10 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-02 16:53:10 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Connection error.[0m
+2026-03-02 16:53:10 | ERROR    | app.agents.reflection:reflect:164 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-02 16:56:32 | ERROR    | app.tools.builtin.database:execute:479 - [DatabaseQueryTool] 数据库操作错误: no such table: fake_table

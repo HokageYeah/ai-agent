@@ -522,7 +522,52 @@
                       </div>
                     </template>
 
-                    <!-- ⑬ 错误分析开始（error_analysis_start） -->
+                    <!-- ⑬ 用户确认请求（file_write 等危险操作） -->
+                    <template v-else-if="event.event === 'user_confirm_required'">
+                      <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <el-tag size="small" type="warning" effect="dark">
+                          ⚠️ 需要用户确认
+                        </el-tag>
+                      </div>
+                      <div style="font-size: 0.85rem; padding: 12px; background: var(--el-color-warning-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-warning); margin-bottom: 12px;">
+                        <div style="font-weight: 600; margin-bottom: 6px;">{{ event.data?.action_type || '危险操作' }}</div>
+                        <div style="color: var(--color-text-secondary);">{{ event.data?.description || '此操作需要您的确认后才能执行' }}</div>
+                        <div v-if="event.data?.details" style="margin-top: 8px; font-size: 0.8rem; color: var(--color-text-muted); font-family: monospace; background: var(--color-bg-primary); padding: 6px; border-radius: 4px;">
+                          {{ event.data.details }}
+                        </div>
+                      </div>
+                      <!-- 确认/取消按钮 -->
+                      <div style="display: flex; gap: 8px;">
+                        <el-button
+                          type="primary"
+                          size="small"
+                          :loading="confirmLoading === event.data?.confirm_id"
+                          @click="handleConfirm(event.data?.confirm_id, 'confirm')"
+                        >
+                          <el-icon><Check /></el-icon> 确认执行
+                        </el-button>
+                        <el-button
+                          size="small"
+                          :disabled="confirmLoading === event.data?.confirm_id"
+                          @click="handleConfirm(event.data?.confirm_id, 'reject')"
+                        >
+                          取消
+                        </el-button>
+                      </div>
+                    </template>
+
+                    <!-- ⑭ 确认结果 -->
+                    <template v-else-if="event.event === 'user_confirm_result'">
+                      <div style="margin-bottom: 8px; font-weight: 600;">
+                        <el-tag v-if="event.data?.action === 'confirm'" size="small" type="success">✅ 用户已确认</el-tag>
+                        <el-tag v-else-if="event.data?.action === 'reject'" size="small" type="info">❌ 用户已拒绝</el-tag>
+                      </div>
+                      <div style="font-size: 0.85rem; color: var(--color-text-secondary); padding: 8px; background: var(--color-bg-secondary); border-radius: 4px;">
+                        {{ event.data?.message || (event.data?.action === 'confirm' ? '操作将继续执行' : '操作已取消') }}
+                      </div>
+                    </template>
+
+                    <!-- ⑮ 错误分析开始（error_analysis_start） -->
                     <template v-else-if="event.event === 'error_analysis_start'">
                       <div style="margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="danger" effect="plain">
@@ -804,7 +849,7 @@ import { ref, onMounted, computed, nextTick } from 'vue'
 import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User, Loading,Aim, Check, Promotion, Cpu, MagicStick, ChatDotRound, Finished
 , Sunrise, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getAgentList, executeAgent, executeAgentStream } from '@/api/modules/agents'
+import { getAgentList, executeAgent, executeAgentStream, confirmAgentAction } from '@/api/modules/agents'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import type { AgentInfo, AgentExecuteResponse } from '@/types/agent'
 
@@ -855,6 +900,7 @@ const executeError = ref<string>('')
 const streamEvents = ref<StreamEvent[]>([])  // 流式事件列表
 const isStreaming = ref<boolean>(false)      // 是否正在流式接收
 const currentStreamEvent = ref<StreamEvent | null>(null)  // 当前正在处理的事件
+const confirmLoading = ref<string | null>(null)  // 当前正在等待确认的 confirm_id
 
 // 计算当前执行阶段（用于进度指示器）
 type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'reflecting' | 'completed'
@@ -1045,7 +1091,20 @@ function handleStreamEvent(event: StreamEvent): void {
     case 'execute_complete':
       console.log(`[AgentView] ⑦ 执行阶段完成，成功: ${event.data?.success}`)
       break
-      
+
+    case 'user_confirm_required':
+      console.log(`[AgentView] ⚠️ 需要用户确认: ${event.data?.action_type}，confirm_id: ${event.data?.confirm_id}`)
+      // 设置当前等待确认的 ID
+      if (event.data?.confirm_id) {
+        confirmLoading.value = event.data.confirm_id
+      }
+      break
+
+    case 'user_confirm_result':
+      console.log(`[AgentView] 用户确认结果: ${event.data?.action}，message: ${event.data?.message}`)
+      confirmLoading.value = null
+      break
+
     case 'reflection_start':
       console.log(`[AgentView] ⑧ 反思开始，迭代 ${event.iteration + 1}`)
       break
@@ -1109,6 +1168,33 @@ function handleStreamEvent(event: StreamEvent): void {
       
     default:
       console.log(`[AgentView] 未知事件类型: ${event.event}`, event.data)
+  }
+}
+
+/**
+ * 处理用户确认/拒绝操作
+ */
+async function handleConfirm(confirmId: string | undefined, action: 'confirm' | 'reject'): Promise<void> {
+  if (!confirmId) {
+    ElMessage.warning('确认 ID 无效')
+    return
+  }
+
+  // 设置加载状态
+  confirmLoading.value = confirmId
+
+  try {
+    console.log(`[AgentView] 用户${action === 'confirm' ? '确认' : '拒绝'}操作，confirmId:`, confirmId)
+
+    const result = await confirmAgentAction(confirmId, action)
+
+    console.log('[AgentView] 确认操作结果:', result)
+    ElMessage.success(action === 'confirm' ? '已确认执行' : '已拒绝执行')
+  } catch (error) {
+    console.error('[AgentView] 确认操作失败:', error)
+    ElMessage.error('确认操作失败: ' + (error instanceof Error ? error.message : '未知错误'))
+  } finally {
+    confirmLoading.value = null
   }
 }
 
