@@ -25,36 +25,42 @@ from app.agents.execution import ExecutionResult
 
 class ReflectionResult:
     """反思结果"""
-    
+
     def __init__(
         self,
         success: bool,
         needs_replanning: bool,
         feedback: str,
-        summary: str
+        summary: str,
+        should_continue: Optional[bool] = None
     ):
         """
         初始化反思结果
-        
+
         Args:
             success: 任务是否成功完成
             needs_replanning: 是否需要重新规划
             feedback: 改进建议
             summary: 结果总结
+            should_continue: LLM 判断是否应该继续迭代（True=继续, False=结束, None=由执行器决定）
         """
         self.success = success
         self.needs_replanning = needs_replanning
         self.feedback = feedback
         self.summary = summary
-    
+        self.should_continue = should_continue
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        return {
+        result = {
             "success": self.success,
             "needs_replanning": self.needs_replanning,
             "feedback": self.feedback,
             "summary": self.summary
         }
+        if self.should_continue is not None:
+            result["should_continue"] = self.should_continue
+        return result
 
 
 class ReflectionEngine:
@@ -230,7 +236,7 @@ class ReflectionEngine:
 
         prompt += """
 请回答以下问题：
-1. 任务是否完成？
+1. 用户任务是否真正完成？（注意：执行不报错≠任务完成，要看用户问题是否得到解决）
 2. 结果质量如何？
 3. 是否需要改进？
 4. 下一步应该做什么？
@@ -239,15 +245,16 @@ class ReflectionEngine:
 {{
   "success": true/false,
   "needs_replanning": true/false,
+  "should_continue": true/false,
   "feedback": "改进建议",
   "summary": "结果总结"
 }}
 
-注意事项：
-1. success 为 true 表示任务成功完成
-2. needs_replanning 为 true 表示需要重新规划并再次尝试
-3. feedback 应该提供具体的改进建议
-4. summary 应该简洁地总结执行情况
+【重要判断标准】：
+- 如果 Agent 返回"无法完成"、"没有权限"、"无法访问"、"超出能力范围"等
+- 如果用户，说明任务未完成问题没有被真正解决，即使执行不报错，success 也应为 false
+- 如果当前 Agent 确实无法完成任务（例如需要数据库权限但没有），should_continue 应为 false
+- should_continue 由你根据任务完成情况和 Agent 能力边界综合判断：如果还有希望完成就 true，如果确实无法完成就 false
 
 请只返回 JSON，不要包含其他文本。
 """
@@ -295,15 +302,19 @@ class ReflectionEngine:
             
             # 解析 JSON
             reflection_dict = json.loads(llm_output)
-            
+
             result = ReflectionResult(
                 success=reflection_dict.get("success", False),
                 needs_replanning=reflection_dict.get("needs_replanning", False),
                 feedback=reflection_dict.get("feedback", ""),
-                summary=reflection_dict.get("summary", "")
+                summary=reflection_dict.get("summary", ""),
+                should_continue=reflection_dict.get("should_continue")  # LLM 自主判断是否继续
             )
-            
-            logger.info(f"{Fore.GREEN}反思结果解析成功{Style.RESET_ALL}")
+
+            logger.info(
+                f"{Fore.GREEN}反思结果解析成功: "
+                f"success={result.success}, should_continue={result.should_continue}{Style.RESET_ALL}"
+            )
             
             return result
             

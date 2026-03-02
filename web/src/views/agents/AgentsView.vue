@@ -542,13 +542,14 @@
                           type="primary"
                           size="small"
                           :loading="confirmLoading === event.data?.confirm_id"
+                          :disabled="!!confirmLoading"
                           @click="handleConfirm(event.data?.confirm_id, 'confirm')"
                         >
                           <el-icon><Check /></el-icon> 确认执行
                         </el-button>
                         <el-button
                           size="small"
-                          :disabled="confirmLoading === event.data?.confirm_id"
+                          :disabled="!!confirmLoading"
                           @click="handleConfirm(event.data?.confirm_id, 'reject')"
                         >
                           取消

@@ -331,6 +331,14 @@ class PlanningEngine:
                 )
                 history_lines.append(line)
             history_block = "\n".join(history_lines)
+            # 获取可用智能体列表用于建议
+            available_agents_text = ""
+            if agent.child_agents:
+                available_agents_text = f"\n【可用智能体】: {', '.join(agent.child_agents)}"
+            else:
+                # 如果没有子智能体但任务可能需要数据库访问，给出通用建议
+                available_agents_text = "\n【提示】如果当前 Agent 无法完成该任务（如需要数据库访问权限），请在最终回答中建议用户返回主智能体（客服）寻求帮助"
+
             prompt += f"""
 
 # 📜 历史迭代反思记录
@@ -340,7 +348,7 @@ class PlanningEngine:
 【重要指引】
 - 如果历史记录显示之前的策略均无效，请尝试完全不同的方法或工具组合
 - 如果经过多轮尝试后仍然无法完成任务（例如因权限不足、工具缺失、能力边界等），
-  请在 final_answer 中诚实告知用户「当前 Agent 无法完成该任务」并解释原因
+  请在 final_answer 中诚实告知用户「当前 Agent 无法完成该任务」并解释原因{available_agents_text}
 - 不要重复已经失败的相同策略
 请只返回 JSON，不要包含其他文本。"""
             logger.info(

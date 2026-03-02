@@ -1140,15 +1140,29 @@ class LangGraphAgentExecutor:
         #         f"直接结束以避免无效重试{Style.RESET_ALL}"
         #     )
         #     return "end"
-        
-        # ── 6. 反思结果要求重规划 → 继续 ──
+
+        # ── 6. LLM 自主判断是否继续（优先级最高）────
+        # 如果 LLM 在反思时已经明确判断 should_continue，优先遵循 LLM 的判断
+        if "should_continue" in reflection and reflection["should_continue"] is not None:
+            if reflection["should_continue"]:
+                logger.info(
+                    f"{Fore.CYAN}[Should Continue] LLM 判断应该继续迭代，继续执行{Style.RESET_ALL}"
+                )
+                return "continue"
+            else:
+                logger.info(
+                    f"{Fore.GREEN}[Should Continue] LLM 判断任务无法完成，结束执行{Style.RESET_ALL}"
+                )
+                return "end"
+
+        # ── 7. 反思结果要求重规划 → 继续 ──
         if reflection.get("needs_replanning", False):
             logger.info(
                 f"{Fore.CYAN}[Should Continue] 需要重新规划，继续迭代{Style.RESET_ALL}"
             )
             return "continue"
-        
-        # ── 7. 默认结束 ──
+
+        # ── 8. 默认结束 ──
         logger.info(
             f"{Fore.YELLOW}[Should Continue] 默认结束执行{Style.RESET_ALL}"
         )
