@@ -537,23 +537,34 @@
                         </div>
                       </div>
                       <!-- 确认/取消按钮 -->
-                      <div style="display: flex; gap: 8px;">
+                      <!-- NOTE: confirmedIds 必须用数组而非 Set，因为 Vue 3 不追踪 Set.add() 的响应式变化 -->
+                      <div v-if="!confirmedIds.includes(event.data?.confirm_id)" style="display: flex; gap: 8px;">
                         <el-button
                           type="primary"
                           size="small"
                           :loading="confirmLoading === event.data?.confirm_id"
-                          :disabled="!!confirmLoading || confirmedIds.has(event.data?.confirm_id)"
-                          @click="console.log('[按钮点击] confirmLoading:', confirmLoading, 'confirmId:', event.data?.confirm_id) || handleConfirm(event.data?.confirm_id, 'confirm')"
+                          :disabled="!!confirmLoading"
+                          @click="handleConfirm(event.data?.confirm_id, 'confirm')"
                         >
                           <el-icon><Check /></el-icon> 确认执行
                         </el-button>
                         <el-button
                           size="small"
-                          :disabled="!!confirmLoading || confirmedIds.has(event.data?.confirm_id)"
-                          @click="console.log('[按钮点击] confirmLoading:', confirmLoading, 'confirmId:', event.data?.confirm_id) || handleConfirm(event.data?.confirm_id, 'reject')"
+                          :disabled="!!confirmLoading"
+                          @click="handleConfirm(event.data?.confirm_id, 'reject')"
                         >
                           取消
                         </el-button>
+                      </div>
+                      <!-- 用户已操作后展示操作结果标签，替代按钮 -->
+                      <div v-else style="display: flex; align-items: center; gap: 6px; margin-top: 8px;">
+                        <el-tag v-if="confirmActionMap[event.data?.confirm_id] === 'confirm'" type="success" size="small">
+                          ✅ 已确认执行，等待后端处理...
+                        </el-tag>
+                        <el-tag v-else-if="confirmActionMap[event.data?.confirm_id] === 'reject'" type="info" size="small">
+                          ❌ 已拒绝，等待后端处理...
+                        </el-tag>
+                        <el-tag v-else size="small" type="warning">⏳ 处理中...</el-tag>
                       </div>
                     </template>
 
@@ -901,8 +912,11 @@ const executeError = ref<string>('')
 const streamEvents = ref<StreamEvent[]>([])  // 流式事件列表
 const isStreaming = ref<boolean>(false)      // 是否正在流式接收
 const currentStreamEvent = ref<StreamEvent | null>(null)  // 当前正在处理的事件
-const confirmLoading = ref<string | null>(null)  // 当前正在等待确认的 confirm_id
-const confirmedIds = ref<Set<string>>(new Set())  // 已确认过的 confirm_id 集合，防止重复点击
+const confirmLoading = ref<string | null>(null)  // 当前正在处理中的 confirm_id（显示 loading 状态）
+// NOTE: 必须使用 string[] 数组而非 Set，因为 Vue 3 对 Set 的 .add() 操作不能触发响应式更新
+//       直接替换整个 ref 数组（展开运算符）才能让模板中的 v-if 正常响应
+const confirmedIds = ref<string[]>([])  // 已操作过（点击确认或取消）的 confirm_id 列表
+const confirmActionMap = ref<Record<string, 'confirm' | 'reject'>>({})  // 记录每个 confirm_id 对应的操作类型
 
 // 计算当前执行阶段（用于进度指示器）
 type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'reflecting' | 'completed'
@@ -1175,34 +1189,60 @@ function handleStreamEvent(event: StreamEvent): void {
 /**
  * 处理用户确认/拒绝操作
  */
+/**
+ * 处理用户确认/拒绝操作
+ * 
+ * 关键设计：
+ * 1. 立即将 confirmId 加入 confirmedIds（通过展开运算符替换整个数组，触发 Vue 响应式）
+ * 2. 记录用户选择的操作到 confirmActionMap（用于替换按钮区域显示操作结果标签）
+ * 3. 设置 confirmLoading 阻止重复点击（加载状态）
+ * 4. 等待 user_confirm_result 流式事件回来后才清空 confirmLoading
+ */
 async function handleConfirm(confirmId: string | undefined, action: 'confirm' | 'reject'): Promise<void> {
   if (!confirmId) {
+    console.warn('[handleConfirm] confirmId 无效，忽略此次点击')
     ElMessage.warning('确认 ID 无效')
     return
   }
 
-  // 标记该 ID 已确认，防止重复点击
-  confirmedIds.value.add(confirmId)
+  // 防止重复点击：检查是否已经操作过
+  if (confirmedIds.value.includes(confirmId)) {
+    console.warn(`[handleConfirm] confirm_id=${confirmId} 已操作过，忽略重复点击`)
+    return
+  }
 
-  // 设置加载状态，按钮将被禁用
-  console.log(`[handleConfirm] 设置 confirmLoading = ${confirmId}, 当前值: ${confirmLoading.value}`)
+  console.log(`[handleConfirm] 用户${action === 'confirm' ? '点击确认' : '点击取消'}，confirm_id=${confirmId}`)
+
+  // NOTE: 必须用展开运算符创建新数组，才能触发 Vue 响应式更新
+  //       直接 confirmedIds.value.push(confirmId) 可以触发响应式（Vue 3 对数组方法有追踪）
+  //       但为了代码清晰，使用展开运算符确保创建新引用
+  confirmedIds.value = [...confirmedIds.value, confirmId]
+  console.log(`[handleConfirm] confirmedIds 更新后:`, confirmedIds.value)
+
+  // 记录用户操作类型，用于替换按钮区域展示操作结果标签
+  confirmActionMap.value = { ...confirmActionMap.value, [confirmId]: action }
+  console.log(`[handleConfirm] confirmActionMap 更新后:`, confirmActionMap.value)
+
+  // 设置加载状态（显示 loading spinner），防止网络延迟期间误操作
   confirmLoading.value = confirmId
-  console.log(`[handleConfirm] 设置后 confirmLoading = ${confirmLoading.value}`)
+  console.log(`[handleConfirm] confirmLoading 设置为: ${confirmLoading.value}`)
 
   try {
-    console.log(`[AgentView] 用户${action === 'confirm' ? '确认' : '拒绝'}操作，confirmId:`, confirmId)
-
+    console.log(`[AgentView] 正在发送确认请求到后端 — confirmId: ${confirmId}, action: ${action}`)
     const result = await confirmAgentAction(confirmId, action)
-
-    console.log('[AgentView] 确认操作结果:', result)
-    ElMessage.success(action === 'confirm' ? '已确认执行' : '已拒绝执行')
-    // 注意：这里不立即重置 confirmLoading，而是等待 user_confirm_result 事件后再重置
-    // 这样可以防止用户重复点击
+    console.log('[AgentView] 后端确认响应:', result)
+    ElMessage.success(action === 'confirm' ? '✅ 已确认，Agent 将继续执行' : '❌ 已拒绝，Agent 将跳过该操作')
+    // NOTE: 不在这里重置 confirmLoading，等待流式事件 user_confirm_result 回来后再重置
+    //       这样在网络往返过程中按钮保持 loading 状态，避免用户再次点击
   } catch (error) {
-    console.error('[AgentView] 确认操作失败:', error)
+    console.error('[AgentView] 发送确认请求失败:', error)
     ElMessage.error('确认操作失败: ' + (error instanceof Error ? error.message : '未知错误'))
-    // API 调用失败时也需要重置按钮状态
+    // API 调用失败时重置状态，但不从 confirmedIds 中移除（让用户可以重试）
     confirmLoading.value = null
+    // 移除刚才加入的 confirmId（恢复按钮显示）
+    confirmedIds.value = confirmedIds.value.filter(id => id !== confirmId)
+    delete confirmActionMap.value[confirmId]
+    confirmActionMap.value = { ...confirmActionMap.value }
   }
 }
 
@@ -1220,7 +1260,8 @@ async function handleExecute(): Promise<void> {
   streamEvents.value = []
   currentStreamEvent.value = null
   confirmLoading.value = null
-  confirmedIds.value = new Set()  // 重置已确认的 ID 集合
+  confirmedIds.value = []  // NOTE: 重置时直接赋值新数组，触发响应式
+  confirmActionMap.value = {}  // 同步清空操作记录 Map
 
   try {
     console.log('[AgentView] 开始流式执行 Agent:', selectedAgent.value.agent_id)

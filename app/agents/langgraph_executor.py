@@ -68,6 +68,10 @@ class AgentState(TypedDict):
     #       当执行引擎遇到需要用户确认的操作（如 file_write）时，
     #       创建 asyncio.Event 并将其存入此字典，后端确认接口确认后 set 唤醒执行。
     pending_confirmations: Dict[str, Any]
+    # NOTE: 用户「拒绝」过的工具名称集合（如 ["file_write"]）。
+    #       在 _execute_node 中记录，在 _reflect_node 中从 available_tools
+    #       里过滤掉这些工具，防止反思阶段 LLM 通过 tool_gateway 绕过用户确认直接调用。
+    user_rejected_tools: List[str]
 
 
 # 流式事件回调函数类型
@@ -565,16 +569,26 @@ class LangGraphAgentExecutor:
                     }
                 )
 
-                # 用户拒绝时，将该 file_write 步骤从计划中移除，以免真实执行
+                # 用户拒绝时，将该步骤从计划中移除，并记录到 state["user_rejected_tools"]
                 if action != "confirm":
                     logger.info(
                         f"{Fore.RED}[Execute Node] 用户拒绝执行 {tool_name}（confirm_id={confirm_id}），"
-                        f"将从计划中移除该步骤{Style.RESET_ALL}"
+                        f"将从计划中移除该步骤，并加入 user_rejected_tools 黑名单{Style.RESET_ALL}"
                     )
                     plan.steps = [
                         s for s in plan.steps
                         if not (s.action == "tool" and s.params.get("tool_name") == tool_name)
                     ]
+                    # NOTE: 将被拒绝的工具名加入状态，供 _reflect_node 过滤
+                    #       避免反思阶段 LLM 通过 tool_gateway 绕过确认再次执行
+                    current_rejected = state.get("user_rejected_tools", []) or []
+                    if tool_name not in current_rejected:
+                        current_rejected = current_rejected + [tool_name]
+                        state["user_rejected_tools"] = current_rejected
+                        logger.info(
+                            f"{Fore.YELLOW}[Execute Node] 已将 '{tool_name}' 加入 user_rejected_tools，"
+                            f"当前黑名单: {current_rejected}{Style.RESET_ALL}"
+                        )
 
         # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
         execution_result = await self.execution_engine.execute_plan(
@@ -869,16 +883,39 @@ class LangGraphAgentExecutor:
             )
 
         # 复用 _plan_node 的工具过滤逻辑，确保反思阶段 LLM 只看到授权工具
-        # NOTE: 不将 available_tools 存入 state 以保持 state 简洁，直接重新计算代价很小
+        # NOTE: 同时排除用户已拒绝过的工具（user_rejected_tools），
+        #       防止反思 LLM 通过 tool_gateway 绕过用户确认直接调用被拒绝操作。
+        #       例如：用户拒绝了 file_write → 反思阶段不应再看到 file_write 的工具定义。
+        user_rejected_tools: List[str] = state.get("user_rejected_tools", []) or []
+        if user_rejected_tools:
+            logger.info(
+                f"{Fore.YELLOW}[Reflect Node] 当前会话中用户拒绝过的工具: {user_rejected_tools}，"
+                f"将从反思阶段可用工具列表中排除，防止 LLM 绕过确认直接调用{Style.RESET_ALL}"
+            )
+
         if self.tool_hub:
             all_tools = self.tool_hub.list_tools()
             reflect_available_tools = (
-                [t for t in all_tools if t.name in agent.available_tools]
+                [
+                    t for t in all_tools
+                    if t.name in agent.available_tools
+                    and t.name not in user_rejected_tools  # NOTE: 排除被拒绝的工具
+                ]
                 if agent.available_tools
-                else all_tools
+                else [
+                    t for t in all_tools
+                    if t.name not in user_rejected_tools  # NOTE: 排除被拒绝的工具
+                ]
             )
         else:
             reflect_available_tools = []
+
+        if user_rejected_tools and reflect_available_tools:
+            logger.info(
+                f"{Fore.GREEN}[Reflect Node] 过滤后反思阶段可用工具数量: {len(reflect_available_tools)}"
+                f"（原总数: {len(self.tool_hub.list_tools()) if self.tool_hub else 0}，"
+                f"排除了 {len(user_rejected_tools)} 个被拒绝工具）{Style.RESET_ALL}"
+            )
 
         reflection_result = await self.reflection_engine.reflect(
             agent=agent,
@@ -1208,7 +1245,10 @@ class LangGraphAgentExecutor:
                 #       用于下一轮重规划时给 LLM 提供历史上下文
                 "reflection_history": [],
                 # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
-                "pending_confirmations": {}
+                "pending_confirmations": {},
+                # NOTE: 初始为空列表，用户拒绝某工具后记录匹名称
+                #       _reflect_node 会从 available_tools 中过滤这些工具
+                "user_rejected_tools": []
             }
             
             # NOTE: LangGraph 默认 recursion_limit=25，每次 plan→execute→reflect 算 3 步
@@ -1352,7 +1392,11 @@ class LangGraphAgentExecutor:
             #       用于下一轮重规划时给 LLM 提供历史上下文
             "reflection_history": [],
             # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
-            "pending_confirmations": {}
+            "pending_confirmations": {},
+            # NOTE: 初始为空列表，用户拒绝某工具后记录其名称
+            #       _reflect_node 会从 available_tools 中过滤这些工具，
+            #       防止反思 LLM 通过 tool_gateway 绕过确认再次执行被拒绝操作
+            "user_rejected_tools": []
         }
 
         # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量
