@@ -294,16 +294,15 @@ class PythonExecutorTool(Tool):
         sys.stdout = captured_output = io.StringIO()
         
         try:
-            # 创建受限的局部命名空间
-            safe_locals = {}
-            
-            # 执行代码
-            # 使用 timeout 包装执行
+            # 使用单一命名空间：exec(code, g, l) 若 g≠l，Python 会按“类体”语义执行，
+            # 导致 def 定义的函数在后续或递归调用时无法被正确解析（NameError: name 'xxx' is not defined）。
+            # 传入同一 dict 作为 globals 与 locals，使定义与调用共享同一命名空间。
+            namespace = self._safe_globals.copy()
             future = self._executor.submit(
-                self._run_code, 
-                code, 
-                self._safe_globals.copy(),
-                safe_locals
+                self._run_code,
+                code,
+                namespace,
+                namespace,
             )
             
             try:

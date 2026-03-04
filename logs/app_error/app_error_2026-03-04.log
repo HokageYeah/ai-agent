@@ -98,3 +98,12 @@ IsADirectoryError: [Errno 21] Is a directory: '/Users/yuye/YeahWork/AI Agent 项
 2026-03-04 14:38:59 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000013] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2133ef1617726063399043289e0d7f', 'requestId': 'fc6449a6d508c3e981d8464cfad7d8b9'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1bc2618e-e8e4-4b01-9d82-ea50871c3e99'}[0m
 2026-03-04 14:38:59 | ERROR    | app.agents.execution:_synthesize_answer:324 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '2133ef1617726063399043289e0d7f', 'requestId': 'fc6449a6d508c3e981d8464cfad7d8b9'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1bc2618e-e8e4-4b01-9d82-ea50871c3e99'}[0m
 2026-03-04 15:30:07 | ERROR    | app.agents.langgraph_executor:execute_with_callback:1510 - [31m[子Agent] execute_with_callback 失败: 'SystemMessage' object has no attribute 'get'[0m
+2026-03-04 18:43:58 | ERROR    | app.agents.execution:_execute_skill:860 - [31m技能 text_writing 执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 18:43:58 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type datetime is not JSON serializable[0m
+2026-03-04 18:43:58 | ERROR    | app.api.endpoints.agents:generate_stream:245 - [31m【Agent流式接口】Agent 流式执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 18:44:18 | ERROR    | app.agents.child_agent_manager:delegate_task:123 - [31m检测到循环依赖: general_agent 已在调用链中[0m
+2026-03-04 18:44:18 | ERROR    | app.agents.child_agent_manager:delegate_task:124 - [31m当前调用链: general_agent[0m
+2026-03-04 18:45:06 | ERROR    | app.agents.child_agent_manager:delegate_task:123 - [31m检测到循环依赖: general_agent 已在调用链中[0m
+2026-03-04 18:45:06 | ERROR    | app.agents.child_agent_manager:delegate_task:124 - [31m当前调用链: general_agent[0m
+2026-03-04 18:45:57 | ERROR    | app.agents.child_agent_manager:delegate_task:123 - [31m检测到循环依赖: general_agent 已在调用链中[0m
+2026-03-04 18:45:57 | ERROR    | app.agents.child_agent_manager:delegate_task:124 - [31m当前调用链: general_agent[0m

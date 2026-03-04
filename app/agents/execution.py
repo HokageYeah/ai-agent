@@ -263,6 +263,16 @@ class ExecutionEngine:
                     "step_results": r.get("step_results", []),
                     "error": r.get("error"),
                 }
+            elif r.get("tool_name") == "python_executor" and isinstance(r.get("result"), dict):
+                res = r.get("result") or {}
+                val = {
+                    "success": res.get("success"),
+                    "result": res.get("result"),
+                    "output": res.get("output"),
+                    "error": res.get("error"),
+                }
+                if res.get("output"):
+                    val["_hint"] = "以上 output 为 python_executor 的输出。若为一段可运行的 Python 脚本（替用户生成写文件用），请在最终回答中完整贴出脚本并说明用户保存为 .py 后运行即可；若为普通文本则完整包含即可。"
             else:
                 val = r.get("result", "")
             if isinstance(val, dict):
@@ -291,6 +301,7 @@ class ExecutionEngine:
 3. 格式清晰，必要时使用列表或分段展示
 4. 如果数据中有错误或空值，如实告知
 5. 如果任务包含“写入本地文件/保存到文件”，必须优先说明是否写入成功、写入路径与写入内容来源，禁止只返回查询结果。
+6. **若执行结果来自 python_executor 且为“替用户生成写文件的脚本”**（例如因用户拒绝了 file_write）：若工具返回中有 output 且为一段 Python 代码/脚本，最终回答必须**完整贴出**该 output 的全文（即可运行的脚本），并说明「因您拒绝了由系统直接写入文件，已为您生成以下可本地运行的 Python 脚本。请将下方代码保存为 .py 文件（如 save_content.py）后在本地执行，即可在当前目录生成文件。」禁止只做概括或省略脚本内容。
 
 请直接输出最终回答，不要包含任何前缀说明。"""
 
