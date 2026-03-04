@@ -175,45 +175,84 @@
             <!-- 流式事件列表 -->
             <div v-if="streamEvents.length > 0" class="stream-events-container" ref="streamEventsContainer">
               <el-timeline style="margin-top: 20px;">
-                <!-- 遍历流式事件 -->
-                <el-timeline-item
-                  v-for="(event, index) in streamEvents"
-                  :key="'stream-'+index"
-                  :type="getEventTimelineType(event.event)"
-                  :hollow="!isImportantEvent(event.event)"
-                  :size="getEventTimelineSize(event.event)"
-                >
-                  <div :data-event-type="event.event" class="trajectory-content" style="margin-top: 0;">
+                <template v-for="(item, index) in streamEventsWithBlockInfo" :key="'stream-'+index">
+                  <!-- sub_agent_end 不展示 -->
+                  <template v-if="item.event.event === 'sub_agent_end'" />
+
+                  <!-- 子 Agent 区块标题：醒目标出「以下轨迹属于该子 Agent」 -->
+                  <el-timeline-item
+                    v-else-if="item.isBlockStart"
+                    type="primary"
+                    :hollow="false"
+                    size="large"
+                    class="sub-agent-block-start"
+                  >
+                    <div
+                      class="trajectory-content sub-agent-block-header"
+                      :style="getSubAgentTheme(item.blockAgentId)"
+                    >
+                      <div class="sub-agent-block-title">
+                        <span class="sub-agent-block-icon" aria-hidden="true">
+                          <el-icon :size="18"><User /></el-icon>
+                        </span>
+                        <span class="sub-agent-block-label">子 Agent 执行轨迹</span>
+                        <span class="sub-agent-block-name">{{ item.blockAgentName }}</span>
+                        <el-tag size="small" type="info" effect="plain" class="sub-agent-block-id">{{ item.blockAgentId }}</el-tag>
+                      </div>
+                      <div v-if="item.blockTask" class="sub-agent-block-task">{{ item.blockTask }}</div>
+                      <div class="sub-agent-block-hint">以下规划、执行、反思均在该 Agent 内进行</div>
+                    </div>
+                  </el-timeline-item>
+
+                  <!-- 主 Agent 或 子 Agent 内 的单条事件 -->
+                  <el-timeline-item
+                    v-else
+                    :type="getEventTimelineType(item.event.event)"
+                    :hollow="!isImportantEvent(item.event.event)"
+                    :size="getEventTimelineSize(item.event.event)"
+                    :class="{ 'sub-agent-inner-item': item.blockAgentId }"
+                  >
+                    <div
+                      :data-event-type="item.event.event"
+                      class="trajectory-content"
+                      :class="{ 'sub-agent-inner-content': item.blockAgentId }"
+                      :style="item.blockAgentId ? { marginTop: 0, ...getSubAgentTheme(item.blockAgentId) } : { marginTop: 0 }"
+                    >
+                      <!-- 子 Agent 内事件：顶部 ribbon 显示所属 Agent 与阶段，颜色与区块主题一致 -->
+                      <div v-if="item.blockAgentId" class="sub-agent-event-ribbon">
+                        <span class="sub-agent-event-agent">{{ item.blockAgentName }}</span>
+                        <span class="sub-agent-event-phase">{{ getSubEventPhaseLabel(item.event) }}</span>
+                      </div>
                     <!-- ① 规划开始 -->
-                    <template v-if="event.event === 'plan_start'">
+                    <template v-if="item.event.event === 'plan_start'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="primary">🧠 开始规划</el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          迭代 {{ event.iteration + 1 }}
+                          迭代 {{ item.event.iteration + 1 }}
                         </span>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                        {{ event.data?.message || 'Agent 正在分析任务并制定执行计划...' }}
+                        {{ item.event.data?.message || 'Agent 正在分析任务并制定执行计划...' }}
                       </div>
                     </template>
                     
                     <!-- ② 规划完成（含推理和步骤列表） -->
-                    <template v-else-if="event.event === 'plan_complete'">
+                    <template v-else-if="item.event.event === 'plan_complete'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="success">✅ 规划完成</el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          共 {{ event.data?.steps?.length || 0 }} 个步骤
+                          共 {{ item.event.data?.steps?.length || 0 }} 个步骤
                         </span>
                       </div>
                       <!-- 推理过程 -->
-                      <div v-if="event.data?.reasoning" style="font-size: 0.85rem; background: var(--color-bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--el-color-primary-light-5);">
+                      <div v-if="item.event.data?.reasoning" style="font-size: 0.85rem; background: var(--color-bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--el-color-primary-light-5);">
                         <div style="font-weight: 600; margin-bottom: 4px; color: var(--color-text-secondary);">推理过程：</div>
-                        {{ event.data.reasoning }}
+                        {{ item.event.data.reasoning }}
                       </div>
                       <!-- 步骤列表 -->
-                      <div v-if="event.data?.steps?.length" style="margin-top: 8px;">
+                      <div v-if="item.event.data?.steps?.length" style="margin-top: 8px;">
                         <div style="font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 6px;">执行计划：</div>
-                        <div v-for="(step, sIdx) in event.data.steps" :key="sIdx" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 0.82rem;">
+                        <div v-for="(step, sIdx) in item.event.data.steps" :key="sIdx" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 0.82rem;">
                           <span style="color: var(--color-text-muted); flex-shrink: 0;">{{ sIdx + 1 }}.</span>
                           <el-tag v-if="step.action === 'tool'" size="small" type="success" effect="plain">工具: {{ step.tool_name }}</el-tag>
                           <el-tag v-else-if="step.action === 'skill'" size="small" type="warning" effect="plain">技能: {{ step.skill_id }}</el-tag>
@@ -225,56 +264,56 @@
                     </template>
                     
                     <!-- ③ 执行阶段开始 -->
-                    <template v-else-if="event.event === 'step_start'">
+                    <template v-else-if="item.event.event === 'step_start'">
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 12px;">
                         <el-tag size="small" type="info" effect="dark">
                           <el-icon><Promotion /></el-icon> 开始执行
                         </el-tag>
                         <span style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                          共 <strong style="color: var(--color-primary);">{{ event.step_total || 0 }}</strong> 个步骤
+                          共 <strong style="color: var(--color-primary);">{{ item.event.step_total || 0 }}</strong> 个步骤
                         </span>
                       </div>
                       <div style="font-size: 0.82rem; color: var(--color-text-muted); padding: 8px 12px; background: var(--color-bg-secondary); border-radius: 6px;">
-                        {{ event.data?.message || '正在按计划逐步执行每个步骤...' }}
+                        {{ item.event.data?.message || '正在按计划逐步执行每个步骤...' }}
                       </div>
                     </template>
                     
                     <!-- ④ 工具调用完成 -->
-                    <template v-else-if="event.event === 'tool_complete'">
+                    <template v-else-if="item.event.event === 'tool_complete'">
                       <!-- 头部 -->
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="success" effect="plain">
-                          <el-icon><Promotion /></el-icon> {{ event.data?.tool_name }}
+                          <el-icon><Promotion /></el-icon> {{ item.event.data?.tool_name }}
                         </el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          步骤 {{ event.step_index }}/{{ event.step_total }}
+                          步骤 {{ item.event.step_index }}/{{ item.event.step_total }}
                         </span>
-                        <span v-if="event.data?.execution_time_ms" style="font-size: 0.7rem; color: var(--color-text-muted);">
-                          {{ event.data.execution_time_ms.toFixed(2) }}ms
+                        <span v-if="item.event.data?.execution_time_ms" style="font-size: 0.7rem; color: var(--color-text-muted);">
+                          {{ item.event.data.execution_time_ms.toFixed(2) }}ms
                         </span>
-                        <el-tag v-if="event.data?.success === false" size="small" type="danger">失败</el-tag>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger">失败</el-tag>
                       </div>
                       
                       <!-- 数据库 -->
-                      <div v-if="event.data?.result?.columns && event.data?.result?.rows" style="padding: 10px; background: var(--color-bg-secondary); border-radius: 6px; border: 1px solid var(--color-border-light);">
+                      <div v-if="item.event.data?.result?.columns && item.event.data?.result?.rows" style="padding: 10px; background: var(--color-bg-secondary); border-radius: 6px; border: 1px solid var(--color-border-light);">
                         <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
                           <span>查询结果</span>
                           <span style="background: var(--el-color-success-light-9); padding: 2px 8px; border-radius: 10px; font-size: 0.7rem;">
-                            {{ event.data.result.row_count }} 条记录
+                            {{ item.event.data.result.row_count }} 条记录
                           </span>
                         </div>
                         <div style="overflow-x: auto;">
                           <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
                             <thead>
                               <tr>
-                                <th v-for="col in event.data.result.columns" :key="col" style="padding: 6px 8px; text-align: left; background: var(--color-bg-primary); border: 1px solid var(--color-border-light); font-weight: 600; white-space: nowrap;">
+                                <th v-for="col in item.event.data.result.columns" :key="col" style="padding: 6px 8px; text-align: left; background: var(--color-bg-primary); border: 1px solid var(--color-border-light); font-weight: 600; white-space: nowrap;">
                                   {{ col }}
                                 </th>
                               </tr>
                             </thead>
                             <tbody>
-                              <tr v-for="(row, rIdx) in event.data.result.rows" :key="rIdx">
-                                <td v-for="col in event.data.result.columns" :key="col" style="padding: 6px 8px; border: 1px solid var(--color-border-light); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                              <tr v-for="(row, rIdx) in item.event.data.result.rows" :key="rIdx">
+                                <td v-for="col in item.event.data.result.columns" :key="col" style="padding: 6px 8px; border: 1px solid var(--color-border-light); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                   {{ row[col] }}
                                 </td>
                               </tr>
@@ -284,58 +323,58 @@
                       </div>
                       
                       <!-- 普通文本/JSON 结果 -->
-                      <div v-else-if="event.data?.error" style="font-size: 0.85rem; padding: 10px; background: var(--el-color-danger-light-9); border-radius: 6px; color: var(--el-color-danger);">
-                        <strong>错误：</strong>{{ event.data.error }}
+                      <div v-else-if="item.event.data?.error" style="font-size: 0.85rem; padding: 10px; background: var(--el-color-danger-light-9); border-radius: 6px; color: var(--el-color-danger);">
+                        <strong>错误：</strong>{{ item.event.data.error }}
                       </div>
-                      <div v-else-if="event.data?.result" style="font-size: 0.85rem;" class="trajectory-result-block">
-                        <MarkdownRenderer v-if="typeof event.data.result === 'string'" :content="event.data.result" />
-                        <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(event.data.result, null, 2) + '\n```'" />
+                      <div v-else-if="item.event.data?.result" style="font-size: 0.85rem;" class="trajectory-result-block">
+                        <MarkdownRenderer v-if="typeof item.event.data.result === 'string'" :content="item.event.data.result" />
+                        <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(item.event.data.result, null, 2) + '\n```'" />
                       </div>
                     </template>
                     
                     <!-- ⑤ 技能调用完成 -->
-                    <template v-else-if="event.event === 'skill_complete'">
+                    <template v-else-if="item.event.event === 'skill_complete'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="warning">✨ 调用技能</el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          {{ event.data?.skill_id }}
+                          {{ item.event.data?.skill_id }}
                         </span>
-                        <el-tag v-if="event.data?.success === false" size="small" type="danger" style="margin-left: 8px;">失败</el-tag>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger" style="margin-left: 8px;">失败</el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted); margin-left: 8px;">
-                          步骤 {{ event.step_index }}/{{ event.step_total }}
+                          步骤 {{ item.event.step_index }}/{{ item.event.step_total }}
                         </span>
                       </div>
                       <div style="font-size: 0.85rem;" class="trajectory-result-block">
-                        <div v-if="event.data?.error" style="color: var(--el-color-danger); padding: 6px; background: var(--el-color-danger-light-9); border-radius: 4px;">
-                          {{ event.data.error }}
+                        <div v-if="item.event.data?.error" style="color: var(--el-color-danger); padding: 6px; background: var(--el-color-danger-light-9); border-radius: 4px;">
+                          {{ item.event.data.error }}
                         </div>
-                        <MarkdownRenderer v-else-if="typeof event.data?.result === 'string'" :content="event.data.result" />
-                        <MarkdownRenderer v-else-if="event.data?.result" :content="'```json\n' + JSON.stringify(event.data.result, null, 2) + '\n```'" />
+                        <MarkdownRenderer v-else-if="typeof item.event.data?.result === 'string'" :content="item.event.data.result" />
+                        <MarkdownRenderer v-else-if="item.event.data?.result" :content="'```json\n' + JSON.stringify(item.event.data.result, null, 2) + '\n```'" />
                       </div>
                     </template>
                     
                     <!-- ⑥ 委派子Agent完成 -->
-                    <template v-else-if="event.event === 'delegate_complete'">
+                    <template v-else-if="item.event.event === 'delegate_complete'">
                       <!-- 头部信息 -->
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
                         <el-tag size="small" type="primary" effect="plain">
                           <el-icon><User /></el-icon> 委派子Agent
                         </el-tag>
                         <span style="font-size: 0.85rem; color: var(--color-primary); font-weight: 600;">
-                          {{ event.data?.result?.agent_name || event.data?.agent_id }}
+                          {{ item.event.data?.result?.agent_name || item.event.data?.agent_id }}
                         </span>
-                        <el-tag v-if="event.data?.success === false" size="small" type="danger">执行失败</el-tag>
-                        <span v-if="event.step_index" style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          步骤 {{ event.step_index }}/{{ event.step_total }}
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger">执行失败</el-tag>
+                        <span v-if="item.event.step_index" style="font-size: 0.75rem; color: var(--color-text-muted);">
+                          步骤 {{ item.event.step_index }}/{{ item.event.step_total }}
                         </span>
                       </div>
                       
-                      <!-- 子 Agent 内部执行步骤 -->
-                      <div v-if="event.data?.result?.step_results?.length" style="margin-top: 12px;">
+                      <!-- 子 Agent 内部执行步骤（非流式结果时的静态展示） -->
+                      <div v-if="item.event.data?.result?.step_results?.length" style="margin-top: 12px;">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
                           子Agent 执行轨迹
                         </div>
-                        <div v-for="(subStep, sIdx) in event.data.result.step_results" :key="sIdx" style="margin-bottom: 12px; font-size: 0.82rem;">
+                        <div v-for="(subStep, sIdx) in item.event.data.result.step_results" :key="sIdx" style="margin-bottom: 12px; font-size: 0.82rem;">
                           <!-- 步骤头部 -->
                           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
                             <el-tag v-if="subStep.action === 'tool'" size="small" type="success" effect="plain">
@@ -393,51 +432,51 @@
                       </div>
                       
                       <!-- 子 Agent 最终结果 -->
-                      <div v-else-if="event.data?.result?.result" style="margin-top: 10px; padding: 12px; background: var(--color-bg-secondary); border-radius: 6px; border-left: 3px solid var(--el-color-primary-light-5);">
+                      <div v-else-if="item.event.data?.result?.result" style="margin-top: 10px; padding: 12px; background: var(--color-bg-secondary); border-radius: 6px; border-left: 3px solid var(--el-color-primary-light-5);">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 8px;">
                           执行结果
                         </div>
-                        <MarkdownRenderer v-if="typeof event.data.result.result === 'string'" :content="event.data.result.result" />
-                        <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(event.data.result.result, null, 2) + '\n```'" />
+                        <MarkdownRenderer v-if="typeof item.event.data.result.result === 'string'" :content="item.event.data.result.result" />
+                        <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(item.event.data.result.result, null, 2) + '\n```'" />
                       </div>
                     </template>
                     
                     <!-- ⑥.5 步骤完成（final_answer 合成步骤） -->
-                    <template v-else-if="event.event === 'step_complete'">
+                    <template v-else-if="item.event.event === 'step_complete'">
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="info" effect="plain" style="display: inline-flex; align-items: center; gap: 4px;">
-                          <el-icon style="vertical-align: middle;"><ChatDotRound /></el-icon>{{ event.data?.step_name || '步骤完成' }}
+                          <el-icon style="vertical-align: middle;"><ChatDotRound /></el-icon>{{ item.event.data?.step_name || '步骤完成' }}
                         </el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          步骤 {{ (event.step_index || 0) }}/{{ event.step_total }}
+                          步骤 {{ (item.event.step_index || 0) }}/{{ item.event.step_total }}
                         </span>
-                        <el-tag v-if="event.data?.success === false" size="small" type="danger">失败</el-tag>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger">失败</el-tag>
                       </div>
-                      <div v-if="event.data?.message" style="font-size: 0.82rem; color: var(--color-text-muted); padding: 8px; background: var(--color-bg-secondary); border-radius: 6px;">
-                        {{ event.data.message }}
+                      <div v-if="item.event.data?.message" style="font-size: 0.82rem; color: var(--color-text-muted); padding: 8px; background: var(--color-bg-secondary); border-radius: 6px;">
+                        {{ item.event.data.message }}
                       </div>
                     </template>
                     
                     <!-- ⑦ 执行阶段完成（进入反思前） -->
-                    <template v-else-if="event.event === 'execute_complete'">
+                    <template v-else-if="item.event.event === 'execute_complete'">
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="info" effect="dark">
                           <el-icon style="vertical-align: middle;"><Finished /></el-icon>执行阶段完成
                         </el-tag>
-                        <el-tag v-if="event.data?.success" size="small" type="success">成功</el-tag>
+                        <el-tag v-if="item.event.data?.success" size="small" type="success">成功</el-tag>
                         <el-tag v-else size="small" type="warning">部分失败</el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          步骤 {{ (event.step_index || 0) }}/{{ event.step_total }}
+                          步骤 {{ (item.event.step_index || 0) }}/{{ item.event.step_total }}
                         </span>
                       </div>
                       
                       <!-- 步骤摘要列表 -->
-                      <div v-if="event.data?.step_summary?.length" style="margin-top: 12px;">
+                      <div v-if="item.event.data?.step_summary?.length" style="margin-top: 12px;">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
                           执行步骤摘要
                         </div>
                         <div style="background: var(--color-bg-secondary); border-radius: 6px; padding: 10px 12px; border: 1px solid var(--color-border-light);">
-                          <div v-for="(step, idx) in event.data.step_summary" :key="idx" style="font-size: 0.82rem; color: var(--color-text-secondary); padding: 4px 0; display: flex; align-items: center; gap: 8px;">
+                          <div v-for="(step, idx) in item.event.data.step_summary" :key="idx" style="font-size: 0.82rem; color: var(--color-text-secondary); padding: 4px 0; display: flex; align-items: center; gap: 8px;">
                             <el-icon style="color: var(--el-color-success);"><Check /></el-icon>
                             {{ step }}
                           </div>
@@ -445,123 +484,152 @@
                       </div>
                       
                       <div style="font-size: 0.82rem; color: var(--color-text-muted); margin-top: 10px; padding: 8px 12px; background: var(--color-bg-secondary); border-radius: 6px;">
-                        {{ event.data?.message || '正在进入反思阶段...' }}
+                        {{ item.event.data?.message || '正在进入反思阶段...' }}
                       </div>
                     </template>
                     
                     <!-- ⑧ 反思开始 -->
-                    <template v-else-if="event.event === 'reflection_start'">
+                    <template v-else-if="item.event.event === 'reflection_start'">
                       <div style="margin-bottom: 6px; font-weight: 600;">
                         <el-tag size="small" type="warning">🔍 开始自我反思</el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          迭代 {{ event.iteration + 1 }}
+                          迭代 {{ item.event.iteration + 1 }}
                         </span>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                        {{ event.data?.message || 'Agent 正在评估执行结果并进行自我反思...' }}
+                        {{ item.event.data?.message || 'Agent 正在评估执行结果并进行自我反思...' }}
                       </div>
                     </template>
                     
                     <!-- ⑨ 反思完成 -->
-                    <template v-else-if="event.event === 'reflection_complete'">
+                    <template v-else-if="item.event.event === 'reflection_complete'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="warning">💭 自我反思</el-tag>
-                        <el-tag v-if="event.data?.success" size="small" type="success" style="margin-left: 8px;">✅ 任务达标</el-tag>
-                        <el-tag v-else-if="event.data?.skipped" size="small" type="info" style="margin-left: 8px;">跳过</el-tag>
+                        <el-tag v-if="item.event.data?.success" size="small" type="success" style="margin-left: 8px;">✅ 任务达标</el-tag>
+                        <el-tag v-else-if="item.event.data?.skipped" size="small" type="info" style="margin-left: 8px;">跳过</el-tag>
                         <el-tag v-else size="small" type="warning" style="margin-left: 8px;">⚠️ 需改进</el-tag>
                       </div>
-                      <div v-if="event.data?.skipped" style="font-size: 0.82rem; color: var(--color-text-muted);">
-                        {{ event.data.message || '无执行结果可供反思，已跳过' }}
+                      <div v-if="item.event.data?.skipped" style="font-size: 0.82rem; color: var(--color-text-muted);">
+                        {{ item.event.data.message || '无执行结果可供反思，已跳过' }}
                       </div>
                       <template v-else>
-                        <div v-if="event.data?.feedback" style="font-size: 0.85rem; margin-bottom: 6px; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 4px;">
-                          <strong>改进建议：</strong>{{ event.data.feedback }}
+                        <div v-if="item.event.data?.feedback" style="font-size: 0.85rem; margin-bottom: 6px; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 4px;">
+                          <strong>改进建议：</strong>{{ item.event.data.feedback }}
                         </div>
-                        <div v-if="event.data?.summary" style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                          <strong>总结：</strong>{{ event.data.summary }}
+                        <div v-if="item.event.data?.summary" style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                          <strong>总结：</strong>{{ item.event.data.summary }}
                         </div>
-                        <div v-if="event.data?.needs_replanning" style="font-size: 0.82rem; color: var(--el-color-warning); margin-top: 6px;">
+                        <div v-if="item.event.data?.needs_replanning" style="font-size: 0.82rem; color: var(--el-color-warning); margin-top: 6px;">
                           🔄 Agent 将重新规划并再次执行
                         </div>
                       </template>
                     </template>
                     
                     <!-- ⑩ 最终答案 -->
-                    <template v-else-if="event.event === 'final_answer'">
+                    <template v-else-if="item.event.event === 'final_answer'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="success" effect="dark">🎯 最终答案</el-tag>
                       </div>
                       <div style="font-size: 0.95rem;" class="trajectory-result-block">
-                        <MarkdownRenderer v-if="typeof event.data?.result === 'string'" :content="event.data.result" />
-                        <MarkdownRenderer v-else-if="event.data?.result" :content="'```json\n' + JSON.stringify(event.data.result, null, 2) + '\n```'" />
+                        <MarkdownRenderer v-if="typeof item.event.data?.result === 'string'" :content="item.event.data.result" />
+                        <MarkdownRenderer v-else-if="item.event.data?.result" :content="'```json\n' + JSON.stringify(item.event.data.result, null, 2) + '\n```'" />
                         <div v-else style="color: var(--color-text-muted); font-style: italic;">暂无内容</div>
                       </div>
                     </template>
                     
                     <!-- ⑪ 执行完成 -->
-                    <template v-else-if="event.event === 'complete'">
+                    <template v-else-if="item.event.event === 'complete'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="success" effect="dark">✅ 执行完成</el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          共迭代 {{ event.data?.iterations || 0 }} 次
+                          共迭代 {{ item.event.data?.iterations || 0 }} 次
                         </span>
-                        <el-tag v-if="event.data?.success === false" size="small" type="danger" style="margin-left: 8px;">执行失败</el-tag>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger" style="margin-left: 8px;">执行失败</el-tag>
                       </div>
                     </template>
                     
                     <!-- ⑫ 步骤错误 -->
-                    <template v-else-if="event.event === 'step_error'">
+                    <template v-else-if="item.event.event === 'step_error'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="danger">⚠️ 步骤执行失败</el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted); margin-left: 8px;">
-                          步骤 {{ event.step_index }}/{{ event.step_total }}
+                          步骤 {{ item.event.step_index }}/{{ item.event.step_total }}
                         </span>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--el-color-danger); padding: 8px; background: var(--el-color-danger-light-9); border-radius: 4px;">
-                        {{ event.error || event.data?.error || '未知错误' }}
+                        {{ item.event.error || item.event.data?.error || '未知错误' }}
                       </div>
                     </template>
 
-                    <!-- ⑬ 用户确认请求（file_write 等危险操作） -->
-                    <template v-else-if="event.event === 'user_confirm_required'">
+                    <!-- ⑬ 用户确认请求（file_write 等需要授权的危险操作） -->
+                    <!--
+                      后端推送的 user_confirm_required 事件 data 字段结构：
+                        confirm_id: string   唯一确认 ID，点击按钮时传给 /agents/confirm 接口
+                        tool_name:  string   工具名（如 file_write）
+                        params:     object   工具调用参数（路径、内容等）
+                        message:    string   提示文案
+                      无论是主 Agent 还是子 Agent 触发的确认，都走同一条 SSE 流，
+                      前端无需区分来源，统一用 confirm_id 识别并响应。
+                    -->
+                    <template v-else-if="item.event.event === 'user_confirm_required'">
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                         <el-tag size="small" type="warning" effect="dark">
                           ⚠️ 需要用户确认
                         </el-tag>
+                        <!-- 显示工具名 -->
+                        <el-tag size="small" type="info" effect="plain">
+                          {{ item.event.data?.tool_name || '操作' }}
+                        </el-tag>
                       </div>
+
+                      <!-- 操作描述区域：显示后端推送的 message 和参数预览 -->
                       <div style="font-size: 0.85rem; padding: 12px; background: var(--el-color-warning-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-warning); margin-bottom: 12px;">
-                        <div style="font-weight: 600; margin-bottom: 6px;">{{ event.data?.action_type || '危险操作' }}</div>
-                        <div style="color: var(--color-text-secondary);">{{ event.data?.description || '此操作需要您的确认后才能执行' }}</div>
-                        <div v-if="event.data?.details" style="margin-top: 8px; font-size: 0.8rem; color: var(--color-text-muted); font-family: monospace; background: var(--color-bg-primary); padding: 6px; border-radius: 4px;">
-                          {{ event.data.details }}
+                        <!-- 工具描述：使用后端的 message 字段 -->
+                        <div style="font-weight: 600; margin-bottom: 6px;">
+                          {{ item.event.data?.message || `Agent 准备执行 [${item.event.data?.tool_name || '操作'}]，需要您的授权` }}
+                        </div>
+                        <!-- confirm_id 小字提示，方便调试 -->
+                        <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px;">
+                          确认 ID: {{ item.event.data?.confirm_id }}
+                        </div>
+                        <!-- 参数预览：格式化显示 params 对象 -->
+                        <div
+                          v-if="item.event.data?.params && Object.keys(item.event.data.params).length > 0"
+                          style="margin-top: 8px; font-size: 0.8rem; color: var(--color-text-muted); font-family: monospace; background: var(--color-bg-primary); padding: 8px; border-radius: 4px; word-break: break-all; white-space: pre-wrap;"
+                        >
+                          <!-- 逐行展示每个参数，方便用户阅读 -->
+                          <div v-for="(val, key) in item.event.data.params" :key="String(key)" style="margin-bottom: 2px;">
+                            <span style="color: var(--el-color-primary);">{{ key }}</span>: {{ typeof val === 'string' ? val : JSON.stringify(val) }}
+                          </div>
                         </div>
                       </div>
-                      <!-- 确认/取消按钮 -->
+
+                      <!-- 确认/取消按钮区域 -->
                       <!-- NOTE: confirmedIds 必须用数组而非 Set，因为 Vue 3 不追踪 Set.add() 的响应式变化 -->
-                      <div v-if="!confirmedIds.includes(event.data?.confirm_id)" style="display: flex; gap: 8px;">
+                      <div v-if="!confirmedIds.includes(item.event.data?.confirm_id)" style="display: flex; gap: 8px;">
                         <el-button
                           type="primary"
                           size="small"
-                          :loading="confirmLoading === event.data?.confirm_id"
-                          :disabled="!!confirmLoading"
-                          @click="handleConfirm(event.data?.confirm_id, 'confirm')"
+                          :loading="confirmLoading === item.event.data?.confirm_id"
+                          :disabled="!!confirmLoading && confirmLoading !== item.event.data?.confirm_id"
+                          @click="handleConfirm(item.event.data?.confirm_id, 'confirm')"
                         >
                           <el-icon><Check /></el-icon> 确认执行
                         </el-button>
                         <el-button
                           size="small"
-                          :disabled="!!confirmLoading"
-                          @click="handleConfirm(event.data?.confirm_id, 'reject')"
+                          :disabled="!!confirmLoading && confirmLoading !== item.event.data?.confirm_id"
+                          @click="handleConfirm(item.event.data?.confirm_id, 'reject')"
                         >
                           取消
                         </el-button>
                       </div>
                       <!-- 用户已操作后展示操作结果标签，替代按钮 -->
                       <div v-else style="display: flex; align-items: center; gap: 6px; margin-top: 8px;">
-                        <el-tag v-if="confirmActionMap[event.data?.confirm_id] === 'confirm'" type="success" size="small">
+                        <el-tag v-if="confirmActionMap[item.event.data?.confirm_id] === 'confirm'" type="success" size="small">
                           ✅ 已确认执行，等待后端处理...
                         </el-tag>
-                        <el-tag v-else-if="confirmActionMap[event.data?.confirm_id] === 'reject'" type="info" size="small">
+                        <el-tag v-else-if="confirmActionMap[item.event.data?.confirm_id] === 'reject'" type="info" size="small">
                           ❌ 已拒绝，等待后端处理...
                         </el-tag>
                         <el-tag v-else size="small" type="warning">⏳ 处理中...</el-tag>
@@ -569,53 +637,53 @@
                     </template>
 
                     <!-- ⑭ 确认结果 -->
-                    <template v-else-if="event.event === 'user_confirm_result'">
+                    <template v-else-if="item.event.event === 'user_confirm_result'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag v-if="event.data?.action === 'confirm'" size="small" type="success">✅ 用户已确认</el-tag>
-                        <el-tag v-else-if="event.data?.action === 'reject'" size="small" type="info">❌ 用户已拒绝</el-tag>
+                        <el-tag v-if="item.event.data?.action === 'confirm'" size="small" type="success">✅ 用户已确认</el-tag>
+                        <el-tag v-else-if="item.event.data?.action === 'reject'" size="small" type="info">❌ 用户已拒绝</el-tag>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--color-text-secondary); padding: 8px; background: var(--color-bg-secondary); border-radius: 4px;">
-                        {{ event.data?.message || (event.data?.action === 'confirm' ? '操作将继续执行' : '操作已取消') }}
+                        {{ item.event.data?.message || (item.event.data?.action === 'confirm' ? '操作将继续执行' : '操作已取消') }}
                       </div>
                     </template>
 
                     <!-- ⑮ 错误分析开始（error_analysis_start） -->
-                    <template v-else-if="event.event === 'error_analysis_start'">
+                    <template v-else-if="item.event.event === 'error_analysis_start'">
                       <div style="margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="danger" effect="plain">
                           🔴 开始错误智能分析
                         </el-tag>
                         <span style="font-size: 0.8rem; color: var(--color-text-muted);">
-                          迭代 {{ event.iteration + 1 }}
+                          迭代 {{ item.event.iteration + 1 }}
                         </span>
-                        <el-tag v-if="event.data?.failed_count" size="small" type="danger" effect="dark">
-                          {{ event.data.failed_count }} 个步骤失败
+                        <el-tag v-if="item.event.data?.failed_count" size="small" type="danger" effect="dark">
+                          {{ item.event.data.failed_count }} 个步骤失败
                         </el-tag>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--el-color-warning-dark-2); padding: 8px 12px; background: var(--el-color-warning-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-warning);">
-                        {{ event.data?.message || 'Agent 正在分析错误根因并制定修复方案...' }}
+                        {{ item.event.data?.message || 'Agent 正在分析错误根因并制定修复方案...' }}
                       </div>
                     </template>
 
                     <!-- ⑭ 错误根因分析结果（error_analysis 核心卡片） -->
-                    <template v-else-if="event.event === 'error_analysis'">
+                    <template v-else-if="item.event.event === 'error_analysis'">
                       <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <el-tag size="small" type="danger" effect="dark">🧠 错误根因分析</el-tag>
                         <el-tag size="small" type="warning" effect="plain">
-                          {{ event.data?.failed_count || 0 }} 个步骤失败
+                          {{ item.event.data?.failed_count || 0 }} 个步骤失败
                         </el-tag>
                         <span style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          迭代 {{ event.iteration + 1 }}
+                          迭代 {{ item.event.iteration + 1 }}
                         </span>
                       </div>
 
                       <!-- 失败步骤列表 -->
-                      <div v-if="event.data?.errors?.length" style="margin-bottom: 12px;">
+                      <div v-if="item.event.data?.errors?.length" style="margin-bottom: 12px;">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-danger); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
                           失败步骤详情
                         </div>
                         <div
-                          v-for="(err, eIdx) in event.data.errors"
+                          v-for="(err, eIdx) in item.event.data.errors"
                           :key="'err-'+eIdx"
                           style="margin-bottom: 8px; padding: 8px 10px; background: var(--el-color-danger-light-9); border-radius: 6px; border-left: 3px solid var(--el-color-danger); font-size: 0.82rem;"
                         >
@@ -633,22 +701,22 @@
                       </div>
 
                       <!-- LLM 分析的根本原因 -->
-                      <div v-if="event.data?.root_cause" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 6px; background: var(--el-color-warning-light-9); border-left: 3px solid var(--el-color-warning);">
+                      <div v-if="item.event.data?.root_cause" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 6px; background: var(--el-color-warning-light-9); border-left: 3px solid var(--el-color-warning);">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-warning-dark-2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
                           🔍 根本原因 (LLM 分析)
                         </div>
                         <div style="font-size: 0.85rem; color: var(--color-text-primary); line-height: 1.6;">
-                          {{ event.data.root_cause }}
+                          {{ item.event.data.root_cause }}
                         </div>
                       </div>
 
                       <!-- 改进建议列表 -->
-                      <div v-if="event.data?.suggestions?.length" style="margin-bottom: 12px;">
+                      <div v-if="item.event.data?.suggestions?.length" style="margin-bottom: 12px;">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
                           💡 改进建议
                         </div>
                         <div
-                          v-for="(sug, sIdx) in event.data.suggestions"
+                          v-for="(sug, sIdx) in item.event.data.suggestions"
                           :key="'sug-'+sIdx"
                           style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; font-size: 0.83rem; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 6px;"
                         >
@@ -658,12 +726,12 @@
                       </div>
 
                       <!-- 修正执行计划 -->
-                      <div v-if="event.data?.corrective_plan" style="padding: 10px 12px; border-radius: 6px; background: var(--el-color-primary-light-9); border-left: 3px solid var(--el-color-primary-light-5);">
+                      <div v-if="item.event.data?.corrective_plan" style="padding: 10px 12px; border-radius: 6px; background: var(--el-color-primary-light-9); border-left: 3px solid var(--el-color-primary-light-5);">
                         <div style="font-size: 0.75rem; font-weight: 600; color: var(--el-color-primary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
                           🔄 修正执行计划
                         </div>
                         <div style="font-size: 0.85rem; color: var(--color-text-primary); line-height: 1.6;">
-                          {{ event.data.corrective_plan }}
+                          {{ item.event.data.corrective_plan }}
                         </div>
                       </div>
                     </template>
@@ -671,24 +739,26 @@
 
                     
                     <!-- ⑬ 全局错误 -->
-                    <template v-else-if="event.event === 'error'">
+                    <template v-else-if="item.event.event === 'error'">
                       <div style="margin-bottom: 8px; font-weight: 600;">
                         <el-tag size="small" type="danger">❌ 执行错误</el-tag>
                       </div>
                       <div style="font-size: 0.85rem; color: var(--el-color-danger); padding: 8px; background: var(--el-color-danger-light-9); border-radius: 4px;">
-                        {{ event.error || '未知错误' }}
+                        {{ item.event.error || '未知错误' }}
                       </div>
                     </template>
                     
                     <!-- ⑭ 其他未知事件（兜底展示） -->
                     <template v-else>
                       <div style="font-size: 0.8rem; color: var(--color-text-muted);">
-                        <el-tag size="small" type="info">{{ event.event }}</el-tag>
-                        <span style="margin-left: 8px;">{{ event.data?.message || '' }}</span>
+                        <el-tag size="small" type="info">{{ item.event.event }}</el-tag>
+                        <span style="margin-left: 8px;">{{ item.event.data?.message || '' }}</span>
                       </div>
                     </template>
                   </div>
                 </el-timeline-item>
+                <!-- 关闭 v-for template -->
+                </template>
               </el-timeline>
             </div>
             <!-- 流式进行中的加载状态 -->
@@ -900,6 +970,17 @@ interface ParsedExecuteResult {
   [key: string]: any;
 }
 
+/** 带区块信息的流式事件：用于在时间轴中标注「属于哪个 Agent」 */
+interface StreamEventWithBlock {
+  event: StreamEvent
+  /** 当前事件所属子 Agent 区块（主 Agent 为 null） */
+  blockAgentId: string | null
+  blockAgentName: string | null
+  blockTask: string | null
+  /** 是否为该子 Agent 区块的第一个事件（用于渲染区块标题） */
+  isBlockStart: boolean
+}
+
 const agents = ref<AgentInfo[]>([])
 const selectedAgent = ref<AgentInfo | null>(null)
 const loadingAgents = ref<boolean>(false)
@@ -953,6 +1034,105 @@ function scrollToLatestEvent() {
       streamEventsContainer.value.scrollTop = streamEventsContainer.value.scrollHeight
     }
   })
+}
+
+/**
+ * 为每条流式事件标注「所属 Agent 区块」，便于在时间轴中一眼看出轨迹属于主 Agent 还是哪个子 Agent。
+ * - 主 Agent 事件：blockAgentId 为 null
+ * - 子 Agent 事件：blockAgentId / blockAgentName / blockTask 有值，isBlockStart 标记是否为该区块第一条
+ */
+const streamEventsWithBlockInfo = computed<StreamEventWithBlock[]>(() => {
+  const list = streamEvents.value
+  const result: StreamEventWithBlock[] = []
+  let currentId: string | null = null
+  let currentName: string | null = null
+  let currentTask: string | null = null
+
+  for (const ev of list) {
+    if (ev.event === 'sub_agent_start') {
+      currentId = ev.data?.sub_agent_id ?? null
+      currentName = ev.data?.sub_agent_name ?? ev.data?.sub_agent_id ?? '子Agent'
+      currentTask = ev.data?.task ?? null
+      result.push({
+        event: ev,
+        blockAgentId: currentId,
+        blockAgentName: currentName,
+        blockTask: currentTask,
+        isBlockStart: true
+      })
+      continue
+    }
+    if (ev.event === 'sub_agent_end') {
+      currentId = null
+      currentName = null
+      currentTask = null
+      continue
+    }
+    if (ev.data?.is_sub_agent) {
+      result.push({
+        event: ev,
+        blockAgentId: currentId,
+        blockAgentName: currentName,
+        blockTask: currentTask,
+        isBlockStart: false
+      })
+      continue
+    }
+    result.push({
+      event: ev,
+      blockAgentId: null,
+      blockAgentName: null,
+      blockTask: null,
+      isBlockStart: false
+    })
+  }
+  return result
+})
+
+/** 子 Agent 内单条事件的阶段标签（用于区块内紧凑展示） */
+function getSubEventPhaseLabel(event: StreamEvent): string {
+  const e = event.event
+  if (e === 'plan_start') return '规划开始'
+  if (e === 'plan_complete') return '规划完成'
+  if (e === 'step_start') return '开始执行'
+  if (e === 'tool_complete') return `${event.data?.tool_name ?? '工具'}`
+  if (e === 'skill_complete') return `${event.data?.skill_id ?? '技能'}`
+  if (e === 'user_confirm_required') return `用户确认 · ${event.data?.tool_name ?? '操作'}`
+  if (e === 'user_confirm_result') return '确认结果'
+  if (e === 'step_complete') return '步骤完成'
+  if (e === 'execute_complete') return '执行阶段完成'
+  if (e === 'reflection_start') return '反思开始'
+  if (e === 'reflection_complete') return '反思完成'
+  return e
+}
+
+/**
+ * 按子 Agent ID 返回主题 CSS 变量，用于区块标题与内联事件的配色区分。
+ * 与现有主题兼容，使用区分度高的色相：通用助手(青绿)、订单(蓝)、退款(橙)、其他(紫)。
+ */
+const SUB_AGENT_THEMES: Record<string, { accent: string; rgb: string }> = {
+  general_agent: { accent: '#0d9488', rgb: '13, 148, 136' },   /* teal-600 通用助手 */
+  order_agent: { accent: '#2563eb', rgb: '37, 99, 235' },       /* blue-600 订单专员 */
+  refund_agent: { accent: '#ea580c', rgb: '234, 88, 12' },     /* orange-600 退款专员 */
+}
+
+const SUB_AGENT_FALLBACK_PALETTE = [
+  { accent: '#7c3aed', rgb: '124, 58, 237' },  /* violet-600 */
+  { accent: '#059669', rgb: '5, 150, 105' },   /* emerald-600 */
+  { accent: '#dc2626', rgb: '220, 38, 38' },  /* red-600 */
+]
+
+function getSubAgentTheme(agentId: string | null): Record<string, string> {
+  if (!agentId) return {}
+  const theme = SUB_AGENT_THEMES[agentId] ?? SUB_AGENT_FALLBACK_PALETTE[Math.abs(agentId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % SUB_AGENT_FALLBACK_PALETTE.length]
+  return {
+    '--sub-agent-accent': theme.accent,
+    '--sub-agent-accent-rgb': theme.rgb,
+    '--sub-agent-bg-light': `rgba(${theme.rgb}, 0.08)`,
+    '--sub-agent-bg-medium': `rgba(${theme.rgb}, 0.14)`,
+    '--sub-agent-border': `rgba(${theme.rgb}, 0.35)`,
+    '--sub-agent-shadow': `0 2px 8px rgba(${theme.rgb}, 0.12)`,
+  }
 }
 
 // 对执行结果增加强类型转换（用于 Template 解析展示）
@@ -1109,7 +1289,12 @@ function handleStreamEvent(event: StreamEvent): void {
       break
 
     case 'user_confirm_required':
-      console.log(`[AgentView] ⚠️ 需要用户确认: ${event.data?.action_type}，confirm_id: ${event.data?.confirm_id}`)
+      // 后端推送字段：tool_name（工具名）、confirm_id（唯一确认ID）、params（参数）、message（描述）
+      // 无论是主 Agent 还是子 Agent 触发的确认，都通过同一 SSE 流传来
+      console.log(
+        `[AgentView] ⚠️ 需要用户确认 — tool: ${event.data?.tool_name}，confirm_id: ${event.data?.confirm_id}`,
+        '\nparams:', event.data?.params
+      )
       // 注意：不要在这里设置 confirmLoading，否则按钮一开始就会被禁用
       // confirmLoading 只在用户点击按钮后设置为 loading 状态，防止重复提交
       break
@@ -1118,6 +1303,20 @@ function handleStreamEvent(event: StreamEvent): void {
       console.log(`[AgentView] 用户确认结果: ${event.data?.action}，message: ${event.data?.message}，设置 confirmLoading = null`)
       confirmLoading.value = null
       console.log(`[AgentView] confirmLoading 重置后: ${confirmLoading.value}`)
+      break
+
+    case 'sub_agent_start':
+      // 子 Agent 开始执行，记录日志
+      console.log(
+        `[AgentView] 🤖 子 Agent 开始 — id: ${event.data?.sub_agent_id}，name: ${event.data?.sub_agent_name}，task: ${event.data?.task}`
+      )
+      break
+
+    case 'sub_agent_end':
+      // 子 Agent 执行结束，记录日志（不在 timeline 中渲染）
+      console.log(
+        `[AgentView] ✅ 子 Agent 完成 — id: ${event.data?.sub_agent_id}，success: ${event.data?.success}`
+      )
       break
 
     case 'reflection_start':
@@ -1366,6 +1565,7 @@ function getEventTimelineType(eventType: string): string {
     case 'skill_complete':
       return 'success'
     case 'delegate_complete':
+    case 'sub_agent_start':
       return 'primary'
     case 'reflection_start':
     case 'reflection_complete':
@@ -1392,12 +1592,12 @@ function isImportantEvent(eventType: string): boolean {
   return [
     'plan_start',
     'plan_complete',
+    'sub_agent_start',
     'step_complete',
     'tool_complete',
     'skill_complete',
     'delegate_complete',
     'reflection_complete',
-    // NOTE: error_analysis 包含 LLM 分析结果，内容较多，标记为重要事件以实心圆点显示
     'error_analysis',
     'final_answer',
     'complete'
@@ -1413,12 +1613,12 @@ function getEventTimelineSize(eventType: string): 'normal' | 'large' | 'small' {
   switch (eventType) {
     case 'plan_start':
     case 'plan_complete':
+    case 'sub_agent_start':
     case 'step_complete':
     case 'tool_complete':
     case 'skill_complete':
     case 'delegate_complete':
     case 'reflection_complete':
-    // NOTE: error_analysis 内容丰富，使用 large 尺寸使其在时间轴上较为显眼
     case 'error_analysis':
     case 'final_answer':
     case 'complete':
@@ -1942,6 +2142,14 @@ onMounted(() => {
   box-shadow: var(--shadow-sm);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .trajectory-content,
+  .sub-agent-block-header,
+  .sub-agent-inner-content {
+    transition: none;
+  }
+}
+
 /* 事件类型特定的边框颜色 */
 .trajectory-content[data-event-type="plan_start"],
 .trajectory-content[data-event-type="plan_complete"] {
@@ -1997,6 +2205,121 @@ onMounted(() => {
   background: var(--color-bg-primary);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
+}
+
+/* ── 子 Agent 区块样式：按类型区分颜色，保留现有主题，符合 ui-ux-pro-max ─────────── */
+
+/* 子 Agent 区块标题：使用 --sub-agent-* 变量（由 getSubAgentTheme 注入），fallback 为主色 */
+.sub-agent-block-header {
+  --sub-agent-accent: var(--el-color-primary);
+  --sub-agent-accent-rgb: var(--el-color-primary-rgb, 64, 158, 255);
+  --sub-agent-bg-light: var(--el-color-primary-light-9);
+  --sub-agent-bg-medium: var(--el-color-primary-light-8);
+  --sub-agent-border: var(--el-color-primary-light-5);
+  --sub-agent-shadow: 0 2px 8px rgba(var(--el-color-primary-rgb, 64, 158, 255), 0.12);
+
+  background: linear-gradient(135deg, var(--sub-agent-bg-light) 0%, var(--sub-agent-bg-medium) 50%, var(--color-bg-card) 100%);
+  border: 2px solid var(--sub-agent-border);
+  border-left: 5px solid var(--sub-agent-accent);
+  box-shadow: var(--sub-agent-shadow);
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sub-agent-block-header:hover {
+  box-shadow: var(--sub-agent-shadow), 0 0 0 1px var(--sub-agent-border);
+}
+
+.sub-agent-block-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sub-agent-block-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sub-agent-accent);
+  line-height: 1;
+}
+
+.sub-agent-block-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sub-agent-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  background: var(--sub-agent-bg-light);
+  border-radius: 4px;
+}
+
+.sub-agent-block-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sub-agent-accent);
+}
+
+.sub-agent-block-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.sub-agent-block-task {
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  border-left: 3px solid var(--sub-agent-border);
+  margin-bottom: 8px;
+}
+
+.sub-agent-block-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* 子 Agent 内单条事件：左侧色条与 ribbon 使用同主题色，过渡避免布局抖动 */
+.sub-agent-inner-content {
+  --sub-agent-accent: var(--el-color-primary);
+  --sub-agent-accent-rgb: var(--el-color-primary-rgb, 64, 158, 255);
+  --sub-agent-bg-light: var(--el-color-primary-light-9);
+  --sub-agent-bg-medium: var(--el-color-primary-light-8);
+  --sub-agent-border: var(--el-color-primary-light-5);
+
+  border-left: 4px solid var(--sub-agent-border) !important;
+  background: var(--sub-agent-bg-light);
+  position: relative;
+  padding-top: 0;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sub-agent-event-ribbon {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: var(--sub-agent-bg-medium);
+  border-radius: 6px;
+  border-left: 3px solid var(--sub-agent-accent);
+}
+
+.sub-agent-event-agent {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sub-agent-accent);
+}
+
+.sub-agent-event-phase {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 /* 响应式布局：小屏幕下改为上下排列 */

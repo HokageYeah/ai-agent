@@ -494,7 +494,8 @@ class ExecutionEngine:
             elif step.action == "skill":
                 return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
-                return await self._delegate_to_agent(step)
+                # 把 context 也传给委派方法，以便透传 stream_callback / pending_confirmations
+                return await self._delegate_to_agent(step, context)
             elif step.action == "final_answer":
                 return {
                     "success": True,
@@ -852,21 +853,27 @@ class ExecutionEngine:
                 "skill_id": skill_id
             }
     
-    async def _delegate_to_agent(self, step: PlanStep) -> Dict[str, Any]:
+    async def _delegate_to_agent(
+        self,
+        step: PlanStep,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         委派给子 Agent
-        
+
         Args:
             step: 计划步骤
-            
+            context: 执行上下文（透传 stream_callback / pending_confirmations 以便
+                     子 Agent 也能推送 user_confirm_required 事件并共享确认映射表）
+
         Returns:
             Dict[str, Any]: 执行结果
         """
         agent_id = step.params.get("agent_id")
         task = step.params.get("task")
-        
+
         logger.info(f"{Fore.CYAN}委派任务给子 Agent: {agent_id}{Style.RESET_ALL}")
-        
+
         if not self.child_agent_manager:
             error_msg = "子 Agent 管理器未初始化"
             logger.error(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
@@ -876,13 +883,33 @@ class ExecutionEngine:
                 "action": "delegate",
                 "agent_id": agent_id
             }
-        
+
+        # 从 context 中提取父级流式回调和挂起确认映射表
+        # 这两个对象需要透传给子 Agent，使子 Agent：
+        #   1. 也能向同一条 SSE 流推送 user_confirm_required 等事件
+        #   2. 注册到父级的 pending_confirmations 字典，使 /agents/confirm 接口能够找到
+        stream_callback = context.get("stream_callback") if context else None
+        pending_confirmations = context.get("pending_confirmations") if context else None
+
+        if stream_callback:
+            logger.info(
+                f"{Fore.BLUE}[委派] 检测到父级 stream_callback，"
+                f"子 Agent {agent_id} 将共享 SSE 流和 pending_confirmations{Style.RESET_ALL}"
+            )
+        else:
+            logger.info(
+                f"{Fore.YELLOW}[委派] 无父级 stream_callback，"
+                f"子 Agent {agent_id} 将以静默模式执行（无用户确认交互）{Style.RESET_ALL}"
+            )
+
         # 委派任务（parent_agent_id 设为 None，因为在执行引擎层面不跟踪父 Agent）
         try:
             result = await self.child_agent_manager.delegate_task(
-                parent_agent_id=None,  # 添加缺失的参数
+                parent_agent_id=None,
                 child_agent_id=agent_id,
-                task=task
+                task=task,
+                stream_callback=stream_callback,          # 透传父级流式回调
+                pending_confirmations=pending_confirmations  # 透传父级挂起确认表
             )
             
             logger.info(

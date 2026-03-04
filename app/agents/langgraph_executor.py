@@ -630,11 +630,21 @@ class LangGraphAgentExecutor:
                             )
                             break
 
-        # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
+        # 执行计划
+        # 把 task、stream_callback、pending_confirmations 一起放入 context，
+        # 以便执行引擎在委派子 Agent 时能透传流式回调和挂起确认映射表，
+        # 从而支持子 Agent 内部触发的用户确认弹窗通过同一 SSE 流推送到前端
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
             plan=plan,
-            context={"task": state.get("task", "")}
+            context={
+                "task": state.get("task", ""),
+                # 透传父级 stream_callback：子 Agent 用它推送 user_confirm_required 等事件
+                "stream_callback": stream_callback,
+                # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表，
+                # 使 /agents/confirm 接口（引用顶层 executor 的该字典）能正确唤醒挂起操作
+                "pending_confirmations": self._pending_confirmations,
+            }
         )
         
         # NOTE: 关键修复 - 如果本轮包含被拒绝的操作，强制置 success 为 False，并修改 result 结果文案
@@ -1347,6 +1357,111 @@ class LangGraphAgentExecutor:
             
         except Exception as e:
             logger.error(f"{Fore.RED}Agent 任务执行失败: {e}{Style.RESET_ALL}")
+            return {
+                "success": False,
+                "error": str(e),
+                "iterations": 0
+            }
+
+    async def execute_with_callback(
+        self,
+        agent: Agent,
+        task: str,
+        stream_callback: Callable,
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        以流式回调模式执行 Agent 任务（供子 Agent 共享父级 SSE 流时调用）
+
+        与 execute() 的区别：
+          - 接收 stream_callback 参数并注入到 _build_graph()
+          - 子 Agent 的规划/执行/反思事件（包括 user_confirm_required）会通过该回调
+            推入父级的 SSE 流，前端可实时感知子 Agent 动态并弹出用户确认对话框
+
+        注意：调用方在创建本执行器后应先将 _pending_confirmations 替换为父级的同名字典，
+              以保证 confirm_id 在顶层 /agents/confirm 接口中可被正确查找。
+
+        Args:
+            agent: Agent 实例
+            task: 任务描述
+            stream_callback: 父级 SSE 流式回调（异步函数）
+            conversation_history: 对话历史（可选）
+
+        Returns:
+            Dict[str, Any]: 执行结果（格式同 execute()）
+        """
+        logger.info(
+            f"{Fore.BLUE}[子Agent] execute_with_callback 开始 - Agent: {agent.name}{Style.RESET_ALL}"
+        )
+        logger.info(f"{Fore.CYAN}[子Agent] 任务: {task}{Style.RESET_ALL}")
+        logger.info(
+            f"{Fore.CYAN}[子Agent] stream_callback 已绑定，事件将推入父级 SSE 流{Style.RESET_ALL}"
+        )
+
+        try:
+            # 构建带流式回调的状态图（与 execute_stream 共用同一图构建逻辑）
+            graph = self._build_graph(stream_callback=stream_callback)
+
+            initial_state: AgentState = {
+                "messages": conversation_history or [],
+                "current_plan": None,
+                "tool_outputs": [],
+                "iterations": 0,
+                "final_result": None,
+                "task": task,
+                "agent": agent,
+                "error_context": [],
+                "error_analysis": None,
+                "reflection_history": [],
+                # NOTE: 调用方会在外部把本 executor._pending_confirmations 替换为父级字典，
+                #       这里用 self._pending_confirmations 确保两者指向同一对象
+                "pending_confirmations": self._pending_confirmations,
+                "user_rejected_tools": []
+            }
+
+            recursion_limit = self.max_iterations * 4 + 10
+            logger.info(
+                f"{Fore.BLUE}[子Agent] 开始执行状态图，"
+                f"recursion_limit={recursion_limit}，max_iterations={self.max_iterations}{Style.RESET_ALL}"
+            )
+
+            # 同步等待图执行完成（子 Agent 在父 execute_with_callback 的 await 中运行）
+            final_state = await graph.ainvoke(
+                initial_state,
+                config={"recursion_limit": recursion_limit}
+            )
+
+            total_iterations = final_state.get("iterations", 0)
+            final_result = final_state.get("final_result")
+
+            logger.info(
+                f"{Fore.GREEN}[子Agent] execute_with_callback 完成，"
+                f"迭代次数={total_iterations}{Style.RESET_ALL}"
+            )
+
+            return {
+                "success": final_result.get("success", False) if isinstance(final_result, dict) else bool(final_result),
+                "result": final_result,
+                # NOTE: 不返回 messages —— final_state["messages"] 包含 LangChain BaseMessage 对象，
+                #       无法被 json.dumps() 序列化，且父 Agent 不需要子 Agent 的对话历史
+                "iterations": total_iterations
+            }
+
+        except Exception as e:
+            logger.error(
+                f"{Fore.RED}[子Agent] execute_with_callback 失败: {e}{Style.RESET_ALL}"
+            )
+            # 通过 stream_callback 推送错误事件，让父级 SSE 流感知子 Agent 异常
+            try:
+                err_event = self._create_stream_event(
+                    event_type="step_error",
+                    error=f"子 Agent {agent.name} 执行失败: {str(e)}",
+                    data={"agent_id": agent.agent_id, "agent_name": agent.name}
+                )
+                await stream_callback(err_event)
+            except Exception:
+                pass  # 推送错误事件失败不影响主流程
+
             return {
                 "success": False,
                 "error": str(e),

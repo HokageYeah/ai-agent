@@ -82,3 +82,15 @@ Traceback (most recent call last):
     with open(resolved_path, file_mode, encoding=encoding if not is_binary else None) as f:
 
 IsADirectoryError: [Errno 21] Is a directory: '/Users/yuye/YeahWork/AI Agent 项目/ai-agent/web'
+2026-03-04 11:32:05 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:32:05 | ERROR    | app.api.endpoints.agents:generate_stream:245 - [31m【Agent流式接口】Agent 流式执行失败: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:32:49 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:32:49 | ERROR    | app.api.endpoints.agents:generate_stream:245 - [31m【Agent流式接口】Agent 流式执行失败: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:36:36 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:36:36 | ERROR    | app.api.endpoints.agents:generate_stream:245 - [31m【Agent流式接口】Agent 流式执行失败: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 11:41:49 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type SystemMessage is not JSON serializable[0m
+2026-03-04 12:27:05 | ERROR    | app.agents.execution:_execute_skill:848 - [31m技能 text_writing 执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 12:27:05 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type datetime is not JSON serializable[0m
+2026-03-04 12:27:05 | ERROR    | app.api.endpoints.agents:generate_stream:245 - [31m【Agent流式接口】Agent 流式执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 12:27:24 | ERROR    | app.agents.execution:_execute_skill:848 - [31m技能 text_writing 执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 12:27:24 | ERROR    | app.agents.execution:execute_plan:221 - [31m执行计划时发生错误: Object of type datetime is not JSON serializable[0m

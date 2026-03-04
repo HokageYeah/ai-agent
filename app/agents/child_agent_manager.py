@@ -14,7 +14,9 @@
 创建时间: 2026-02-15
 """
 
-from typing import Dict, Any, Optional, Set
+import asyncio
+import time
+from typing import Dict, Any, Optional, Set, Callable
 from loguru import logger
 from colorama import Fore, Style
 
@@ -70,17 +72,25 @@ class ChildAgentManager:
         parent_agent_id: Optional[str],
         child_agent_id: str,
         task: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        stream_callback: Optional[Callable] = None,
+        pending_confirmations: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         委派任务给子 Agent
-        
+
         Args:
             parent_agent_id: 父 Agent ID（可选，用于循环检测）
             child_agent_id: 子 Agent ID
             task: 任务描述
             context: 任务上下文
-            
+            stream_callback: 父级 SSE 流式回调（可选）。
+                             传入后子 Agent 的执行事件（包括 user_confirm_required）
+                             会直接推入父级 SSE 流，前端可实时感知子 Agent 动态。
+            pending_confirmations: 父级挂起确认映射表（可选）。
+                                   传入后子 Agent 注册的 confirm_id 与父级共用同一张表，
+                                   使 /agents/confirm 接口能找到并唤醒子 Agent 执行。
+
         Returns:
             Dict[str, Any]: 任务执行结果
         """
@@ -88,7 +98,14 @@ class ChildAgentManager:
             f"{Fore.BLUE}委派任务给子 Agent: {child_agent_id}{Style.RESET_ALL}"
         )
         logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
-        
+
+        # 判断是否有流式交互能力（有 stream_callback 才支持用户确认弹窗）
+        has_stream = stream_callback is not None
+        logger.info(
+            f"{Fore.CYAN}[子Agent委派] stream_callback={'已传入' if has_stream else '未传入'}，"
+            f"pending_confirmations={'已传入' if pending_confirmations is not None else '未传入'}{Style.RESET_ALL}"
+        )
+
         # 获取子 Agent
         child_agent = self.agent_registry.get_agent(child_agent_id)
         if not child_agent:
@@ -130,15 +147,87 @@ class ChildAgentManager:
                 max_iterations=max_iterations,
                 tool_gateway=self.tool_gateway  # 把网关透传给子 Agent 的执行引擎
             )
+
+            # ── 关键：共享父级 pending_confirmations 字典 ──────────────────────
+            # 子 Agent 注册 confirm_id 时写入父级的字典，
+            # 确保 /agents/confirm 接口（使用顶层 executor 的字典）能找到并唤醒挂起操作
+            if pending_confirmations is not None:
+                executor._pending_confirmations = pending_confirmations
+                logger.info(
+                    f"{Fore.GREEN}[子Agent委派] {child_agent_id} 已绑定父级 pending_confirmations "
+                    f"(id={id(pending_confirmations)}){Style.RESET_ALL}"
+                )
             
-            logger.info(f"{Fore.BLUE}开始执行子 Agent {child_agent.name} (LangGraph引擎){Style.RESET_ALL}")
-            
-            # 执行任务
-            result = await executor.execute(
-                agent=child_agent,
-                task=task
+            logger.info(
+                f"{Fore.BLUE}开始执行子 Agent {child_agent.name} "
+                f"({'流式回调模式' if has_stream else '静默执行模式'}){Style.RESET_ALL}"
             )
-            
+
+            # ── 流式模式：包装 stream_callback 并推送子 Agent 生命周期事件 ─────────────
+            if has_stream:
+                # 发送 sub_agent_start 事件（原始 callback，不带 is_sub_agent 标记）
+                # 前端用此事件作为子 Agent 轨迹区块的开始标志
+                _sa_start: Dict[str, Any] = {
+                    "event": "sub_agent_start",
+                    "iteration": 0,
+                    "timestamp": time.time() * 1000,
+                    "data": {
+                        "sub_agent_id": child_agent_id,
+                        "sub_agent_name": child_agent.name,
+                        "task": task,
+                    },
+                }
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(_sa_start)
+                else:
+                    stream_callback(_sa_start)
+
+                # 为原始 callback 绑定变量，避免闭包问题
+                _orig_cb = stream_callback
+                _sa_id = child_agent_id
+                _sa_name = child_agent.name
+
+                async def _sub_agent_callback(event: Dict[str, Any]) -> None:
+                    """将子 Agent 事件注入 is_sub_agent 等元信息后转发给父级回调。"""
+                    e = dict(event)
+                    e["data"] = dict(event.get("data") or {})
+                    e["data"]["is_sub_agent"] = True
+                    e["data"]["sub_agent_id"] = _sa_id
+                    e["data"]["sub_agent_name"] = _sa_name
+                    if asyncio.iscoroutinefunction(_orig_cb):
+                        await _orig_cb(e)
+                    else:
+                        _orig_cb(e)
+
+                result = await executor.execute_with_callback(
+                    agent=child_agent,
+                    task=task,
+                    stream_callback=_sub_agent_callback  # 用包装后的 callback
+                )
+
+                # 发送 sub_agent_end 事件（原始 callback，标记子 Agent 区块结束）
+                _sa_end: Dict[str, Any] = {
+                    "event": "sub_agent_end",
+                    "iteration": 0,
+                    "timestamp": time.time() * 1000,
+                    "data": {
+                        "sub_agent_id": child_agent_id,
+                        "sub_agent_name": child_agent.name,
+                        "success": result.get("success", False),
+                    },
+                }
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(_sa_end)
+                else:
+                    stream_callback(_sa_end)
+
+            else:
+                # 静默模式（向下兼容，无用户确认交互）
+                result = await executor.execute(
+                    agent=child_agent,
+                    task=task
+                )
+
             logger.info(
                 f"{Fore.GREEN}子 Agent {child_agent.name} 任务执行完成{Style.RESET_ALL}"
             )
@@ -151,7 +240,8 @@ class ChildAgentManager:
                 "result": final_res.get("result"),  # 子 Agent 最终合成文字
                 "step_results": final_res.get("step_results", []),
                 "reflection": final_res.get("reflection", None),
-                "messages": result.get("messages", []),
+                # NOTE: 不返回 messages —— 包含 LangChain BaseMessage 对象，无法 JSON 序列化，
+                #       且父 Agent 不需要子 Agent 的对话历史
                 "agent_id": child_agent_id,
                 "agent_name": child_agent.name,
                 "error": final_res.get("error") or result.get("error")
