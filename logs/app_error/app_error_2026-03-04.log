@@ -1,0 +1,8 @@
+2026-03-04 08:30:56 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APITimeoutError: Request timed out.[0m
+2026-03-04 08:30:56 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Request timed out.[0m
+2026-03-04 08:30:56 | ERROR    | app.agents.planning:create_plan:191 - [31m创建计划失败: Request timed out.[0m
+2026-03-04 08:31:13 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-04 08:31:13 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Connection error.[0m
+2026-03-04 08:31:13 | ERROR    | app.agents.reflection:reflect:170 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-04 09:15:35 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000005] 推理请求失败: Object of type datetime is not JSON serializable[0m
+2026-03-04 09:15:35 | ERROR    | app.agents.execution:_execute_skill:847 - [31m技能 data_analysis 执行失败: Object of type datetime is not JSON serializable[0m

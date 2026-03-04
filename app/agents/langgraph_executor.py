@@ -579,6 +579,7 @@ class LangGraphAgentExecutor:
                         s for s in plan.steps
                         if not (s.action == "tool" and s.params.get("tool_name") == tool_name)
                     ]
+
                     # NOTE: 将被拒绝的工具名加入状态，供 _reflect_node 过滤
                     #       避免反思阶段 LLM 通过 tool_gateway 绕过确认再次执行
                     current_rejected = state.get("user_rejected_tools", []) or []
@@ -590,12 +591,64 @@ class LangGraphAgentExecutor:
                             f"当前黑名单: {current_rejected}{Style.RESET_ALL}"
                         )
 
+                    # NOTE: 关键修复：将用户拒绝操作写入 error_context。
+                    #       这样反思引擎的 Prompt 会包含这条记录，
+                    #       LLM 才知道任务未完成是因为「用户主动拒绝」，
+                    #       而不会被 execution_result.success=True 误导。
+                    user_reject_record = {
+                        "step_desc": f"用户拒绝执行 {tool_name}",
+                        "error_msg": (
+                            f"用户在确认弹窗中点击了「取消」，操作 [{tool_name}] 未被执行。"
+                            f"这是用户的主动选择，任务目标（{state.get('task', '')}）尚未完成。"
+                        ),
+                        "error_type": "UserRejected",
+                        "suggestion": (
+                            f"用户明确拒绝了 [{tool_name}] 操作。"
+                            "请在最终答案中如实告知用户操作已被取消，"
+                            "不要重新尝试同一操作，也不要声称任务已成功完成。"
+                        ),
+                        "iteration": iteration
+                    }
+                    current_err_ctx = state.get("error_context", []) or []
+                    state["error_context"] = current_err_ctx + [user_reject_record]
+                    logger.info(
+                        f"{Fore.YELLOW}[Execute Node] 已将用户拒绝记录写入 error_context，"
+                        f"供反思引擎感知真实结果{Style.RESET_ALL}"
+                    )
+
+                    # NOTE: 同步更新 final_answer 步骤的内容，使其反映实际情况
+                    #       否则预设的"已成功写入"文案会被当作执行结果传给反思 LLM
+                    for step in plan.steps:
+                        if step.action == "final_answer":
+                            step.content = (
+                                f"用户取消了 [{tool_name}] 操作，该操作未执行。"
+                                f"任务目标（{state.get('task', '')}）未能完成，"
+                                "请如实告知用户操作已被取消。"
+                            )
+                            logger.info(
+                                f"{Fore.YELLOW}[Execute Node] 已更新 final_answer 内容以反映用户拒绝结果{Style.RESET_ALL}"
+                            )
+                            break
+
         # 执行计划（把 task 放入 context，供 _synthesize_answer 使用）
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
             plan=plan,
             context={"task": state.get("task", "")}
         )
+        
+        # NOTE: 关键修复 - 如果本轮包含被拒绝的操作，强制置 success 为 False，并修改 result 结果文案
+        #       避免因为剩余步骤（如 final_answer）成功执行导致整体被判定为成功
+        rejected_tools = [err.get("step_desc", "").replace("用户拒绝执行 ", "") for err in state.get("error_context", []) if err.get("error_type") == "UserRejected"]
+        if rejected_tools:
+            if execution_result.success:
+                logger.info(
+                    f"{Fore.YELLOW}[Execute Node] 检测到用户拒绝操作，"
+                    f"强制将执行结果标记为失败 (success=False)，并替换回答文本{Style.RESET_ALL}"
+                )
+                execution_result.success = False
+            # 始终覆盖 result 结果，确保发送给前端最后一句是明确的取消反馈
+            execution_result.result = f"用户已取消操作：{', '.join(rejected_tools)}，任务未完成。"
         
         logger.info(f"{Fore.GREEN}[Execute Node] 计划执行完成{Style.RESET_ALL}")
         
@@ -689,9 +742,8 @@ class LangGraphAgentExecutor:
             "step_results": execution_result.step_results
         })
         
-        # 如果执行成功，保存结果
-        if execution_result.success:
-            state["final_result"] = execution_result.to_dict()
+        # 无论执行成功或失败（如被用户拒绝），都保存在状态中供后续反思
+        state["final_result"] = execution_result.to_dict()
 
         # ═══════════════════════════════════════════════════════════
         # 【错误收集阶段】
