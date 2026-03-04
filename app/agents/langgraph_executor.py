@@ -376,6 +376,7 @@ class LangGraphAgentExecutor:
         
         agent = state["agent"]
         task = state["task"]
+        user_rejected_tools: List[str] = state.get("user_rejected_tools", []) or []
         
         # 按 Agent 的授权列表过滤工具和技能
         # agent.available_tools 为空列表时表示不限制（向后兼容），否则只暴露授权项
@@ -393,6 +394,16 @@ class LangGraphAgentExecutor:
                 available_tools = all_tools
         else:
             available_tools = []
+
+        # NOTE: 规划阶段同样要排除用户已拒绝的工具，防止下一轮继续重复规划同一敏感操作
+        # （例如用户拒绝 file_write 后，后续迭代应优先寻找替代方案，而非再次触发确认）
+        if user_rejected_tools and available_tools:
+            before_count = len(available_tools)
+            available_tools = [t for t in available_tools if t.name not in user_rejected_tools]
+            logger.info(
+                f"{Fore.YELLOW}[Plan Node] 已排除用户拒绝工具: {user_rejected_tools}，"
+                f"可用工具 {before_count}->{len(available_tools)}{Style.RESET_ALL}"
+            )
 
         if self.skill_manager:
             all_skills = self.skill_manager.list_skills()
@@ -429,12 +440,41 @@ class LangGraphAgentExecutor:
                 f"本次为历史感知重规划{Style.RESET_ALL}"
             )
 
+        # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
+        # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
+        # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
+        planning_context: Dict[str, Any] = {
+            "iteration": iteration,
+            "user_rejected_tools": user_rejected_tools,
+        }
+        # 取最近一次 plan/execution 消息，控制体积只保留近一次
+        recent_messages = state.get("messages", []) or []
+        # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
+        #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
+        dict_messages = [m for m in recent_messages if isinstance(m, dict)]
+        last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
+        last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
+        if last_plan_msg:
+            planning_context["last_plan"] = {
+                "reasoning": last_plan_msg.get("reasoning", ""),
+                "steps": last_plan_msg.get("steps", [])[:8]
+            }
+        if last_exec_msg:
+            planning_context["last_execution"] = {
+                "content": last_exec_msg.get("content", ""),
+                # 仅保留最近步骤，避免 Prompt 爆长
+                "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
+            }
+        if state.get("final_result") is not None:
+            planning_context["last_final_result"] = state.get("final_result")
+
         # 创建计划（携带 error_context 和 reflection_history 以提升重规划质量）
         plan = await self.planning_engine.create_plan(
             agent=agent,
             task=task,
             available_tools=available_tools,
             available_skills=available_skills,
+            context=planning_context,
             error_context=current_error_ctx if current_error_ctx else None,
             reflection_history=current_reflection_history if current_reflection_history else None
         )
@@ -508,16 +548,38 @@ class LangGraphAgentExecutor:
         # 若包含，则先推送 user_confirm_required 事件，挂起等待用户确认/拒绝后再执行。
         # 这是用户确认交互机制的核心入口。
         TOOLS_REQUIRING_CONFIRM = {"file_write"}  # 可扩展：如 email_send、shell_exec 等
+
+        def _extract_tool_name_for_confirm(step) -> str:
+            """
+            统一提取需要确认判断用的工具名，兼容两类规划输出：
+            1) 标准格式: {"action":"tool","tool_name":"file_write",...}
+            2) 兼容格式: {"action":"file_write","tool_name":"file_write",...}
+               （执行引擎后续会自动纠正为 action='tool'）
+            """
+            action_name = (getattr(step, "action", "") or "").strip()
+            params_tool = (getattr(step, "params", {}) or {}).get("tool_name", "")
+            params_tool = params_tool.strip() if isinstance(params_tool, str) else ""
+
+            if action_name == "tool":
+                return params_tool
+            # 兼容：若 action 直接是某个危险工具名，也应触发确认
+            if action_name in TOOLS_REQUIRING_CONFIRM:
+                return action_name
+            # 兜底：非 tool action 但 params.tool_name 命中危险工具时，也要求确认
+            if params_tool in TOOLS_REQUIRING_CONFIRM:
+                return params_tool
+            return ""
+
         confirm_required_steps = [
             step for step in (plan.steps or [])
-            if step.action == "tool" and step.params.get("tool_name", "") in TOOLS_REQUIRING_CONFIRM
+            if _extract_tool_name_for_confirm(step) in TOOLS_REQUIRING_CONFIRM
         ] if plan else []
 
         if confirm_required_steps and stream_callback:
             import uuid
             for step in confirm_required_steps:
                 confirm_id = str(uuid.uuid4())
-                tool_name = step.params.get("tool_name", "file_write")
+                tool_name = _extract_tool_name_for_confirm(step) or step.params.get("tool_name", "file_write")
                 tool_params = {k: v for k, v in step.params.items() if k != "tool_name"}
 
                 logger.info(
@@ -577,7 +639,7 @@ class LangGraphAgentExecutor:
                     )
                     plan.steps = [
                         s for s in plan.steps
-                        if not (s.action == "tool" and s.params.get("tool_name") == tool_name)
+                        if _extract_tool_name_for_confirm(s) != tool_name
                     ]
 
                     # NOTE: 将被拒绝的工具名加入状态，供 _reflect_node 过滤

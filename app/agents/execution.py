@@ -253,7 +253,18 @@ class ExecutionEngine:
         result_parts = []
         for idx, r in enumerate(tool_results, 1):
             label = r.get("tool_name") or r.get("agent_id") or r.get("action", f"步骤{idx}")
-            val = r.get("result", "")
+            # 对 delegate 结果保留子 Agent 的详细执行轨迹，避免上层合成时丢失关键信息
+            # （如子 Agent 内 file_write 的真实写入结果）
+            if r.get("action") == "delegate":
+                val = {
+                    "agent_id": r.get("agent_id"),
+                    "success": r.get("success"),
+                    "result": r.get("result"),
+                    "step_results": r.get("step_results", []),
+                    "error": r.get("error"),
+                }
+            else:
+                val = r.get("result", "")
             if isinstance(val, dict):
                 val_str = _json.dumps(val, ensure_ascii=False, indent=2)
             else:
@@ -279,6 +290,7 @@ class ExecutionEngine:
 2. 信息完整，涵盖用户关心的所有字段
 3. 格式清晰，必要时使用列表或分段展示
 4. 如果数据中有错误或空值，如实告知
+5. 如果任务包含“写入本地文件/保存到文件”，必须优先说明是否写入成功、写入路径与写入内容来源，禁止只返回查询结果。
 
 请直接输出最终回答，不要包含任何前缀说明。"""
 
@@ -495,7 +507,7 @@ class ExecutionEngine:
                 return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
                 # 把 context 也传给委派方法，以便透传 stream_callback / pending_confirmations
-                return await self._delegate_to_agent(step, context)
+                return await self._delegate_to_agent(step, context, prev_results)
             elif step.action == "final_answer":
                 return {
                     "success": True,
@@ -856,7 +868,8 @@ class ExecutionEngine:
     async def _delegate_to_agent(
         self,
         step: PlanStep,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        prev_results: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         委派给子 Agent
@@ -865,12 +878,15 @@ class ExecutionEngine:
             step: 计划步骤
             context: 执行上下文（透传 stream_callback / pending_confirmations 以便
                      子 Agent 也能推送 user_confirm_required 事件并共享确认映射表）
+            prev_results: 本轮已完成步骤结果，用于把上游真实数据注入子 Agent 任务
 
         Returns:
             Dict[str, Any]: 执行结果
         """
         agent_id = step.params.get("agent_id")
         task = step.params.get("task")
+        if not isinstance(task, str):
+            task = str(task or "")
 
         logger.info(f"{Fore.CYAN}委派任务给子 Agent: {agent_id}{Style.RESET_ALL}")
 
@@ -883,6 +899,68 @@ class ExecutionEngine:
                 "action": "delegate",
                 "agent_id": agent_id
             }
+
+        # ── 向子 Agent 任务注入上游真实结果，避免“根据查询结果”却拿不到查询数据 ─────────
+        # 典型场景：先 order_agent 查订单，再 general_agent 写文件。
+        # 若不注入，general_agent 只能基于空上下文臆造价格内容。
+        if prev_results:
+            successful_prev = [
+                r for r in prev_results
+                if r.get("success") and (r.get("result") is not None)
+            ]
+            if successful_prev:
+                def _to_text(value: Any, max_len: int = 2200) -> str:
+                    if isinstance(value, (dict, list)):
+                        s = _json.dumps(value, ensure_ascii=False, indent=2)
+                    else:
+                        s = str(value)
+                    if len(s) > max_len:
+                        s = s[:max_len] + "\n...（内容已截断）"
+                    return s
+
+                # 仅注入最近几条成功结果，控制上下文体积
+                recent = successful_prev[-3:]
+                blocks = []
+                for r in recent:
+                    label = r.get("tool_name") or r.get("skill_id") or r.get("agent_id") or r.get("action", "上游步骤")
+                    payload = r.get("result")
+                    # 委派结果携带子 Agent 轨迹，供下游精准复用（如提取价格后写文件）
+                    if r.get("action") == "delegate":
+                        payload = {
+                            "agent_id": r.get("agent_id"),
+                            "result": r.get("result"),
+                            "step_results": r.get("step_results", []),
+                            "error": r.get("error"),
+                        }
+                    blocks.append(f"[{label}]\n{_to_text(payload)}")
+                upstream_context = "\n\n".join(blocks)
+
+                # 若任务模板中已使用占位符则替换；否则直接追加显式上下文
+                last_payload = successful_prev[-1].get("result")
+                last_payload_text = _to_text(last_payload)
+                replacements = [
+                    ("{{last_tool_result}}", last_payload_text),
+                    ("{last_tool_result}", last_payload_text),
+                    ("{{upstream_results}}", upstream_context),
+                    ("{upstream_results}", upstream_context),
+                ]
+                replaced = False
+                for placeholder, value in replacements:
+                    if placeholder in task:
+                        task = task.replace(placeholder, value)
+                        replaced = True
+
+                if not replaced:
+                    task = (
+                        f"{task}\n\n"
+                        "【上游已执行结果（必须基于真实结果继续执行，禁止臆造）】\n"
+                        f"{upstream_context}"
+                    )
+
+                logger.info(
+                    f"{Fore.BLUE}[委派] 已向子 Agent {agent_id} 注入上游结果，"
+                    f"条数={len(recent)}{Style.RESET_ALL}"
+                )
 
         # 从 context 中提取父级流式回调和挂起确认映射表
         # 这两个对象需要透传给子 Agent，使子 Agent：

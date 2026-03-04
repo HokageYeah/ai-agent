@@ -105,7 +105,8 @@ class ReflectionEngine:
         logger.info(
             f"{Fore.BLUE}开始反思任务执行结果{Style.RESET_ALL}"
         )
-        logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+        # todo 一会解开注释
+        # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
         logger.info(
             f"{Fore.CYAN}执行状态: {'成功' if execution_result.success else '失败'}{Style.RESET_ALL}"
         )

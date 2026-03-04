@@ -97,7 +97,8 @@ class ChildAgentManager:
         logger.info(
             f"{Fore.BLUE}委派任务给子 Agent: {child_agent_id}{Style.RESET_ALL}"
         )
-        logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+        # todo 一会解开注释
+        # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
 
         # 判断是否有流式交互能力（有 stream_callback 才支持用户确认弹窗）
         has_stream = stream_callback is not None

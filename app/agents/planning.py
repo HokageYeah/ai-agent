@@ -126,7 +126,8 @@ class PlanningEngine:
         logger.info(
             f"{Fore.BLUE}开始为 Agent '{agent.name}' 创建执行计划{Style.RESET_ALL}"
         )
-        logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
+        # todo 一会解开注释
+        # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
 
         # 构建规划 Prompt（重规划时携带错误上下文和历史反思，提升修正质量）
         if error_context:
@@ -285,6 +286,31 @@ class PlanningEngine:
 
 请只返回 JSON，不要包含其他文本。
 """
+        # NOTE: 若携带了跨迭代上下文（上一轮计划/执行/总结），注入到 Prompt。
+        # 目标：让重规划时复用已获得的数据，避免重复执行同类查询步骤。
+        if context:
+            def _compact(value: Any, max_len: int = 5000) -> str:
+                try:
+                    text = json.dumps(value, ensure_ascii=False, indent=2)
+                except Exception:
+                    text = str(value)
+                if len(text) > max_len:
+                    text = text[:max_len] + "\n...（上下文已截断）"
+                return text
+
+            context_block = _compact(context, max_len=5000)
+            prompt += f"""
+
+# 🧠 跨迭代执行上下文（请重点参考）
+以下是上一轮（或最近轮次）的计划、执行结果与总结：
+{context_block}
+
+【重规划强约束】
+- 若上下文中已包含完成任务所需的关键数据（如已查到订单总金额），优先直接复用，不要重复查询相同信息。
+- 若 user_rejected_tools 显示某工具已被用户拒绝，不要再次规划该工具；应提供替代方案或在 final_answer 中明确告知受限原因。
+- 新计划应尽量减少重复步骤，明确说明为何需要新增步骤。
+"""
+
         # NOTE: 若本次规划携带了上一轮的错误上下文（重规划场景），则在 Prompt 末尾
         # 追加失败详情，引导 LLM 在新计划中规避已知问题路径
         if error_context:
