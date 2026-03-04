@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.2
-- **最后更新**: 2026-02-28
+- **版本号**: v1.3
+- **最后更新**: 2026-03-04
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -1082,6 +1082,27 @@ tools = [
 
 ---
 
+### 8.10 用户确认流程（敏感操作需用户确认）
+
+对写入本地文件等敏感工具（如 `file_write`），执行前需用户确认，避免误操作。
+
+- **需确认工具**：在 `langgraph_executor` 中维护 `TOOLS_REQUIRING_CONFIRM`（如 `file_write`），执行到对应步骤时暂停并生成 `confirm_id`，通过 SSE 推送 `user_confirm_required`（含 `tool_name`、`message`、`params`、`confirm_id`）。
+- **确认接口**：`POST /api/v1/agents/confirm/{confirm_id}`，请求体 `{"allowed": true|false}`。后端用 `asyncio.Event` 唤醒执行：允许则继续执行该步骤，拒绝则从计划中移除该步骤并将工具名加入 `user_rejected_tools`。
+- **状态扩展**：`AgentState` 增加 `pending_confirmations: Dict[str, Any]`（key 为 confirm_id）、`user_rejected_tools: List[str]`。规划与反思阶段从 `available_tools` 中排除 `user_rejected_tools`，避免 LLM 再次规划已被用户拒绝的操作。
+- **子 Agent**：子 Agent 与主 Agent 共用同一 `pending_confirmations` 引用，子 Agent 内触发的确认同样推送到前端，用户确认/拒绝后子 Agent 继续或跳过该步骤。
+
+---
+
+### 8.11 子 Agent 流式与确认传递
+
+子 Agent 委派时需透传流式回调和确认状态，保证轨迹与确认行为一致。
+
+- **透传**：主执行器将 `stream_callback`、`pending_confirmations` 传入执行引擎，委派时由 `ChildAgentManager.delegate_task` 传给子执行器；子执行器使用 `execute_with_callback`，与主 Agent 共用同一 `_pending_confirmations`。
+- **事件**：委派前发送 `sub_agent_start`（含 `sub_agent_id`、`sub_agent_name`、`task`），委派后发送 `sub_agent_end`（含 `success`）；子 Agent 内部所有 SSE 事件在 payload 中附带 `is_sub_agent: true`、`sub_agent_id`、`sub_agent_name`，前端可据此做区块展示与配色区分。
+- **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本），主 Agent 的 `step_complete` 事件中 `action=final_answer` 时携带 `answer` 字段，供前端在「合成最终答案」下展示具体答案。
+
+---
+
 ## 9. LangGraph 集成
 
 使用 LangGraph 作为 Agent 的执行引擎。
@@ -1092,13 +1113,16 @@ from langgraph.graph import StateGraph
 
 class AgentState(TypedDict):
     """Agent 状态"""
-    messages: list[dict]           # 对话消息
+    messages: list[dict]           # 对话消息（可含 LangChain BaseMessage，规划时仅用 dict 消息）
     current_plan: dict             # 当前计划
     tool_outputs: list[dict]       # 工具输出
     iterations: int                # 迭代次数
     final_result: dict             # 最终结果
     error_context: list[dict]      # 历史失败步骤（跨迭代累积）
     error_analysis: dict           # LLM 对错误的根因分析结果
+    reflection_history: list[dict] # 历次反思结论（跨迭代），供下一轮规划使用
+    pending_confirmations: dict    # 待用户确认操作，key=confirm_id，value=Event 等
+    user_rejected_tools: list[str] # 用户拒绝过的工具名，规划/反思时从可用工具中排除
 
 class LangGraphAgentExecutor:
     """基于 LangGraph 的 Agent 执行器"""
@@ -1153,6 +1177,20 @@ class LangGraphAgentExecutor:
         
         return result["final_result"]
 ```
+
+#### 跨迭代规划上下文（规划时带入上一轮记忆）
+
+重规划时，除 `error_context` / `error_analysis` 外，将上一轮的计划、执行与反思结果注入规划 Prompt，减少重复执行、尊重用户拒绝：
+
+- **planning_context**（在 `_plan_node` 中从 `state["messages"]` 与 `final_result` 提取）：`iteration`、`user_rejected_tools`、`last_plan`、`last_execution`、`last_final_result`；规划引擎 `create_plan(..., context=planning_context)`，在 `_build_planning_prompt` 中追加「跨迭代执行上下文」区块，约束 LLM 复用已有数据、勿重复调用已拒绝工具。
+- **reflection_history**：每轮反思完成后将结果追加到 `AgentState.reflection_history`，规划时可一并传入，供 LLM 参考历史反思结论。
+
+#### 迭代防循环（_should_continue）
+
+在条件边 `_should_continue` 中增加熔断，避免用户拒绝关键工具后子 Agent 反复给出相同建议：
+
+- **无可执行动作**：若 `user_rejected_tools` 非空且本轮步骤结果中仅有 `final_answer`（无新工具/委派），判定为无新可执行动作，直接结束。
+- **重复反思**：若最近 3 轮反思均为「未成功 + 需要重规划」且反馈/总结高度相似，判定为重复反思循环，直接结束。
 
 ---
 
@@ -1628,3 +1666,5 @@ httpx = "^0.26.0"
 8. **Runtime Sandbox**：安全执行环境
 
 > ✅ **已完成（v1.2）**：错误感知自我纠错机制 — 包括执行错误收集（`error_context`）、LLM 根因分析（`_analyze_errors` + `error_analysis`）、规划阶段工具 Schema 白名单过滤（防止 LLM 重复规划禁用工具）、以及前端 SSE 实时推送错误分析结果（`error_analysis_start` / `error_analysis` 事件）。
+
+> ✅ **已完成（v1.3）**：用户确认流程（敏感工具执行前需用户确认，`/agents/confirm`、`user_rejected_tools`）；子 Agent 流式与确认透传（`sub_agent_start`/`sub_agent_end`、`is_sub_agent`、合成答案 `answer`）；跨迭代规划上下文（`planning_context`、`reflection_history`）；迭代防循环熔断（无可执行动作、重复反思时结束）。

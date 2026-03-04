@@ -311,16 +311,20 @@ sequenceDiagram
      
      data: {"event": "complete", ...}
      ```
-   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `final_answer` / `complete`
+   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `user_confirm_required` / `user_confirm_result` / `sub_agent_start` / `sub_agent_end` / `final_answer` / `complete`。其中 `step_complete` 在步骤为合成最终答案时可带 `data.answer` 供前端展示具体答案；子 Agent 相关事件带 `is_sub_agent`、`sub_agent_id`、`sub_agent_name` 便于区块展示。
 
-6. **获取所有可用专家 Agent 列表**
+6. **用户确认敏感操作（流式执行中需确认时调用）**
+   - **请求端点**: `POST /api/v1/agents/confirm/{confirm_id}`
+   - **作用介绍**: 当流式执行遇到需用户确认的敏感操作（如 `file_write`）时，会先推送 `user_confirm_required` 事件并暂停，前端展示确认弹窗后调用本接口告知允许或拒绝，执行器据此继续或跳过该步骤。
+   - **请求体示例**: `{"allowed": true}` 或 `{"allowed": false}`
+
+7. **获取所有可用专家 Agent 列表**
    - **请求端点**: `GET /api/v1/agents`
    - **作用介绍**: 返回后端在 `AgentRegistry` 中注册的所有 Agent 详细信息，可用于前端构建"Agent 专家应用商店"。
 
-7. **获取单个 Agent 详情**
+8. **获取单个 Agent 详情**
    - **请求端点**: `GET /api/v1/agents/{agent_id}`
    - **作用介绍**: 查询某一个特型 Agent 的具体能力说明与默认配置。
-
 
 #### 三、 Skill 技能库接口
 有时不需要大模型复杂的 Planning（规划步骤），外部系统就是有一个明确的 “点击翻译此文” 按钮。可以通过此通道一键强制调用技能。
@@ -383,10 +387,13 @@ sequenceDiagram
 - **Agent 列表与执行**：浏览所有可用 Agent，发起任务并实时查看执行轨迹
 - **Agent 思考与执行轨迹可视化**：以时间轴卡片的形式，实时展示 Agent 执行的每一步：
   - 📋 规划阶段：可视化展示 LLM 生成的执行计划和推理过程
-  - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）
+  - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）；「合成最终答案」/「合成答案」下展示后端返回的**具体答案**（`step_complete` 的 `data.answer`）
+  - 🔐 用户确认：敏感操作（如写文件）前弹出确认框，调用 `POST /agents/confirm/{confirm_id}` 允许或拒绝
   - 🔴 错误分析阶段：当步骤失败时，实时展示 LLM 根因分析卡片（根因、建议、纠正方案）
   - 🔍 反思阶段：展示反思结论与是否重新规划的决策
   - ✅ 完成阶段：最终答案的 Markdown 渲染
+- **子 Agent 区块展示**：子 Agent 轨迹以区块标题区分，不同子 Agent 可配不同主题色；事件含 `sub_agent_start` / `sub_agent_end` 与 `is_sub_agent` 便于折叠/高亮
+- **轨迹区滚动**：用户上滑查看历史轨迹时不再强制自动滚到底部；右下角提供「回到底部」按钮，点击后滚至最新
 - **阶段进度指示条**：顶部动态展示当前所在阶段（规划 → 执行 → 反思 → 完成）
 - **Chat 对话**：普通多轮对话（含打字机流式效果）
 - **工具/技能/工作流管理**：查看已注册的工具、技能和工作流定义
