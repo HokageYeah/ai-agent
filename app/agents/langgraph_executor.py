@@ -1284,6 +1284,9 @@ class LangGraphAgentExecutor:
             return "end"
         
         reflection = final_result["reflection"]
+        step_results = final_result.get("step_results", []) or []
+        user_rejected_tools = state.get("user_rejected_tools", []) or []
+        reflection_history = state.get("reflection_history", []) or []
         
         # ── 4. 反思结果显示任务成功 → 结束 ──
         if reflection.get("success", False):
@@ -1291,8 +1294,53 @@ class LangGraphAgentExecutor:
                 f"{Fore.GREEN}[Should Continue] 反思判定任务成功完成，结束执行{Style.RESET_ALL}"
             )
             return "end"
+
+        # ── 5.1 无可执行动作熔断：本轮仅输出 final_answer（或等价无动作）时结束 ──
+        # 典型场景：用户拒绝关键工具后，后续计划已退化为“解释原因+给替代建议”，
+        # 若继续迭代通常只会重复同样建议，属于无效循环。
+        non_final_actions = [
+            sr for sr in step_results
+            if (sr.get("action") or "") != "final_answer"
+        ]
+        if user_rejected_tools and not non_final_actions:
+            logger.warning(
+                f"{Fore.YELLOW}[Should Continue] 检测到用户已拒绝关键工具且本轮无新可执行动作，"
+                f"为避免无效循环，结束执行{Style.RESET_ALL}"
+            )
+            return "end"
+
+        # ── 5.2 重复反思熔断：连续多轮反馈/总结高度重复时结束 ──
+        # 设计目标：防止 LLM 持续返回 should_continue=true 导致循环。
+        def _norm_text(v: Any) -> str:
+            import re
+            s = (v or "")
+            s = str(s).strip().lower()
+            # 去除数字与多余空白，降低“同义重复”中的表面差异
+            s = re.sub(r"\d+(\.\d+)?", "", s)
+            s = re.sub(r"\s+", " ", s)
+            return s
+
+        if len(reflection_history) >= 3:
+            last3 = reflection_history[-3:]
+            all_need_replan = all(
+                (not h.get("success", False)) and bool(h.get("needs_replanning", False))
+                for h in last3
+            )
+            # 取最近三轮 feedback+summary 归一化文本
+            signatures = [
+                (_norm_text(h.get("feedback")), _norm_text(h.get("summary")))
+                for h in last3
+            ]
+            # 若最近三轮至少两轮签名相同，判定为重复反思循环
+            repeated = len(set(signatures)) <= 2
+            if all_need_replan and repeated:
+                logger.warning(
+                    f"{Fore.YELLOW}[Should Continue] 检测到连续重复反思（近3轮建议/总结高度相似），"
+                    f"为避免循环，结束执行{Style.RESET_ALL}"
+                )
+                return "end"
         
-        # ── 5. 反思结果要求执行成功但标记需要重规划时，检查底层执行是否已成功 ──
+        # ── 5.3 反思结果要求执行成功但标记需要重规划时，检查底层执行是否已成功 ──
         # HACK: 防止因反思 LLM 误判而无限重试已经成功执行的计划
         # todo 一会解开注释
         # if final_result.get("success", False) and reflection.get("needs_replanning", False):
@@ -1302,7 +1350,7 @@ class LangGraphAgentExecutor:
         #     )
         #     return "end"
 
-        # ── 6. LLM 自主判断是否继续（优先级最高）────
+        # ── 6. LLM 自主判断是否继续（优先级较高）────
         # 如果 LLM 在反思时已经明确判断 should_continue，优先遵循 LLM 的判断
         if "should_continue" in reflection and reflection["should_continue"] is not None:
             if reflection["should_continue"]:

@@ -172,8 +172,13 @@
               </div>
             </div>
             
-            <!-- 流式事件列表 -->
-            <div v-if="streamEvents.length > 0" class="stream-events-container" ref="streamEventsContainer">
+            <!-- 流式事件列表（带“回到底部”按钮，仅在用户上滑后显示） -->
+            <div v-if="streamEvents.length > 0" class="stream-events-wrapper">
+              <div
+                class="stream-events-container"
+                ref="streamEventsContainer"
+                @scroll="onTrajectoryScroll"
+              >
               <el-timeline style="margin-top: 20px;">
                 <template v-for="(item, index) in streamEventsWithBlockInfo" :key="'stream-'+index">
                   <!-- sub_agent_end 不展示 -->
@@ -761,6 +766,18 @@
                 </template>
               </el-timeline>
             </div>
+              <transition name="el-fade-in">
+                <button
+                  v-show="showScrollToBottomButton"
+                  type="button"
+                  class="scroll-to-bottom-btn"
+                  aria-label="滚动到底部"
+                  @click="scrollToLatestEvent"
+                >
+                  <el-icon :size="18"><ArrowDown /></el-icon>
+                </button>
+              </transition>
+            </div>
             <!-- 流式进行中的加载状态 -->
             <div v-else-if="isStreaming" class="loading-container">
               <el-empty description="等待执行事件..." :image-size="60" />
@@ -928,8 +945,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, nextTick } from 'vue'
-import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User, Loading,Aim, Check, Promotion, Cpu, MagicStick, ChatDotRound, Finished
-, Sunrise, UserFilled } from '@element-plus/icons-vue'
+import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User, Loading, Aim, Check, Promotion, Cpu, MagicStick, ChatDotRound, Finished, Sunrise, UserFilled, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAgentList, executeAgent, executeAgentStream, confirmAgentAction } from '@/api/modules/agents'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
@@ -1026,12 +1042,27 @@ const progressPercent = computed<number>(() => {
   }
 })
 
-// 滚动到最新事件（流式接收时自动触发）
+// 轨迹区域滚动：仅当用户已在底部时才自动滚到底；否则显示“回到底部”按钮
 const streamEventsContainer = ref<HTMLElement | null>(null)
+/** 用户是否处于轨迹区域底部（用于决定新消息是否自动滚到底） */
+const userAtBottom = ref(true)
+const SCROLL_BOTTOM_THRESHOLD = 60
+
+function onTrajectoryScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (!el || el !== streamEventsContainer.value) return
+  const { scrollTop, clientHeight, scrollHeight } = el
+  userAtBottom.value = scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD
+}
+
+/** 有事件且用户已上滑（不在底部）时显示“回到底部”按钮 */
+const showScrollToBottomButton = computed(() => streamEvents.value.length > 0 && !userAtBottom.value)
+
 function scrollToLatestEvent() {
   nextTick(() => {
     if (streamEventsContainer.value) {
       streamEventsContainer.value.scrollTop = streamEventsContainer.value.scrollHeight
+      userAtBottom.value = true
     }
   })
 }
@@ -1247,12 +1278,13 @@ function handleStreamEvent(event: StreamEvent): void {
     event.data
   )
   
-  // 保存事件到列表（驱动时间轴渲染）
+  // 新一轮执行的首条事件时视为“在底部”，保证会滚到底
+  if (streamEvents.value.length === 0) userAtBottom.value = true
   streamEvents.value.push(event)
   currentStreamEvent.value = event
-  
-  // 自动滚动到最新事件
-  scrollToLatestEvent()
+
+  // 仅当用户当前在底部时才自动滚到底，避免打断用户查看历史轨迹
+  if (userAtBottom.value) scrollToLatestEvent()
   
   // 根据事件类型更新 UI 状态
   switch (event.event) {
@@ -2086,10 +2118,41 @@ onMounted(() => {
  * 流式事件容器
  * 改进：使用 Bento Grid 风格的事件卡片
  * ===================================================== */
+.stream-events-wrapper {
+  position: relative;
+}
+
 .stream-events-container {
   max-height: 550px;
   overflow-y: auto;
   padding-right: 8px;
+}
+
+/* “回到底部”浮动按钮：用户上滑查看轨迹时显示，点击滚到底部 */
+.scroll-to-bottom-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10;
+}
+.scroll-to-bottom-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.scroll-to-bottom-btn:active {
+  transform: scale(0.98);
 }
 
 /* 自定义滚动条 */
