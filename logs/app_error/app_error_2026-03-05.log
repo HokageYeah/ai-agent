@@ -1,0 +1,4 @@
+2026-03-05 12:06:38 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'List' is not defined[0m
+2026-03-05 12:07:29 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'List' is not defined[0m
+2026-03-05 12:07:54 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'List' is not defined[0m
+2026-03-05 12:13:00 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'List' is not defined[0m

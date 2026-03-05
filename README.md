@@ -35,25 +35,29 @@
 │   ├── config/           # 配置模块
 │   ├── core/             # 系统核心设置与日志引擎 (Loguru) 初始化
 │   ├── db/               # SQLAlchemy 数据库连接器与引擎
-│   │── decorators/       # API 函数缓存等通用装饰器
-│   ├── middleware/       # 拦截器与自定义异常处理器 (含报错美化格式转换)
+│   ├── decorators/       # API 函数缓存等通用装饰器
+│   ├── llm_hub/          # 底层 LLM 提供者核心工厂
+│   │   ├── providers/   # 不同的厂商适配文件 (OpenAI, Anthropic 等)
+│   │   ├── inference.py, prompt_builder.py # 通用大模型流式推理与提示词生成封装
 │   ├── memory/           # 记忆力管理层 (如 短期多轮记忆上下文提取)
+│   ├── middleware/       # 拦截器与自定义异常处理器 (含报错美化格式转换)
 │   ├── models/           # 数据库模型对象 (ORM 映射定义)
 │   ├── schemas/          # Pydantic 校验模型层 (统一通信数据结构)
 │   ├── scripts/          # 用于不同环境下快捷切换 DB 与构建数据表的运维脚本
 │   ├── services/         # 面向外部的业务总线层接口服务
-│   ├── llm_hub/          # 底层 LLM 提供者核心工厂
-│   │   ├── providers/   # 不同的厂商适配文件 (OpenAI, Anthropic 等)
-│   │   ├── inference.py, prompt_builder.py # 通用大模型流式推理与提示词生成封装
-│   ├── tools/            # Python 硬编码底层能力库封装框架
-│   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
 │   ├── skills/           # 通过大语言模型做二次包装的高级技能库统筹 
 │   │   ├── library/     # 存放执行技能具体的 Python 适配驱动逻辑
 │   │   └── skills_md/   # 具有大模型特色的由 Prompt 定义的纯文档型技能包 (Markdown格式)
+│   ├── tools/            # Python 硬编码底层能力库封装框架
+│   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
+│   ├── utils/            # 通用工具与辅助函数库
 │   ├── workflows/        # 写死了拓扑链路和节点跳转条件的工作流集合
 │   │   ├── templates/   # 存放在系统中供任意提取的通用工作流程拓扑结构图
 │   └── main.py           # FastAPI 服务器核心入口
+├── docs/                 # 项目核心文档区（架构设计、任务实施排期、Bug记录等）
 ├── tests/                # 集成测试与全链路推演保障目录
+├── web/                  # 前端 Web 管理界面 (Vue 3 + Vite + Element Plus)
+├── AI_WORKSPACE.md       # 针对 AI 代码助手的全局约束和开发纪律工作区配置
 ├── pyproject.toml        # Poetry 依赖和元数据配置文件
 ├── run.sh                # 便捷的一键运行环境部署执行脚本
 ├── .env                  # 运行所需的所有核心环境变量注入点
@@ -142,11 +146,11 @@ flowchart TD
 
 **根本性机制**：规划引擎在向 LLM 传递 function calling 工具列表时，**只传入该 Agent 有权限使用的工具 Schema**。这从根源上杜绝了 LLM 规划禁用工具的可能：
 
-| 位置 | 机制 | 效果 |
-|------|------|------|
-| `planning.py` | `available_tools` 白名单过滤全量 `tool_hub.get_schemas()` | LLM 完全看不到禁用工具 |
-| `reflection.py` | 同上，`reflect()` 增加 `available_tools` 参数 | 反思阶段也不会建议使用禁用工具 |
-| `langgraph_executor.py` | `_analyze_errors()` 生成结构化根因分析 | 为重规划提供准确的错误原因与建议 |
+| 位置                    | 机制                                                      | 效果                             |
+| ----------------------- | --------------------------------------------------------- | -------------------------------- |
+| `planning.py`           | `available_tools` 白名单过滤全量 `tool_hub.get_schemas()` | LLM 完全看不到禁用工具           |
+| `reflection.py`         | 同上，`reflect()` 增加 `available_tools` 参数             | 反思阶段也不会建议使用禁用工具   |
+| `langgraph_executor.py` | `_analyze_errors()` 生成结构化根因分析                    | 为重规划提供准确的错误原因与建议 |
 
 ### AgentState 新增字段
 
@@ -164,11 +168,11 @@ interface AgentState {
 
 ### SSE 错误事件
 
-| 事件 | 时机 | 前端展示 |
-|------|------|----------|
-| `step_error` | 单步骤失败 | 🔴 红色错误卡片 |
-| `error_analysis_start` | 开始 LLM 根因分析 | 🟠 分析中通知 |
-| `error_analysis` | 分析完成 | 🔴 详细根因分析卡片（含步骤、根因、建议、纠正方案） |
+| 事件                   | 时机              | 前端展示                                           |
+| ---------------------- | ----------------- | -------------------------------------------------- |
+| `step_error`           | 单步骤失败        | 🔴 红色错误卡片                                     |
+| `error_analysis_start` | 开始 LLM 根因分析 | 🟠 分析中通知                                       |
+| `error_analysis`       | 分析完成          | 🔴 详细根因分析卡片（含步骤、根因、建议、纠正方案） |
 
 ## 🧪 内置客服 + 订单查询 Demo
 
@@ -455,13 +459,13 @@ npm run dev
 
 ### 前端技术栈
 
-| 框架/库 | 版本 | 用途 |
-|---------|------|------|
-| Vue 3 | 3.x | 前端框架（Composition API）|
-| Element Plus | 2.x | UI 组件库 |
-| Vite | 5.x | 构建工具 |
-| Vue Router | 4.x | 路由管理 |
-| Marked | 12.x | Markdown 渲染 |
+| 框架/库      | 版本 | 用途                        |
+| ------------ | ---- | --------------------------- |
+| Vue 3        | 3.x  | 前端框架（Composition API） |
+| Element Plus | 2.x  | UI 组件库                   |
+| Vite         | 5.x  | 构建工具                    |
+| Vue Router   | 4.x  | 路由管理                    |
+| Marked       | 12.x | Markdown 渲染               |
 
 
 ## 💻 安装和运行

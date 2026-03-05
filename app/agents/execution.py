@@ -36,7 +36,8 @@ class ExecutionResult:
         success: bool,
         result: Any,
         step_results: List[Dict[str, Any]] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        user_rejected_tools: Optional[List[str]] = None
     ):
         """
         初始化执行结果
@@ -46,11 +47,13 @@ class ExecutionResult:
             result: 最终结果
             step_results: 每个步骤的执行结果
             error: 错误信息
+            user_rejected_tools: 用户已拒绝的工具列表
         """
         self.success = success
         self.result = result
         self.step_results = step_results or []
         self.error = error
+        self.user_rejected_tools = user_rejected_tools or []
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -58,7 +61,8 @@ class ExecutionResult:
             "success": self.success,
             "result": self.result,
             "step_results": self.step_results,
-            "error": self.error
+            "error": self.error,
+            "user_rejected_tools": self.user_rejected_tools
         }
 
 
@@ -131,6 +135,9 @@ class ExecutionEngine:
         
         step_results = []
         final_result = None
+        # ── 新增: 初始化用户已拒绝工具黑名单 ──────────────────────────────
+        # 继承父级传来的 user_rejected_tools，防止重复尝试已被拒绝的工具。
+        user_rejected_tools = list(context.get("user_rejected_tools", [])) if context else []
         
         try:
             for i, step in enumerate(plan.steps, 1):
@@ -148,6 +155,15 @@ class ExecutionEngine:
                 
                 # 执行步骤（把已完成步骤结果传入，供 skill 等使用）
                 step_result = await self._execute_step(agent, step, context, step_results)
+                
+                # ── 新增: 合并子层级返回的 user_rejected_tools ────────────────
+                # 不论是本层直接调用工具被拒，还是嵌套的子 Agent 中工具被拒，
+                # 都需不断向父层冒泡累积，防止不同层级的重新规划尝试同一条死路。
+                if "user_rejected_tools" in step_result:
+                    for t in step_result["user_rejected_tools"]:
+                        if t not in user_rejected_tools:
+                            user_rejected_tools.append(t)
+                            
                 step_results.append(step_result)
                 
                 # 如果是 final_answer，先合成再返回
@@ -214,7 +230,8 @@ class ExecutionEngine:
             return ExecutionResult(
                 success=True,
                 result=final_result,
-                step_results=step_results
+                step_results=step_results,
+                user_rejected_tools=user_rejected_tools
             )
             
         except Exception as e:
@@ -224,7 +241,8 @@ class ExecutionEngine:
                 success=False,
                 result=None,
                 step_results=step_results,
-                error=str(e)
+                error=str(e),
+                user_rejected_tools=user_rejected_tools
             )
     
     async def _synthesize_answer(
@@ -843,8 +861,28 @@ class ExecutionEngine:
                 model = agent.agent_config.execution_model
             
             # 获取工具定义（用于 LLM function calling）
-            tools = self.tool_hub.get_schemas()
-            logger.debug(f"{Fore.CYAN}[执行引擎] 技能执行 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            all_tools_schemas = self.tool_hub.get_schemas() if self.tool_hub else []
+            tools = []
+            
+            # 敏感工具列表：禁止在技能内部隐式调用，必须由外层 Agent 在计划中显式调用以触发二次确认
+            SENSITIVE_TOOLS = {"file_write"}
+            
+            # 过滤：只允许被授权的工具，排除敏感工具，并且排除用户已拒绝的工具
+            user_rejected = context.get("user_rejected_tools", []) if context else []
+            for t_schema in all_tools_schemas:
+                t_name = t_schema.get("name")
+                if agent and agent.available_tools and t_name not in agent.available_tools:
+                    continue
+                if t_name in SENSITIVE_TOOLS:
+                    continue
+                if t_name in user_rejected:
+                    continue
+                tools.append(t_schema)
+                
+            logger.debug(
+                f"{Fore.CYAN}[执行引擎] 技能执行 - 过滤后提供 {len(tools)} 个工具定义"
+                f"（排除拒绝工具: {user_rejected}，排除敏感工具: {SENSITIVE_TOOLS}）{Style.RESET_ALL}"
+            )
             
             config = InferenceConfig(
                 model=model,
@@ -979,6 +1017,7 @@ class ExecutionEngine:
         #   2. 注册到父级的 pending_confirmations 字典，使 /agents/confirm 接口能够找到
         stream_callback = context.get("stream_callback") if context else None
         pending_confirmations = context.get("pending_confirmations") if context else None
+        user_rejected_tools_in = context.get("user_rejected_tools") if context else None
 
         if stream_callback:
             logger.info(
@@ -998,7 +1037,8 @@ class ExecutionEngine:
                 child_agent_id=agent_id,
                 task=task,
                 stream_callback=stream_callback,          # 透传父级流式回调
-                pending_confirmations=pending_confirmations  # 透传父级挂起确认表
+                pending_confirmations=pending_confirmations, # 透传父级挂起确认表
+                user_rejected_tools=user_rejected_tools_in # ── 新增: 透传已拒绝工具黑名单
             )
             
             logger.info(
@@ -1009,7 +1049,9 @@ class ExecutionEngine:
                 "success": True,
                 "result": result,
                 "action": "delegate",
-                "agent_id": agent_id
+                "agent_id": agent_id,
+                # ── 新增: 向上冒泡子 Agent 新增的 user_rejected_tools
+                "user_rejected_tools": result.get("user_rejected_tools", [])
             }
             
         except Exception as e:

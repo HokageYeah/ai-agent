@@ -16,7 +16,7 @@
 
 import asyncio
 import time
-from typing import Dict, Any, Optional, Set, Callable
+from typing import Dict, Any, Optional, Set, Callable, List
 from loguru import logger
 from colorama import Fore, Style
 
@@ -74,7 +74,8 @@ class ChildAgentManager:
         task: str,
         context: Optional[Dict[str, Any]] = None,
         stream_callback: Optional[Callable] = None,
-        pending_confirmations: Optional[Dict[str, Any]] = None
+        pending_confirmations: Optional[Dict[str, Any]] = None,
+        user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         委派任务给子 Agent
@@ -90,6 +91,8 @@ class ChildAgentManager:
             pending_confirmations: 父级挂起确认映射表（可选）。
                                    传入后子 Agent 注册的 confirm_id 与父级共用同一张表，
                                    使 /agents/confirm 接口能找到并唤醒子 Agent 执行。
+            user_rejected_tools: 父级已拒绝的工具列表（可选）。
+                                 传入后子 Agent 回避被拒绝工具，并在执行结束后聚合返回新的拒绝列表。
 
         Returns:
             Dict[str, Any]: 任务执行结果
@@ -104,7 +107,8 @@ class ChildAgentManager:
         has_stream = stream_callback is not None
         logger.info(
             f"{Fore.CYAN}[子Agent委派] stream_callback={'已传入' if has_stream else '未传入'}，"
-            f"pending_confirmations={'已传入' if pending_confirmations is not None else '未传入'}{Style.RESET_ALL}"
+            f"pending_confirmations={'已传入' if pending_confirmations is not None else '未传入'}，"
+            f"user_rejected_tools_count={len(user_rejected_tools or [])}{Style.RESET_ALL}"
         )
 
         # 获取子 Agent
@@ -200,10 +204,14 @@ class ChildAgentManager:
                     else:
                         _orig_cb(e)
 
+                # ── 新增: 向子 Agent 传递 user_rejected_tools ─────────────────────────
+                # 防止子 Agent在自身规划中，再次尝试已经被父 Agent 或其他关联 Agent
+                # 记录在案的用户拒绝工具。
                 result = await executor.execute_with_callback(
                     agent=child_agent,
                     task=task,
-                    stream_callback=_sub_agent_callback  # 用包装后的 callback
+                    stream_callback=_sub_agent_callback,  # 用包装后的 callback
+                    user_rejected_tools=user_rejected_tools
                 )
 
                 # 发送 sub_agent_end 事件（原始 callback，标记子 Agent 区块结束）
@@ -224,9 +232,11 @@ class ChildAgentManager:
 
             else:
                 # 静默模式（向下兼容，无用户确认交互）
+                # 同样透传 user_rejected_tools 防御机制
                 result = await executor.execute(
                     agent=child_agent,
-                    task=task
+                    task=task,
+                    user_rejected_tools=user_rejected_tools
                 )
 
             logger.info(
@@ -245,7 +255,8 @@ class ChildAgentManager:
                 #       且父 Agent 不需要子 Agent 的对话历史
                 "agent_id": child_agent_id,
                 "agent_name": child_agent.name,
-                "error": final_res.get("error") or result.get("error")
+                "error": final_res.get("error") or result.get("error"),
+                "user_rejected_tools": result.get("user_rejected_tools", [])
             }
             
         except Exception as e:

@@ -703,9 +703,10 @@ class LangGraphAgentExecutor:
                 "task": state.get("task", ""),
                 # 透传父级 stream_callback：子 Agent 用它推送 user_confirm_required 等事件
                 "stream_callback": stream_callback,
-                # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表，
-                # 使 /agents/confirm 接口（引用顶层 executor 的该字典）能正确唤醒挂起操作
+                # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表
                 "pending_confirmations": self._pending_confirmations,
+                # 透传用户拒绝的工具黑名单防止在子流程(如技能引擎/子Agent中)穿透
+                "user_rejected_tools": state.get("user_rejected_tools", []),
             }
         )
         
@@ -721,6 +722,15 @@ class LangGraphAgentExecutor:
                 execution_result.success = False
             # 始终覆盖 result 结果，确保发送给前端最后一句是明确的取消反馈
             execution_result.result = f"用户已取消操作：{', '.join(rejected_tools)}，任务未完成。"
+            
+        # ── 新增: 合并由于子代理引发但冒泡上来的被拒绝的工具 ────────────────────
+        # 由于子 Agent 拥有自己独立的 state 字典运转流程，
+        # 我们必须把子 Agent 返回结果中新被拒绝的工具，合并到当前主 Agent 的黑名单中。
+        current_rejected = state.get("user_rejected_tools", []) or []
+        for t in execution_result.user_rejected_tools:
+            if t not in current_rejected:
+                current_rejected.append(t)
+        state["user_rejected_tools"] = current_rejected
         
         logger.info(f"{Fore.GREEN}[Execute Node] 计划执行完成{Style.RESET_ALL}")
         
@@ -1381,7 +1391,8 @@ class LangGraphAgentExecutor:
         self,
         agent: Agent,
         task: str,
-        conversation_history: Optional[List[Dict[str, Any]]] = None
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         执行 Agent 任务
@@ -1390,6 +1401,7 @@ class LangGraphAgentExecutor:
             agent: Agent 实例
             task: 任务描述
             conversation_history: 对话历史（可选）
+            user_rejected_tools: 用户已拒绝的工具列表（可选）
             
         Returns:
             Dict[str, Any]: 执行结果
@@ -1478,7 +1490,8 @@ class LangGraphAgentExecutor:
         agent: Agent,
         task: str,
         stream_callback: Callable,
-        conversation_history: Optional[List[Dict[str, Any]]] = None
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         以流式回调模式执行 Agent 任务（供子 Agent 共享父级 SSE 流时调用）
@@ -1496,6 +1509,7 @@ class LangGraphAgentExecutor:
             task: 任务描述
             stream_callback: 父级 SSE 流式回调（异步函数）
             conversation_history: 对话历史（可选）
+            user_rejected_tools: 用户已拒绝的工具列表（可选）
 
         Returns:
             Dict[str, Any]: 执行结果（格式同 execute()）
@@ -1526,7 +1540,8 @@ class LangGraphAgentExecutor:
                 # NOTE: 调用方会在外部把本 executor._pending_confirmations 替换为父级字典，
                 #       这里用 self._pending_confirmations 确保两者指向同一对象
                 "pending_confirmations": self._pending_confirmations,
-                "user_rejected_tools": []
+                # ── 新增: 初始化时继承父级传来的被拒绝工具黑名单
+                "user_rejected_tools": user_rejected_tools or []
             }
 
             recursion_limit = self.max_iterations * 4 + 10
@@ -1550,8 +1565,11 @@ class LangGraphAgentExecutor:
             )
 
             return {
-                "success": final_result.get("success", False) if isinstance(final_result, dict) else bool(final_result),
+                "success": final_result.get("status") == "success" if final_result else False,
                 "result": final_result,
+                "error": final_result.get("message") if final_result and final_result.get("status") == "failed" else None,
+                # ── 新增: 子 Agent 运行结束后，将其最终的黑名单向上交差
+                "user_rejected_tools": final_state.get("user_rejected_tools", []),
                 # NOTE: 不返回 messages —— final_state["messages"] 包含 LangChain BaseMessage 对象，
                 #       无法被 json.dumps() 序列化，且父 Agent 不需要子 Agent 的对话历史
                 "iterations": total_iterations
@@ -1582,7 +1600,8 @@ class LangGraphAgentExecutor:
         self,
         agent: Agent,
         task: str,
-        conversation_history: Optional[List[Dict[str, Any]]] = None
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         流式执行 Agent 任务（使用 asyncio.Queue + 哨兵模式）
@@ -1673,7 +1692,7 @@ class LangGraphAgentExecutor:
             # NOTE: 初始为空列表，用户拒绝某工具后记录其名称
             #       _reflect_node 会从 available_tools 中过滤这些工具，
             #       防止反思 LLM 通过 tool_gateway 绕过确认再次执行被拒绝操作
-            "user_rejected_tools": []
+            "user_rejected_tools": user_rejected_tools or []
         }
 
         # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量

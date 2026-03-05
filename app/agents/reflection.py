@@ -252,14 +252,21 @@ class ReflectionEngine:
 }}
 
 【重要判断标准】：
-【重要判断标准】：
 - 如果 Agent 返回"无法完成"、"没有权限"、"无法访问"、"超出能力范围"等，说明任务真实因为环境或能力限制被中断。
 - 如果错误上下文中包含 [UserRejected] 类型错误，说明任务的某个特定操作已被用户明确拒绝/取消，此时 success 必须为 false。
-  -> **替代方案是否已落实**：若本轮已使用 python_executor 成功**生成了用户可本地运行的脚本**（工具返回 success 且有 output，且 output 为可写入文件的 Python 代码）或生成了本应写入的完整内容，且最终回答中已完整交付该脚本/内容并说明用户如何运行或保存，则视为**在用户拒绝写文件的前提下已用代码生成能力帮助完成意图**，success=true，needs_replanning=false。不要建议“用 http_request 等其他工具直接保存文件”（无此能力）。
-  -> 若本轮尚未用 python_executor 生成可运行脚本或未在最终回答中完整交付，则可建议下一轮「用 python_executor 生成一段用户可本机运行的写文件脚本并交付」。若确实无可行方案则 should_continue=false。
 - 对于其他情况，如果问题没有被真正解决，即使执行不报错，success 也应为 false
 - should_continue 由你根据任务完成情况、Agent 能力边界及可用工具（排除已拒绝工具后）综合判断：如果还有希望完成即给出 true，如果确实无法完成即给出 false。
+"""
 
+        # 动态注入替代方案评估规则：仅当执行结果的错误信息中包含明确的拒绝记录时，才要求评估替代方案
+        if execution_result.error and "[UserRejected]" in execution_result.error:
+            prompt += """
+【降级方案评估约束】
+- 本次执行中包含了被用户拒绝的操作。**替代方案是否已落实**：若本轮已使用 python_executor 成功**生成了用户可本地运行的脚本**（工具返回 success 且有 output，且 output 为可写入文件的 Python 代码）或生成了本应写入的完整内容，且最终回答中已完整交付该脚本/内容并说明用户如何运行或保存，则视为**在用户拒绝写文件的前提下已用代码生成能力帮助完成意图**，success=true，needs_replanning=false。不要建议“用 http_request 等其他工具直接保存文件”（无此能力）。
+- 若本轮尚未用 python_executor 生成可运行脚本或未在最终回答中完整交付，则可建议下一轮「用 python_executor 生成一段用户可本机运行的写文件脚本并交付」。若确实无可行方案则 should_continue=false。
+"""
+
+        prompt += """
 请只返回 JSON，不要包含其他文本。
 """
         
