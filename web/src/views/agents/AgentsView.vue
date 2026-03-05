@@ -63,80 +63,33 @@
 
         <!-- 已选择 Agent：显示执行界面 -->
         <template v-else>
-          <!-- Agent 详情头部 -->
-          <el-alert
-            title="Agent 使用说明"
-            type="info"
-            show-icon
-            :closable="false"
-            style="margin-bottom: 2px;"
-          >
-            <p style="margin: 4px 0 0 0; line-height: 1.5; font-size: 0.8rem;">
-              Agent 能够基于选定的专家角色，对您输入的任务进行<strong>自主规划（Planning）</strong>需要的工具和技能，逐步<strong>执行（Execution）</strong>，并进行<strong>自我反思（Reflection）</strong>来检验目标是否完成。
-              <br/>
-              <strong>操作指南：</strong>在下方输入需要解决的复杂问题，点击执行即可观测大模型的自动化思维与行为闭环。
-            </p>
-          </el-alert>
-          
+          <!-- 选中 Agent 头部信息（含使用说明 tooltip） -->
           <div class="selected-agent-header">
             <div class="selected-agent-avatar">
               <el-icon :size="24" style="color:white"><Setting /></el-icon>
             </div>
-            <div>
+            <div class="selected-agent-info">
               <div class="selected-agent-name">{{ selectedAgent.name }}</div>
               <div class="selected-agent-desc">{{ selectedAgent.description }}</div>
             </div>
+            <!-- 使用说明 tooltip：悬停图标显示说明 -->
+            <el-tooltip placement="top" effect="light">
+              <template #content>
+                <div class="agent-usage-guide">
+                  <p><strong>Agent 角色说明：</strong>{{ selectedAgent.description }}</p>
+                  <p>Agent 能够基于选定的专家角色，自主规划（Planning）→ 执行（Execution）→ 思考（Reasoning）→ 产生最终结果（Final Answer）。</p>
+                  <p><strong>操作指南：</strong>在下方输入需要解决的复杂问题，点击执行即可观测大模型的自动化思维与行为闭环。</p>
+                </div>
+              </template>
+              <el-icon :size="18" class="info-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
             <div class="selected-agent-meta">
               <span class="meta-item">工具: {{ selectedAgent.available_tools.length }}</span>
               <span class="meta-item">技能: {{ selectedAgent.available_skills.length }}</span>
             </div>
           </div>
 
-          <!-- 任务输入 -->
-          <div class="task-section">
-            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-              <label class="input-label">任务描述</label>
-              <div class="quick-examples">
-                <span class="example-tag example-tag-delegate" @click="setExample(1)">
-                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 1：中英翻译' : '示例 1：订单详情' }}
-                </span>
-                <span class="example-tag example-tag-delegate" @click="setExample(2)">
-                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 2：网络查询' : '示例 2：客户订单' }}
-                </span>
-                <span class="example-tag example-tag-delegate" @click="setExample(3)">
-                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 3：代码生成' : '示例 3：数据分析' }}
-                </span>
-              </div>
-            </div>
-            <el-input
-              v-model="taskInput"
-              type="textarea"
-              :autosize="{ minRows: 3, maxRows: 8 }"
-              placeholder="描述你想要 Agent 完成的任务...&#10;例如：帮我算一下 100 * 365 并写一首庆祝的诗"
-              :disabled="executing"
-            />
-            <el-button
-              type="primary"
-              size="large"
-              :loading="executing"
-              :disabled="!taskInput.trim()"
-              :icon="CaretRight"
-              @click="handleExecute"
-              style="margin-top:12px;width:100%"
-            >
-              {{ executing ? (isStreaming ? 'Agent 正在流式执行中...' : 'Agent 执行中...') : '开始执行任务' }}
-            </el-button>
-            
-            <!-- 流式执行状态指示 -->
-            <div v-if="isStreaming" class="stream-status">
-              <el-icon class="stream-status-icon"><Loading /></el-icon>
-              <span class="stream-status-text">{{ getStreamStatusText() }}</span>
-              <span v-if="!streamEvents.length" class="stream-status-hint">等待连接...</span>
-              <span v-else class="stream-events-count">{{ streamEvents.length }} 个事件</span>
-            </div>
-          </div>
-
-          <!-- 执行轨迹 (详情) -->
+          <!-- 执行轨迹 (详情) - 移动到中央自适应高度并提供滚动 -->
           <div class="trajectory-section" v-if="executeResult || isStreaming">
             <!-- 头部：标题 + 阶段进度指示器 -->
             <div class="trajectory-header">
@@ -172,96 +125,124 @@
               </div>
             </div>
             
-            <!-- 流式事件列表（带“回到底部”按钮，仅在用户上滑后显示） -->
+            <!-- 流式事件嵌套分组展示 -->
             <div v-if="streamEvents.length > 0" class="stream-events-wrapper">
               <div
                 class="stream-events-container"
                 ref="streamEventsContainer"
                 @scroll="onTrajectoryScroll"
               >
-              <el-timeline style="margin-top: 20px;">
-                <template v-for="(item, index) in streamEventsWithBlockInfo" :key="'stream-'+index">
-                  <!-- sub_agent_end 不展示 -->
-                  <template v-if="item.event.event === 'sub_agent_end'" />
-
-                  <!-- 子 Agent 区块标题：醒目标出「以下轨迹属于该子 Agent」 -->
-                  <el-timeline-item
-                    v-else-if="item.isBlockStart"
-                    type="primary"
-                    :hollow="false"
-                    size="large"
-                    class="sub-agent-block-start"
+                <!-- 遍历迭代层 -->
+                <div v-for="iterGroup in groupedIterations" :key="'iter-'+iterGroup.iteration" class="iteration-group" style="margin-bottom: 24px;">
+                  <!-- 迭代标题 (可折叠) -->
+                  <div
+                    class="iteration-header"
+                    @click="toggleExpansion(`iter-${iterGroup.iteration}`)"
+                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: var(--color-bg-secondary); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--color-border);"
                   >
-                    <div
-                      class="trajectory-content sub-agent-block-header"
-                      :style="getSubAgentTheme(item.blockAgentId)"
-                    >
-                      <div class="sub-agent-block-title">
-                        <span class="sub-agent-block-icon" aria-hidden="true">
-                          <el-icon :size="18"><User /></el-icon>
-                        </span>
-                        <span class="sub-agent-block-label">子 Agent 执行轨迹</span>
-                        <span class="sub-agent-block-name">{{ item.blockAgentName }}</span>
-                        <el-tag size="small" type="info" effect="plain" class="sub-agent-block-id">{{ item.blockAgentId }}</el-tag>
-                      </div>
-                      <div v-if="item.blockTask" class="sub-agent-block-task">{{ item.blockTask }}</div>
-                      <div class="sub-agent-block-hint">以下规划、执行、反思均在该 Agent 内进行</div>
+                    <div style="font-weight: 600; font-size: 1rem; color: var(--color-text-primary); display: flex; align-items: center; gap: 8px;">
+                      <el-icon style="transition: transform 0.3s;" :style="{ transform: expansionState['iter-'+iterGroup.iteration] ? 'rotate(90deg)' : 'rotate(0)' }"><CaretRight /></el-icon>
+                      迭代 {{ iterGroup.iteration + 1 }}
                     </div>
-                  </el-timeline-item>
+                    <el-tag size="small" type="info">共 {{ iterGroup.blocks.length }} 个执行块</el-tag>
+                  </div>
 
-                  <!-- 主 Agent 或 子 Agent 内 的单条事件 -->
-                  <el-timeline-item
-                    v-else
-                    :type="getEventTimelineType(item.event.event)"
-                    :hollow="!isImportantEvent(item.event.event)"
-                    :size="getEventTimelineSize(item.event.event)"
-                    :class="{ 'sub-agent-inner-item': item.blockAgentId }"
-                  >
-                    <div
-                      :data-event-type="item.event.event"
-                      class="trajectory-content"
-                      :class="{ 'sub-agent-inner-content': item.blockAgentId }"
-                      :style="item.blockAgentId ? { marginTop: 0, ...getSubAgentTheme(item.blockAgentId) } : { marginTop: 0 }"
-                    >
-                      <!-- 子 Agent 内事件：顶部 ribbon 显示所属 Agent 与阶段，颜色与区块主题一致 -->
-                      <div v-if="item.blockAgentId" class="sub-agent-event-ribbon">
-                        <span class="sub-agent-event-agent">{{ item.blockAgentName }}</span>
-                        <span class="sub-agent-event-phase">{{ getSubEventPhaseLabel(item.event) }}</span>
+                  <!-- 迭代内容区 -->
+                  <div v-show="expansionState['iter-'+iterGroup.iteration]" class="iteration-content">
+                    <!-- 遍历 Agent Block 层 -->
+                    <div v-for="(block, bIdx) in iterGroup.blocks" :key="'block-'+iterGroup.iteration+'-'+block.id+'-'+bIdx" class="agent-block" style="margin-bottom: 20px;">
+                      
+                      <!-- 子 Agent Block 头部 -->
+                      <div
+                        v-if="block.type === 'sub'"
+                        class="trajectory-content sub-agent-block-header"
+                        :style="getSubAgentTheme(block.id)"
+                        @click="toggleExpansion(`block-${iterGroup.iteration}-${block.id}`)"
+                      >
+                         <div class="sub-agent-block-title" style="justify-content: space-between;">
+                           <div style="display: flex; align-items: center; gap: 10px;">
+                             <el-icon style="transition: transform 0.3s;" :style="{ transform: expansionState['block-'+iterGroup.iteration+'-'+block.id] ? 'rotate(90deg)' : 'rotate(0)' }"><CaretRight /></el-icon>
+                             <span class="sub-agent-block-icon" aria-hidden="true"><el-icon :size="18"><User /></el-icon></span>
+                             <span class="sub-agent-block-label">子 Agent 委派任务</span>
+                             <span class="sub-agent-block-name">{{ block.name }}</span>
+                             <el-tag size="small" type="info" effect="plain" class="sub-agent-block-id">{{ block.id }}</el-tag>
+                           </div>
+                           <el-tag size="small" type="primary" effect="dark">{{ block.events.length }} 个事件</el-tag>
+                         </div>
+                         <div v-if="block.task" class="sub-agent-block-task">{{ block.task }}</div>
                       </div>
+                      
+                      <!-- 主 Agent Block 头部 (如果多于一个 Block，也加上小标题区分，否则可以省略) -->
+                      <div
+                        v-else-if="iterGroup.blocks.length > 1"
+                        @click="toggleExpansion(`block-${iterGroup.iteration}-${block.id}`)"
+                        style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; color: var(--color-text-secondary); margin-bottom: 12px; padding-bottom: 4px; border-bottom: 1px dashed var(--color-border);"
+                      >
+                         <el-icon style="transition: transform 0.3s;" :style="{ transform: expansionState['block-'+iterGroup.iteration+'-'+block.id] ? 'rotate(90deg)' : 'rotate(0)' }"><CaretRight /></el-icon>
+                         主 Agent 处理阶段 ({{ block.events.length }} 个事件)
+                      </div>
+
+                      <!-- Block 内部事件列表 (时间轴) -->
+                      <el-timeline v-show="expansionState['block-'+iterGroup.iteration+'-'+block.id]" class="block-timeline" :class="{ 'sub-block-timeline': block.type === 'sub' }">
+                        <el-timeline-item
+                          v-for="(itemEvent, eIdx) in block.events"
+                          :key="'event-'+eIdx"
+                          :type="getEventTimelineType(itemEvent.event)"
+                          :hollow="!isImportantEvent(itemEvent.event)"
+                          :size="getEventTimelineSize(itemEvent.event)"
+                        >
+                          <div
+                            :data-event-type="itemEvent.event"
+                            class="trajectory-content"
+                            :class="{
+                              'sub-agent-inner-content': block.type === 'sub',
+                              'step-thinking': isStreaming && isLastStreamEvent(iterGroup, block, eIdx)
+                            }"
+                            :style="block.type === 'sub' ? { marginTop: 0, ...getSubAgentTheme(block.id) } : { marginTop: 0 }"
+                          >
+                            <!-- 为了保持旧版使用 item.event 结构解析模板，做一层包装 -->
+                            <template v-for="(item, wIdx) in [{ event: itemEvent }]" :key="'wrapper-' + wIdx">
                     <!-- ① 规划开始 -->
                     <template v-if="item.event.event === 'plan_start'">
-                      <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag size="small" type="primary">🧠 开始规划</el-tag>
-                        <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          迭代 {{ item.event.iteration + 1 }}
-                        </span>
-                      </div>
-                      <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                        {{ item.event.data?.message || 'Agent 正在分析任务并制定执行计划...' }}
+                      <div class="plan-start-header">
+                        <div class="plan-start-icon">
+                          <el-icon :size="20"><Cpu /></el-icon>
+                        </div>
+                        <div class="plan-start-info">
+                          <div class="plan-start-title">开始规划与推理</div>
+                          <div class="plan-start-desc">{{ item.event.data?.message || 'Agent 正在分析任务并制定执行计划...' }}</div>
+                        </div>
                       </div>
                     </template>
                     
                     <!-- ② 规划完成（含推理和步骤列表） -->
                     <template v-else-if="item.event.event === 'plan_complete'">
-                      <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag size="small" type="success">✅ 规划完成</el-tag>
-                        <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          共 {{ item.event.data?.steps?.length || 0 }} 个步骤
-                        </span>
+                      <div class="plan-complete-header">
+                        <div class="plan-complete-icon">
+                          <el-icon :size="18"><Check /></el-icon>
+                        </div>
+                        <span class="plan-complete-title">规划完成</span>
+                        <el-tag size="small" type="success" effect="plain">{{ item.event.data?.steps?.length || 0 }} 个步骤</el-tag>
                       </div>
                       <!-- 推理过程 -->
-                      <div v-if="item.event.data?.reasoning" style="font-size: 0.85rem; background: var(--color-bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--el-color-primary-light-5);">
-                        <div style="font-weight: 600; margin-bottom: 4px; color: var(--color-text-secondary);">推理过程：</div>
-                        {{ item.event.data.reasoning }}
+                      <div v-if="item.event.data?.reasoning" class="reasoning-block">
+                        <div class="reasoning-label">推理过程</div>
+                        <div class="reasoning-content">{{ item.event.data.reasoning }}</div>
                       </div>
                       <!-- 步骤列表 -->
-                      <div v-if="item.event.data?.steps?.length" style="margin-top: 8px;">
-                        <div style="font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 6px;">执行计划：</div>
-                        <div v-for="(step, sIdx) in item.event.data.steps" :key="sIdx" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 0.82rem;">
-                          <span style="color: var(--color-text-muted); flex-shrink: 0;">{{ sIdx + 1 }}.</span>
-                          <el-tag v-if="step.action === 'tool'" size="small" type="success" effect="plain">工具: {{ step.tool_name }}</el-tag>
-                          <el-tag v-else-if="step.action === 'skill'" size="small" type="warning" effect="plain">技能: {{ step.skill_id }}</el-tag>
-                          <el-tag v-else-if="step.action === 'delegate'" size="small" type="primary" effect="plain">委派: {{ step.agent_id }}</el-tag>
+                      <div v-if="item.event.data?.steps?.length" class="steps-list">
+                        <div class="steps-label">执行计划</div>
+                        <div v-for="(step, sIdx) in (item.event.data.steps || [])" :key="sIdx" class="step-item">
+                          <span class="step-number">{{ sIdx + 1 }}</span>
+                          <el-tag v-if="step.action === 'tool'" size="small" type="success" effect="plain">
+                            <el-icon style="margin-right:4px"><Promotion /></el-icon>{{ step.tool_name }}
+                          </el-tag>
+                          <el-tag v-else-if="step.action === 'skill'" size="small" type="warning" effect="plain">
+                            <el-icon style="margin-right:4px"><MagicStick /></el-icon>{{ step.skill_id }}
+                          </el-tag>
+                          <el-tag v-else-if="step.action === 'delegate'" size="small" type="primary" effect="plain">
+                            <el-icon style="margin-right:4px"><User /></el-icon>{{ step.agent_id }}
+                          </el-tag>
                           <el-tag v-else-if="step.action === 'final_answer'" size="small" type="info" effect="plain">合成最终答案</el-tag>
                           <el-tag v-else size="small" effect="plain">{{ step.action }}</el-tag>
                         </div>
@@ -286,41 +267,34 @@
                     <!-- ④ 工具调用完成 -->
                     <template v-else-if="item.event.event === 'tool_complete'">
                       <!-- 头部 -->
-                      <div style="margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <el-tag size="small" type="success" effect="plain">
-                          <el-icon><Promotion /></el-icon> {{ item.event.data?.tool_name }}
-                        </el-tag>
-                        <span style="font-size: 0.75rem; color: var(--color-text-muted);">
-                          步骤 {{ item.event.step_index }}/{{ item.event.step_total }}
-                        </span>
-                        <span v-if="item.event.data?.execution_time_ms" style="font-size: 0.7rem; color: var(--color-text-muted);">
-                          {{ item.event.data.execution_time_ms.toFixed(2) }}ms
-                        </span>
-                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger">失败</el-tag>
+                      <div class="tool-complete-header">
+                        <div class="tool-icon">
+                          <el-icon :size="16"><Promotion /></el-icon>
+                        </div>
+                        <span class="tool-name">{{ item.event.data?.tool_name }}</span>
+                        <div class="tool-meta">
+                          <span class="tool-step">步骤 {{ item.event.step_index }}/{{ item.event.step_total }}</span>
+                          <span v-if="item.event.data?.execution_time_ms" class="tool-time">{{ item.event.data.execution_time_ms.toFixed(1) }}ms</span>
+                        </div>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger" effect="dark">失败</el-tag>
                       </div>
                       
                       <!-- 数据库 -->
-                      <div v-if="item.event.data?.result?.columns && item.event.data?.result?.rows" style="padding: 10px; background: var(--color-bg-secondary); border-radius: 6px; border: 1px solid var(--color-border-light);">
-                        <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                      <div v-if="item.event.data?.result?.columns && item.event.data?.result?.rows" class="db-result-block">
+                        <div class="db-result-header">
                           <span>查询结果</span>
-                          <span style="background: var(--el-color-success-light-9); padding: 2px 8px; border-radius: 10px; font-size: 0.7rem;">
-                            {{ item.event.data.result.row_count }} 条记录
-                          </span>
+                          <span class="db-result-count">{{ item.event.data.result.row_count }} 条记录</span>
                         </div>
-                        <div style="overflow-x: auto;">
-                          <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                        <div class="db-table-wrapper">
+                          <table class="db-table">
                             <thead>
                               <tr>
-                                <th v-for="col in item.event.data.result.columns" :key="col" style="padding: 6px 8px; text-align: left; background: var(--color-bg-primary); border: 1px solid var(--color-border-light); font-weight: 600; white-space: nowrap;">
-                                  {{ col }}
-                                </th>
+                                <th v-for="col in item.event.data.result.columns" :key="col">{{ col }}</th>
                               </tr>
                             </thead>
                             <tbody>
                               <tr v-for="(row, rIdx) in item.event.data.result.rows" :key="rIdx">
-                                <td v-for="col in item.event.data.result.columns" :key="col" style="padding: 6px 8px; border: 1px solid var(--color-border-light); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                  {{ row[col] }}
-                                </td>
+                                <td v-for="col in item.event.data.result.columns" :key="col">{{ row[col] }}</td>
                               </tr>
                             </tbody>
                           </table>
@@ -328,10 +302,10 @@
                       </div>
                       
                       <!-- 普通文本/JSON 结果 -->
-                      <div v-else-if="item.event.data?.error" style="font-size: 0.85rem; padding: 10px; background: var(--el-color-danger-light-9); border-radius: 6px; color: var(--el-color-danger);">
+                      <div v-else-if="item.event.data?.error" class="error-block">
                         <strong>错误：</strong>{{ item.event.data.error }}
                       </div>
-                      <div v-else-if="item.event.data?.result" style="font-size: 0.85rem;" class="trajectory-result-block">
+                      <div v-else-if="item.event.data?.result" class="trajectory-result-block">
                         <MarkdownRenderer v-if="typeof item.event.data.result === 'string'" :content="item.event.data.result" />
                         <MarkdownRenderer v-else :content="'```json\n' + JSON.stringify(item.event.data.result, null, 2) + '\n```'" />
                       </div>
@@ -495,61 +469,68 @@
                     
                     <!-- ⑧ 反思开始 -->
                     <template v-else-if="item.event.event === 'reflection_start'">
-                      <div style="margin-bottom: 6px; font-weight: 600;">
-                        <el-tag size="small" type="warning">🔍 开始自我反思</el-tag>
-                        <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          迭代 {{ item.event.iteration + 1 }}
-                        </span>
+                      <div class="reflection-start-header">
+                        <div class="reflection-icon">
+                          <el-icon :size="16"><ChatDotRound /></el-icon>
+                        </div>
+                        <span class="reflection-title">开始自我反思</span>
                       </div>
-                      <div style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                        {{ item.event.data?.message || 'Agent 正在评估执行结果并进行自我反思...' }}
-                      </div>
+                      <div class="reflection-desc">{{ item.event.data?.message || 'Agent 正在评估执行结果并进行自我反思...' }}</div>
                     </template>
                     
                     <!-- ⑨ 反思完成 -->
                     <template v-else-if="item.event.event === 'reflection_complete'">
-                      <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag size="small" type="warning">💭 自我反思</el-tag>
-                        <el-tag v-if="item.event.data?.success" size="small" type="success" style="margin-left: 8px;">✅ 任务达标</el-tag>
-                        <el-tag v-else-if="item.event.data?.skipped" size="small" type="info" style="margin-left: 8px;">跳过</el-tag>
-                        <el-tag v-else size="small" type="warning" style="margin-left: 8px;">⚠️ 需改进</el-tag>
+                      <div class="reflection-complete-header">
+                        <div class="reflection-icon">
+                          <el-icon :size="16"><ChatDotRound /></el-icon>
+                        </div>
+                        <span class="reflection-title">自我反思</span>
+                        <el-tag v-if="item.event.data?.success" size="small" type="success" effect="dark">任务达标</el-tag>
+                        <el-tag v-else-if="item.event.data?.skipped" size="small" type="info" effect="plain">跳过</el-tag>
+                        <el-tag v-else size="small" type="warning" effect="plain">需改进</el-tag>
                       </div>
-                      <div v-if="item.event.data?.skipped" style="font-size: 0.82rem; color: var(--color-text-muted);">
+                      <div v-if="item.event.data?.skipped" class="reflection-skipped">
                         {{ item.event.data.message || '无执行结果可供反思，已跳过' }}
                       </div>
                       <template v-else>
-                        <div v-if="item.event.data?.feedback" style="font-size: 0.85rem; margin-bottom: 6px; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 4px;">
-                          <strong>改进建议：</strong>{{ item.event.data.feedback }}
+                        <div v-if="item.event.data?.feedback" class="reflection-feedback">
+                          <span class="feedback-label">改进建议</span>
+                          {{ item.event.data.feedback }}
                         </div>
-                        <div v-if="item.event.data?.summary" style="font-size: 0.85rem; color: var(--color-text-secondary);">
-                          <strong>总结：</strong>{{ item.event.data.summary }}
+                        <div v-if="item.event.data?.summary" class="reflection-summary">
+                          <span class="summary-label">总结</span>
+                          {{ item.event.data.summary }}
                         </div>
-                        <div v-if="item.event.data?.needs_replanning" style="font-size: 0.82rem; color: var(--el-color-warning); margin-top: 6px;">
-                          🔄 Agent 将重新规划并再次执行
+                        <div v-if="item.event.data?.needs_replanning" class="reflection-replan">
+                          Agent 将重新规划并再次执行
                         </div>
                       </template>
                     </template>
                     
                     <!-- ⑩ 最终答案 -->
                     <template v-else-if="item.event.event === 'final_answer'">
-                      <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag size="small" type="success" effect="dark">🎯 最终答案</el-tag>
+                      <div class="final-answer-header">
+                        <div class="final-answer-icon">
+                          <el-icon :size="18"><Finished /></el-icon>
+                        </div>
+                        <span class="final-answer-title">最终答案</span>
                       </div>
-                      <div style="font-size: 0.95rem;" class="trajectory-result-block">
+                      <div class="final-answer-content">
                         <MarkdownRenderer v-if="typeof item.event.data?.result === 'string'" :content="item.event.data.result" />
                         <MarkdownRenderer v-else-if="item.event.data?.result" :content="'```json\n' + JSON.stringify(item.event.data.result, null, 2) + '\n```'" />
-                        <div v-else style="color: var(--color-text-muted); font-style: italic;">暂无内容</div>
+                        <div v-else class="empty-content">暂无内容</div>
                       </div>
                     </template>
                     
                     <!-- ⑪ 执行完成 -->
                     <template v-else-if="item.event.event === 'complete'">
-                      <div style="margin-bottom: 8px; font-weight: 600;">
-                        <el-tag size="small" type="success" effect="dark">✅ 执行完成</el-tag>
-                        <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">
-                          共迭代 {{ item.event.data?.iterations || 0 }} 次
-                        </span>
-                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger" style="margin-left: 8px;">执行失败</el-tag>
+                      <div class="complete-header">
+                        <div class="complete-icon">
+                          <el-icon :size="18"><Check /></el-icon>
+                        </div>
+                        <span class="complete-title">执行完成</span>
+                        <span class="complete-iterations">共迭代 {{ item.event.data?.iterations || 0 }} 次</span>
+                        <el-tag v-if="item.event.data?.success === false" size="small" type="danger" effect="dark" style="margin-left: 8px;">执行失败</el-tag>
                       </div>
                     </template>
                     
@@ -721,7 +702,7 @@
                           💡 改进建议
                         </div>
                         <div
-                          v-for="(sug, sIdx) in item.event.data.suggestions"
+                          v-for="(sug, sIdx) in (item.event.data.suggestions || [])"
                           :key="'sug-'+sIdx"
                           style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; font-size: 0.83rem; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 6px;"
                         >
@@ -760,12 +741,15 @@
                         <span style="margin-left: 8px;">{{ item.event.data?.message || '' }}</span>
                       </div>
                     </template>
+                            </template>
+                          </div>
+                        </el-timeline-item>
+                      </el-timeline>
+                    </div>
                   </div>
-                </el-timeline-item>
-                <!-- 关闭 v-for template -->
-                </template>
-              </el-timeline>
-            </div>
+                </div>
+
+              </div>
               <transition name="el-fade-in">
                 <button
                   v-show="showScrollToBottomButton"
@@ -793,7 +777,7 @@
                 :hollow="true"
                 size="large"
               >
-                <div :data-event-type="event.event" class="trajectory-content" style="margin-top: 0;">
+                <div :data-event-type="msg.type || 'system_log'" class="trajectory-content" style="margin-top: 0;">
                   <div style="margin-bottom: 8px; font-weight: 600;">
                     <el-tag size="small" type="info">系统日志</el-tag>
                     <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px;">{{ msg.type }}</span>
@@ -813,7 +797,7 @@
                   :hollow="true"
                   size="large"
                 >
-                  <div :data-event-type="event.event" class="trajectory-content" style="margin-top: 0;">
+                  <div :data-event-type="step.action" class="trajectory-content" style="margin-top: 0;">
                     <div style="margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
                       <span v-if="step.action === 'tool'"><el-tag size="small" type="success">调用工具: {{ step.tool_name }}</el-tag></span>
                       <span v-else-if="step.action === 'skill'"><el-tag size="small" type="warning">使用技能: {{ step.skill_id }}</el-tag></span>
@@ -937,6 +921,56 @@
           <div v-if="executeError" class="error-section">
             <el-alert :title="executeError" type="error" show-icon :closable="false" />
           </div>
+
+          <!-- 底部：任务输入区（像聊天框一样固定在底部） -->
+          <div class="task-section" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--color-border); background: var(--color-bg-primary); z-index: 10;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+              <label class="input-label">任务指令</label>
+              <div class="quick-examples">
+                <span class="example-tag example-tag-delegate" @click="setExample(1)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 1：中英翻译' : '示例 1：订单详情' }}
+                </span>
+                <span class="example-tag example-tag-delegate" @click="setExample(2)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 2：网络查询' : '示例 2：客户订单' }}
+                </span>
+                <span class="example-tag example-tag-delegate" @click="setExample(3)">
+                  {{ selectedAgent?.agent_id === 'general_agent' ? '示例 3：代码生成' : '示例 3：数据分析' }}
+                </span>
+              </div>
+            </div>
+            <el-input
+              v-model="taskInput"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              placeholder="描述你想要 Agent 完成的任务...&#10;例如：帮我算一下 100 * 365 并写一首庆祝的诗"
+              :disabled="executing"
+              @keydown.ctrl.enter="handleExecute"
+              @keydown.meta.enter="handleExecute"
+            />
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+               <span style="font-size: 0.75rem; color: var(--color-text-muted);">提示: Cmd/Ctrl + Enter 快捷执行</span>
+               <el-button
+                 type="primary"
+                 size="large"
+                 :loading="executing"
+                 :disabled="!taskInput.trim()"
+                 :icon="CaretRight"
+                 @click="handleExecute"
+                 style="width: 200px;"
+               >
+                 {{ executing ? (isStreaming ? 'Agent 正在流式执行中...' : 'Agent 执行中...') : '发送任务' }}
+               </el-button>
+            </div>
+            
+            <!-- 流式执行状态指示 -->
+            <div v-if="isStreaming" class="stream-status" style="margin-top: 12px;">
+              <el-icon class="stream-status-icon"><Loading /></el-icon>
+              <span class="stream-status-text">{{ getStreamStatusText() }}</span>
+              <span v-if="!streamEvents.length" class="stream-status-hint">等待连接...</span>
+              <span v-else class="stream-events-count">{{ streamEvents.length }} 个事件</span>
+            </div>
+          </div>
+
         </template>
       </div>
     </div>
@@ -945,7 +979,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, nextTick } from 'vue'
-import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User, Loading, Aim, Check, Promotion, Cpu, MagicStick, ChatDotRound, Finished, Sunrise, UserFilled, ArrowDown } from '@element-plus/icons-vue'
+import { Setting, Refresh, CaretRight, DataLine, WarningFilled, User, Loading, Aim, Check, Promotion, Cpu, MagicStick, ChatDotRound, Finished, Sunrise, UserFilled, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAgentList, executeAgent, executeAgentStream, confirmAgentAction } from '@/api/modules/agents'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
@@ -986,15 +1020,19 @@ interface ParsedExecuteResult {
   [key: string]: any;
 }
 
-/** 带区块信息的流式事件：用于在时间轴中标注「属于哪个 Agent」 */
-interface StreamEventWithBlock {
-  event: StreamEvent
-  /** 当前事件所属子 Agent 区块（主 Agent 为 null） */
-  blockAgentId: string | null
-  blockAgentName: string | null
-  blockTask: string | null
-  /** 是否为该子 Agent 区块的第一个事件（用于渲染区块标题） */
-  isBlockStart: boolean
+/** 按主/子 Agent 划分的独立控制区块 */
+interface AgentBlock {
+  type: 'main' | 'sub';
+  id: string; // 'main-xxx' 或 sub_agent_id
+  name: string; // 主Agent名称或子Agent名称
+  task: string | null;
+  events: StreamEvent[];
+}
+
+/** 每次独立迭代的大组 */
+interface IterationGroup {
+  iteration: number;
+  blocks: AgentBlock[];
 }
 
 const agents = ref<AgentInfo[]>([])
@@ -1067,57 +1105,103 @@ function scrollToLatestEvent() {
   })
 }
 
+/** 轨迹展开折叠状态管理 */
+const expansionState = ref<Record<string, boolean>>({})
+
+function toggleExpansion(key: string) {
+  expansionState.value[key] = !expansionState.value[key]
+}
+
 /**
- * 为每条流式事件标注「所属 Agent 区块」，便于在时间轴中一眼看出轨迹属于主 Agent 还是哪个子 Agent。
- * - 主 Agent 事件：blockAgentId 为 null
- * - 子 Agent 事件：blockAgentId / blockAgentName / blockTask 有值，isBlockStart 标记是否为该区块第一条
+ * 将流式事件按迭代（Iteration）和嵌套区块（主/子 Agent）进行树状结构编排。
+ * 
+ * NOTE: 后端 iteration 字段的含义是"已完成的迭代次数"：
+ *   - iteration: 0 表示正在进行第1次迭代
+ *   - iteration: 1 表示已完成1次迭代（通常出现在 final_answer/complete）
+ * 
+ * 因此我们需要将 iteration > 0 的 final_answer/complete 事件归入前一个迭代组，
+ * 而不是创建新的迭代组。
  */
-const streamEventsWithBlockInfo = computed<StreamEventWithBlock[]>(() => {
+const groupedIterations = computed<IterationGroup[]>(() => {
   const list = streamEvents.value
-  const result: StreamEventWithBlock[] = []
-  let currentId: string | null = null
-  let currentName: string | null = null
-  let currentTask: string | null = null
+  const iterationsMap = new Map<number, IterationGroup>()
 
   for (const ev of list) {
+    // 关键修复：final_answer 和 complete 的 iteration 可能比其他事件大1
+    // 这表示"已完成X次迭代"，而非"新的迭代"，需要归入前一个迭代组
+    let actualIteration = ev.iteration
+    
+    // 如果是 final_answer 或 complete 且 iteration > 0，归入 iteration-1 组
+    if (['final_answer', 'complete'].includes(ev.event) && ev.iteration > 0) {
+      actualIteration = ev.iteration - 1
+    }
+    
+    if (!iterationsMap.has(actualIteration)) {
+      iterationsMap.set(actualIteration, {
+        iteration: actualIteration,
+        blocks: []
+      })
+      // 默认展开最新的迭代
+      if (expansionState.value[`iter-${actualIteration}`] === undefined) {
+        expansionState.value[`iter-${actualIteration}`] = true
+      }
+    }
+    const iterGroup = iterationsMap.get(actualIteration)!
+    
+    // 把事件塞进对应的 Agent Block 里
     if (ev.event === 'sub_agent_start') {
-      currentId = ev.data?.sub_agent_id ?? null
-      currentName = ev.data?.sub_agent_name ?? ev.data?.sub_agent_id ?? '子Agent'
-      currentTask = ev.data?.task ?? null
-      result.push({
-        event: ev,
-        blockAgentId: currentId,
-        blockAgentName: currentName,
-        blockTask: currentTask,
-        isBlockStart: true
-      })
-      continue
+       const subId = ev.data?.sub_agent_id || 'sub'
+       iterGroup.blocks.push({
+         type: 'sub',
+         id: subId,
+         name: ev.data?.sub_agent_name || subId,
+         task: ev.data?.task || null,
+         events: [ev]
+       })
+       // 子 Agent 默认展开
+       if (expansionState.value[`block-${actualIteration}-${subId}`] === undefined) {
+         expansionState.value[`block-${actualIteration}-${subId}`] = true
+       }
+    } else if (ev.event === 'sub_agent_end') {
+       const lastBlock = iterGroup.blocks[iterGroup.blocks.length - 1]
+       if (lastBlock && lastBlock.type === 'sub') {
+         lastBlock.events.push(ev)
+       }
+    } else if (ev.data?.is_sub_agent) {
+       const lastBlock = iterGroup.blocks[iterGroup.blocks.length - 1]
+       if (lastBlock && lastBlock.type === 'sub') {
+         lastBlock.events.push(ev)
+       } else {
+         iterGroup.blocks.push({
+           type: 'sub',
+           id: 'unknown',
+           name: '未知子Agent',
+           task: null,
+           events: [ev]
+         })
+       }
+    } else {
+       // 主 Agent 事件
+       const lastBlock = iterGroup.blocks[iterGroup.blocks.length - 1]
+       if (lastBlock && lastBlock.type === 'main') {
+         lastBlock.events.push(ev)
+       } else {
+           const blockId = 'main-' + iterGroup.blocks.length
+           iterGroup.blocks.push({
+             type: 'main',
+             id: blockId,
+             name: selectedAgent.value?.name || '主Agent',
+             task: null,
+             events: [ev]
+           })
+           // 主 Agent 块默认展开
+           if (expansionState.value[`block-${actualIteration}-${blockId}`] === undefined) {
+              expansionState.value[`block-${actualIteration}-${blockId}`] = true
+           }
+       }
     }
-    if (ev.event === 'sub_agent_end') {
-      currentId = null
-      currentName = null
-      currentTask = null
-      continue
-    }
-    if (ev.data?.is_sub_agent) {
-      result.push({
-        event: ev,
-        blockAgentId: currentId,
-        blockAgentName: currentName,
-        blockTask: currentTask,
-        isBlockStart: false
-      })
-      continue
-    }
-    result.push({
-      event: ev,
-      blockAgentId: null,
-      blockAgentName: null,
-      blockTask: null,
-      isBlockStart: false
-    })
   }
-  return result
+  return Array.from(iterationsMap.values())
 })
 
 /** 子 Agent 内单条事件的阶段标签（用于区块内紧凑展示） */
@@ -1164,6 +1248,21 @@ function getSubAgentTheme(agentId: string | null): Record<string, string> {
     '--sub-agent-border': `rgba(${theme.rgb}, 0.35)`,
     '--sub-agent-shadow': `0 2px 8px rgba(${theme.rgb}, 0.12)`,
   }
+}
+
+/**
+ * 判断当前事件是否为流式轨迹中的「最后一条」。
+ * 当下一步尚未执行时，最后一条的标题与文字会加上律动动画，提示用户大模型正在思考/回复。
+ */
+function isLastStreamEvent(iterGroup: IterationGroup, block: AgentBlock, eIdx: number): boolean {
+  const groups = groupedIterations.value
+  if (!groups.length) return false
+  const lastIter = groups[groups.length - 1]
+  if (iterGroup !== lastIter) return false
+  if (!lastIter.blocks.length) return false
+  const lastBlock = lastIter.blocks[lastIter.blocks.length - 1]
+  if (block !== lastBlock) return false
+  return eIdx === block.events.length - 1
 }
 
 // 对执行结果增加强类型转换（用于 Template 解析展示）
@@ -1805,14 +1904,15 @@ onMounted(() => {
   font-size: 0.85rem;
 }
 
-/* 右侧执行面板 */
+/* 右侧执行面板 - 改为 flex 列布局，使轨迹区可滚动，输入栏固定底部 */
 .execution-panel {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden; /* 不在面板级别滚动，内部子区域自己控制滚动 */
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  min-height: 0; /* 让 flex 子项能够正确压缩 */
 }
 
 .no-selection {
@@ -1835,42 +1935,72 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
-/* 选中 Agent 的头部信息 */
+/* ── Agent 使用说明 tooltip 样式 ── */
+.info-icon {
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.info-icon:hover {
+  color: var(--color-primary);
+}
+
+.agent-usage-guide {
+  padding: 12px 16px;
+}
+
+.agent-usage-guide p {
+  margin: 0 0 8px 0;
+  line-height: 1.6;
+}
+
+.agent-usage-guide p:last-child {
+  margin-bottom: 0;
+}
+
+/* 选中 Agent 的头部信息（重新设计） */
 .selected-agent-header {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px;
-  background: var(--gradient-primary-soft);
-  border-radius: var(--radius-lg);
-  border: 1px solid #ddd6fe;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.06) 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+}
+
+.selected-agent-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .selected-agent-avatar {
   width: 48px;
   height: 48px;
-  border-radius: var(--radius-md);
-  background: var(--gradient-primary);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
 }
 
 .selected-agent-name {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--color-text-primary);
+  margin-bottom: 4px;
 }
 
 .selected-agent-desc {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
-  margin-top: 2px;
+  line-height: 1.4;
 }
 
 .selected-agent-meta {
-  margin-left: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -1878,12 +2008,12 @@ onMounted(() => {
 }
 
 .meta-item {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--color-text-muted);
-  background: var(--color-bg-card);
-  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 3px 10px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(99, 102, 241, 0.15);
 }
 
 /* 任务输入区 */
@@ -1958,12 +2088,15 @@ onMounted(() => {
  * 设计风格：Bento Grid + Glassmorphism + 阶段式进度
  * ===================================================== */
 
-/* 整体容器 */
+/* 整体容器 - 增加高度占比 */
 .trajectory-section {
-  margin-top: 20px;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* 头部：标题 + 流程进度指示器 */
@@ -2116,16 +2249,22 @@ onMounted(() => {
 
 /* =====================================================
  * 流式事件容器
- * 改进：使用 Bento Grid 风格的事件卡片
+ * 改进：使用 Bento Grid 风格的事件卡片，增加高度
  * ===================================================== */
 .stream-events-wrapper {
   position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .stream-events-container {
-  max-height: 550px;
+  /* 增加高度：从 calc(100vh - 380px) 改为更大的值 */
+  flex: 1;
   overflow-y: auto;
-  padding-right: 8px;
+  padding: 8px 8px 32px 8px;
+  min-height: 200px;
 }
 
 /* “回到底部”浮动按钮：用户上滑查看轨迹时显示，点击滚到底部 */
@@ -2174,6 +2313,60 @@ onMounted(() => {
   background: var(--color-primary-light);
 }
 
+/* =====================================================
+ * 迭代分组区块 & Agent 块 — 新版嵌套 UI
+ * 美化：Glassmorphism + Bento Grid 风格
+ * ===================================================== */
+.iteration-group {
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(248, 250, 252, 0.9) 100%);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.iteration-header {
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.06) 0%,
+    rgba(139, 92, 246, 0.04) 50%,
+    rgba(236, 72, 153, 0.03) 100%
+  ) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  border-radius: 10px !important;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+.iteration-header:hover {
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+/* 迭代内容区 */
+.iteration-content {
+  padding: 16px 8px 8px 8px;
+}
+
+/* Agent 块容器 */
+.agent-block {
+  border-left: 3px solid transparent;
+  transition: border-color 0.2s ease;
+  padding-left: 4px;
+  padding-top: 4px;
+}
+
+/* 时间轴样式 */
+.block-timeline {
+  padding-left: 12px;
+  padding-top: 16px;
+}
+
+/* 子 Agent 区块内时间轴增加额外上边距 */
+.sub-block-timeline {
+  padding-top: 20px;
+  margin-top: 4px;
+}
+
 /* 加载容器 */
 .loading-container {
   padding: 40px 0;
@@ -2189,7 +2382,7 @@ onMounted(() => {
  * 改进：Bento Grid 风格 + Glassmorphism 效果
  * ===================================================== */
 .trajectory-content {
-  padding: 16px 18px;
+  padding: 16px 18px !important;
   font-size: 0.85rem;
   max-width: 100%;
   overflow-x: auto;
@@ -2198,11 +2391,148 @@ onMounted(() => {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-light);
   transition: all var(--transition-normal);
+  margin-top: 0;
 }
 
 .trajectory-content:hover {
   border-color: var(--color-primary-light);
   box-shadow: var(--shadow-sm);
+}
+
+/* ── Plan Start 规划开始卡片 ── */
+.plan-start-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.06) 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.plan-start-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-radius: 12px;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+.plan-start-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-start-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.plan-start-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Plan Complete 规划完成卡片 ── */
+.plan-complete-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.plan-complete-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 8px;
+  color: white;
+}
+
+.plan-complete-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* 推理过程区块 */
+.reasoning-block {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.03) 100%);
+  border-radius: 8px;
+  border-left: 4px solid #6366f1;
+  margin-bottom: 14px;
+}
+
+.reasoning-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6366f1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.reasoning-content {
+  font-size: 0.88rem;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+}
+
+/* 执行步骤列表 */
+.steps-list {
+  margin-top: 8px;
+}
+
+.steps-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: var(--color-bg-secondary);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.step-item:hover {
+  background: var(--color-bg-card);
+}
+
+.step-number {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2211,6 +2541,115 @@ onMounted(() => {
   .sub-agent-inner-content {
     transition: none;
   }
+  .plan-start-icon,
+  .tool-icon,
+  .reflection-icon,
+  .plan-complete-icon,
+  .final-answer-icon,
+  .complete-icon {
+    animation: none;
+  }
+  .trajectory-content.step-thinking {
+    animation: fade-in-up 0.3s ease-out;
+  }
+}
+
+/* ── 动画效果 ── */
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* 大模型正在思考时的律动：下一步未执行时，上一步卡片标题与文字轻微律动，提示用户等待回复 */
+@keyframes thinking-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.12);
+  }
+  50% {
+    opacity: 0.96;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.08);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 规划开始动画 */
+.plan-start-icon {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 工具调用动画 */
+.tool-icon {
+  animation: bounce-subtle 1.5s ease-in-out infinite;
+}
+
+/* 反思图标：已去掉旋转动画，仅使用下方 ── Reflection 反思卡片 ── 中的静态样式 */
+
+/* 规划完成动画 */
+.plan-complete-icon {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+/* 最终答案动画 */
+.final-answer-icon {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 完成动画 */
+.complete-icon {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 轨迹内容入场动画 */
+.trajectory-content {
+  animation: fade-in-up 0.3s ease-out;
+}
+
+/* 当前为流式最后一条事件（下一步未执行）时：整卡标题与文字一起律动，提示大模型正在思考/回复 */
+.trajectory-content.step-thinking {
+  animation: fade-in-up 0.3s ease-out, thinking-pulse 2s ease-in-out infinite;
+}
+
+/* 加载状态闪烁效果 */
+.loading-shimmer {
+  background: linear-gradient(90deg, 
+    var(--color-bg-secondary) 0%, 
+    var(--color-bg-card) 50%, 
+    var(--color-bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
 
 /* 事件类型特定的边框颜色 */
@@ -2270,6 +2709,265 @@ onMounted(() => {
   border: 1px solid var(--color-border);
 }
 
+/* ── Tool Complete 工具调用卡片 ── */
+.tool-complete-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.tool-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 6px;
+  color: white;
+}
+
+.tool-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tool-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tool-step {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tool-time {
+  font-size: 0.7rem;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+
+/* 数据库结果表格 */
+.db-result-block {
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid rgba(229, 231, 235, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.db-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.db-result-count {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.db-table-wrapper {
+  overflow-x: auto;
+}
+
+.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  background: #ffffff;
+}
+
+.db-table th {
+  padding: 10px 12px;
+  text-align: left;
+  background: #f8fafc;
+  border-bottom: 2px solid rgba(16, 185, 129, 0.2);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.db-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.db-table tr:hover td {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+/* 错误块样式 */
+.error-block {
+  font-size: 0.85rem;
+  padding: 12px 14px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+  color: #dc2626;
+  border-left: 3px solid #ef4444;
+}
+
+/* ── Final Answer 最终答案卡片 ── */
+.final-answer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.final-answer-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-radius: 8px;
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.final-answer-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.final-answer-content {
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(139, 92, 246, 0.02) 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.empty-content {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ── Complete 执行完成卡片 ── */
+.complete-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.complete-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 8px;
+  color: white;
+}
+
+.complete-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.complete-iterations {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg-secondary);
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+/* ── Reflection 反思卡片 ── */
+.reflection-start-header,
+.reflection-complete-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.reflection-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-radius: 8px;
+  color: white;
+}
+
+.reflection-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.reflection-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.reflection-skipped {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.reflection-feedback,
+.reflection-summary {
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  background: var(--color-bg-secondary);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.feedback-label,
+.summary-label {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-right: 6px;
+}
+
+.reflection-replan {
+  font-size: 0.82rem;
+  color: #f59e0b;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+  border-left: 3px solid #f59e0b;
+}
+
 /* ── 子 Agent 区块样式：按类型区分颜色，保留现有主题，符合 ui-ux-pro-max ─────────── */
 
 /* 子 Agent 区块标题：使用 --sub-agent-* 变量（由 getSubAgentTheme 注入），fallback 为主色 */
@@ -2286,6 +2984,8 @@ onMounted(() => {
   border-left: 5px solid var(--sub-agent-accent);
   box-shadow: var(--sub-agent-shadow);
   transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  margin-bottom: 8px;
 }
 
 .sub-agent-block-header:hover {
