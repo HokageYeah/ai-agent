@@ -1,7 +1,0 @@
-2026-02-25 11:31:49 | INFO     | logging:callHandlers:1736 - Shutting down
-2026-02-25 11:31:50 | INFO     | logging:callHandlers:1736 - Waiting for application shutdown.
-2026-02-25 11:31:50 | INFO     | app.main:lifespan:66 - [33m[关闭] AI Agent 服务正在关闭...[0m
-2026-02-25 11:31:50 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接已关闭
-2026-02-25 11:31:50 | INFO     | app.main:lifespan:69 - [33m[关闭] MySQL 数据库连接已释放[0m
-2026-02-25 11:31:50 | INFO     | app.main:lifespan:72 - [33m[关闭] 服务已安全退出[0m
-2026-02-25 11:31:50 | INFO     | logging:callHandlers:1736 - Application shutdown complete.
