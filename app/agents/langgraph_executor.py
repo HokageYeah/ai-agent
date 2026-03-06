@@ -30,6 +30,7 @@ from app.agents.base import Agent
 from app.agents.planning import PlanningEngine, Plan
 from app.agents.execution import ExecutionEngine, ExecutionResult
 from app.agents.reflection import ReflectionEngine
+from app.memory.agent_run_memory import AgentRunMemory
 import asyncio
 
 
@@ -72,6 +73,10 @@ class AgentState(TypedDict):
     #       在 _execute_node 中记录，在 _reflect_node 中从 available_tools
     #       里过滤掉这些工具，防止反思阶段 LLM 通过 tool_gateway 绕过用户确认直接调用。
     user_rejected_tools: List[str]
+    # NOTE: AgentRunMemory 实例 —— 本次任务运行的完整行为记忆仓库。
+    #       以 OpenAI messages 格式存储每一轮的计划、工具调用、反思、用户操作等。
+    #       Plan/Execute/Reflect 三个节点均从此处读取历史记忆并写入新记录。
+    run_memory: Optional[AgentRunMemory]
 
 
 # 流式事件回调函数类型
@@ -468,7 +473,7 @@ class LangGraphAgentExecutor:
         if state.get("final_result") is not None:
             planning_context["last_final_result"] = state.get("final_result")
 
-        # 创建计划（携带 error_context 和 reflection_history 以提升重规划质量）
+        # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
         plan = await self.planning_engine.create_plan(
             agent=agent,
             task=task,
@@ -476,7 +481,10 @@ class LangGraphAgentExecutor:
             available_skills=available_skills,
             context=planning_context,
             error_context=current_error_ctx if current_error_ctx else None,
-            reflection_history=current_reflection_history if current_reflection_history else None
+            reflection_history=current_reflection_history if current_reflection_history else None,
+            # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
+            run_memory=state.get("run_memory"),
+            iteration=iteration
         )
         
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
@@ -505,6 +513,20 @@ class LangGraphAgentExecutor:
         # NOTE: 重规划后清空上一轮的错误分析结果（错误已被 LLM 考虑到新计划中）
         # 保留 error_context 以便后续迭代中继续累积错误历史
         state["error_analysis"] = None
+
+        # NOTE: 规划完成后，将计划产出写入 run_memory（以 assistant 消息格式）
+        #       这样下一轮规划时 LLM 能在 messages 数组中看到历史计划内容
+        run_memory: Optional[AgentRunMemory] = state.get("run_memory")
+        if run_memory is not None:
+            run_memory.write_plan(
+                iteration=iteration,
+                reasoning=plan.reasoning,
+                steps=[step.to_dict() for step in plan.steps]
+            )
+            logger.info(
+                f"{Fore.CYAN}[记忆写入] 规划产出已写入 run_memory, "
+                f"iteration={iteration}, steps={len(plan.steps)}{Style.RESET_ALL}"
+            )
         
         return state
     
@@ -653,7 +675,7 @@ class LangGraphAgentExecutor:
                             f"当前黑名单: {current_rejected}{Style.RESET_ALL}"
                         )
 
-                    # NOTE: 关键修复：将用户拒绝操作写入 error_context。
+                    # NOTE: 将用户拒绝操作写入 error_context。
                     #       这样反思引擎的 Prompt 会包含这条记录，
                     #       LLM 才知道任务未完成是因为「用户主动拒绝」，
                     #       而不会被 execution_result.success=True 误导。
@@ -691,6 +713,20 @@ class LangGraphAgentExecutor:
                                 f"{Fore.YELLOW}[Execute Node] 已更新 final_answer 内容以反映用户拒绝结果{Style.RESET_ALL}"
                             )
                             break
+
+                    # NOTE: 将用户拒绝行为写入 run_memory（以 user 消息格式记录）
+                    #       这样反思/重规划时，LLM 在 messages 数组中能直接看到用户的操作
+                    run_memory_ref: Optional[AgentRunMemory] = state.get("run_memory")
+                    if run_memory_ref is not None:
+                        run_memory_ref.write_user_action(
+                            iteration=iteration,
+                            action="reject",
+                            tool_name=tool_name
+                        )
+                        logger.info(
+                            f"{Fore.CYAN}[记忆写入] 用户拒绝操作已写入 run_memory: "
+                            f"tool={tool_name}, iteration={iteration}{Style.RESET_ALL}"
+                        )
 
         # 执行计划
         # 把 task、stream_callback、pending_confirmations 一起放入 context，
@@ -826,6 +862,47 @@ class LangGraphAgentExecutor:
         
         # 无论执行成功或失败（如被用户拒绝），都保存在状态中供后续反思
         state["final_result"] = execution_result.to_dict()
+
+        # NOTE: 将执行步骤的结果写入 run_memory（工具/技能/委派/最终答案各自的格式）
+        #       这样反思阶段 LLM 通过 messages 数组能直接看到本轮所有工具调用及其结果
+        run_memory: Optional[AgentRunMemory] = state.get("run_memory")
+        if run_memory is not None and execution_result.step_results:
+            for sr in execution_result.step_results:
+                sr_action = sr.get("action", "unknown")
+                sr_success = sr.get("success", True)
+                sr_error = sr.get("error", "")
+
+                if sr_action == "tool":
+                    run_memory.write_tool_call(
+                        iteration=iteration,
+                        tool_name=sr.get("tool_name", "unknown"),
+                        tool_args=sr.get("params", {}),
+                        tool_result=sr.get("result"),
+                        success=sr_success,
+                        error_msg=sr_error
+                    )
+                elif sr_action == "skill":
+                    run_memory.write_skill_call(
+                        iteration=iteration,
+                        skill_id=sr.get("skill_id", "unknown"),
+                        skill_result=sr.get("result"),
+                        success=sr_success
+                    )
+                elif sr_action == "delegate":
+                    result_summary = str(sr.get("result", ""))
+                    run_memory.write_delegate(
+                        iteration=iteration,
+                        child_agent_id=sr.get("agent_id", "unknown"),
+                        sub_task=sr.get("task", ""),
+                        result_summary=result_summary,
+                        success=sr_success
+                    )
+                # final_answer 步骤不单独写入，已体现在 reflection 阶段
+
+            logger.info(
+                f"{Fore.CYAN}[记忆写入] 执行步骤结果已写入 run_memory: "
+                f"{len(execution_result.step_results)} 条, iteration={iteration}{Style.RESET_ALL}"
+            )
 
         # ═══════════════════════════════════════════════════════════
         # 【错误收集阶段】
@@ -1056,7 +1133,10 @@ class LangGraphAgentExecutor:
             task=task,
             execution_result=execution_result_obj,
             error_context=current_error_ctx if current_error_ctx else None,
-            available_tools=reflect_available_tools if reflect_available_tools else None
+            available_tools=reflect_available_tools if reflect_available_tools else None,
+            # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆给反思引擎
+            run_memory=state.get("run_memory"),
+            iteration=iteration
         )
         
         logger.info(f"{Fore.GREEN}[Reflect Node] 反思完成{Style.RESET_ALL}")
@@ -1093,6 +1173,22 @@ class LangGraphAgentExecutor:
             f"{Fore.CYAN}[Reflect Node] 已将第 {iteration} 轮反思结论写入历史，"
             f"当前共 {len(current_history)} 条记录{Style.RESET_ALL}"
         )
+
+        # NOTE: 反思完成后，将结论写入 run_memory（以 assistant 消息格式记录）
+        #       这样下一轮重规划时 LLM 在 messages 中能看到历史反思的判断
+        run_memory: Optional[AgentRunMemory] = state.get("run_memory")
+        if run_memory is not None:
+            run_memory.write_reflection(
+                iteration=iteration,
+                result=reflection_result.to_dict()
+            )
+            # 同时打印记忆统计供调试观察
+            stats = run_memory.get_stats()
+            logger.info(
+                f"{Fore.CYAN}[记忆统计] iteration={iteration} 反思写入完成, "
+                f"记忆总条数={stats['total_messages']}, "
+                f"条目类型={stats['entry_types']}{Style.RESET_ALL}"
+            )
 
         # 将反思结果保存到 final_result (作为字典)
         if state["final_result"]:
@@ -1431,8 +1527,14 @@ class LangGraphAgentExecutor:
                 # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
                 "pending_confirmations": {},
                 # NOTE: 初始为空列表，用户拒绝某工具后记录匹名称
-                #       _reflect_node 会从 available_tools 中过滤这些工具
-                "user_rejected_tools": []
+                "user_rejected_tools": [],
+                # NOTE: 初始化 AgentRunMemory 实例，挂载本次任务运行记忆仓库。
+                #       Plan/Execute/Reflect 三个节点均从此读写检索和德入新行为记录。
+                "run_memory": AgentRunMemory(
+                    task=task,
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name
+                )
             }
             
             # NOTE: LangGraph 默认 recursion_limit=25，每次 plan→execute→reflect 算 3 步
@@ -1541,7 +1643,13 @@ class LangGraphAgentExecutor:
                 #       这里用 self._pending_confirmations 确保两者指向同一对象
                 "pending_confirmations": self._pending_confirmations,
                 # ── 新增: 初始化时继承父级传来的被拒绝工具黑名单
-                "user_rejected_tools": user_rejected_tools or []
+                "user_rejected_tools": user_rejected_tools or [],
+                # NOTE: 子 Agent 独立的 AgentRunMemory 实例，与父 Agent 相互独立。
+                "run_memory": AgentRunMemory(
+                    task=task,
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name
+                )
             }
 
             recursion_limit = self.max_iterations * 4 + 10
@@ -1691,8 +1799,15 @@ class LangGraphAgentExecutor:
             "pending_confirmations": {},
             # NOTE: 初始为空列表，用户拒绝某工具后记录其名称
             #       _reflect_node 会从 available_tools 中过滤这些工具，
-            #       防止反思 LLM 通过 tool_gateway 绕过确认再次执行被拒绝操作
-            "user_rejected_tools": user_rejected_tools or []
+            #       防止反思阶段 LLM 通过 tool_gateway 绕过用户确认再次执行被拒绝操作
+            "user_rejected_tools": user_rejected_tools or [],
+            # NOTE: 初始化 AgentRunMemory 实例，挂载本次流式任务运行记忆仓库。
+            #       Plan/Execute/Reflect 三个节点均从此读写检索和德入新行为记录。
+            "run_memory": AgentRunMemory(
+                task=task,
+                agent_id=agent.agent_id,
+                agent_name=agent.name
+            )
         }
 
         # 递归深度：每次 plan→execute→reflect 循环约 3 步，留足余量

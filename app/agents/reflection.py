@@ -9,18 +9,24 @@
 2. 判断任务是否完成
 3. 决定是否需要重新规划
 4. 生成结果总结
+5. 支持 AgentRunMemory：历史记忆以 OpenAI messages 格式传递，无需文字拼接
 
 作者: AI Agent Team
 创建时间: 2026-02-15
+更新时间: 2026-03-06（集成 AgentRunMemory 记忆系统）
 """
 
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from loguru import logger
 from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.execution import ExecutionResult
+
+# NOTE: 使用 TYPE_CHECKING 避免循环导入
+if TYPE_CHECKING:
+    from app.memory.agent_run_memory import AgentRunMemory
 
 
 class ReflectionResult:
@@ -88,7 +94,11 @@ class ReflectionEngine:
         task: str,
         execution_result: ExecutionResult,
         error_context: Optional[List[Dict[str, Any]]] = None,
-        available_tools: Optional[List] = None
+        available_tools: Optional[List] = None,
+        # NOTE: AgentRunMemory 集成入参——当传入时，优先用 messages 格式传递历史记忆，
+        #       而非把错误历史文字拼接到 prompt，远胜于文字拼接方式。
+        run_memory: Optional[Any] = None,
+        iteration: int = 0
     ) -> ReflectionResult:
         """
         反思执行结果
@@ -117,9 +127,6 @@ class ReflectionEngine:
                 f"{Fore.YELLOW}[反思引擎] 本次反思携带 {len(error_context)} 条错误信息，将提升判断质量{Style.RESET_ALL}"
             )
 
-        # 构建反思 Prompt
-        prompt = self._build_reflection_prompt(task, execution_result, error_context)
-        
         # 使用 LLM 进行反思
         logger.info(f"{Fore.BLUE}调用 LLM 进行反思...{Style.RESET_ALL}")
         
@@ -151,12 +158,51 @@ class ReflectionEngine:
                 max_tokens=1024,
                 tools=tools
             )
+
+            # ── 核心改造：优先使用 run_memory messages 格式传递历史记忆 ───────
+            # 当 run_memory 存在时，通过 build_messages_for_reflection() 让 LLM 看到本轮
+            # 完整的工具调用记录和历史反思，准确度远优于文字拼接。
+            # 当 run_memory 不存在时，降级为旧的 prompt 文字拼接。
+            if run_memory is not None:
+                reflect_system = self._build_reflection_system_prompt()
+                reflect_trigger = self._build_reflection_trigger(
+                    execution_result=execution_result,
+                    error_context=error_context
+                )
+                messages = run_memory.build_messages_for_reflection(
+                    system_prompt=reflect_system,
+                    current_iteration=iteration,
+                    trigger_prompt=reflect_trigger
+                )
+                logger.info(
+                    f"{Fore.GREEN}[反思引擎] 使用 AgentRunMemory messages 模式，"
+                    f"共 {len(messages)} 条消息，iteration={iteration}{Style.RESET_ALL}"
+                )
+            else:
+                # 兼容旧调用路径
+                prompt = self._build_reflection_prompt(task, execution_result, error_context)
+                messages = [{"role": "user", "content": prompt}]
+                logger.info(
+                    f"{Fore.YELLOW}[反思引擎] 使用旧版文字拼接模式（未传入 run_memory）{Style.RESET_ALL}"
+                )
             
+            # ── 调用 LLM 进行反思评估 ────────────────────────────────────────
+            # 此处将准备好的 messages 数组（含本轮所有工具调用记录）发送给 LLM
+            logger.info(
+                f"{Fore.BLUE}[反思引擎] 正在调用 LLM 进行反思评估 "
+                f"(模型={agent.agent_config.execution_model}, messages条数={len(messages)}){Style.RESET_ALL}"
+            )
             response = await self.llm_hub.infer(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 config=config
             )
-            
+
+            # ── LLM 响应原文（方便查看大模型对本轮执行的判断）──────────────────
+            logger.info(f"{Fore.GREEN}[反思引擎] LLM 返回原始反思内容:{Style.RESET_ALL}")
+            logger.info(
+                f"{Fore.GREEN}{response.content[:600] if response.content else '（空响应）'}{Style.RESET_ALL}"
+            )
+
             # NOTE: 将 execution_result 传入解析方法，用于当 LLM 输出无效时的智能兜底
             reflection = self._parse_reflection(response.content, execution_result)
             
@@ -180,6 +226,68 @@ class ReflectionEngine:
                 summary=f"执行{'成功' if execution_result.success else '失败'}（反思无法完成）"
             )
     
+    def _build_reflection_system_prompt(self) -> str:
+        """
+        构建反思的系统提示词（system role）
+        包含反思角色定义和输出格式要求。
+        历史执行数据通过 AgentRunMemory.build_messages_for_reflection() 注入。
+        """
+        return """你是一个 AI Agent 的反思评估模块。你的职责是审查上方展示的执行过程，
+并对任务完成情况做出客观判断。请以 JSON 格式返回评估结果：
+{{
+  "success": true/false,
+  "needs_replanning": true/false,
+  "should_continue": true/false,
+  "feedback": "改进建议",
+  "summary": "结果总结"
+}}
+
+【重要判断标准】：
+- 如果 Agent 返回"无法完成"、"没有权限"、"无法访问"、"超出能力范围"等，说明任务真实因为环境或能力限制被中断。
+- 如果历史消息中包含 "[用户操作通知]用户拒绝了" 这类消息，success 必须为 false。
+- 对于其他情况，如果问题没有被真正解决，即使执行不报错，success 也应为 false。
+- should_continue 由你根据任务完成情况、Agent 能力边界及可用工具综合判断：还有希望完成即给出 true，确实无法完成即给出 false。
+请只返回 JSON，不要包含其他文本。"""
+
+    def _build_reflection_trigger(
+        self,
+        execution_result: ExecutionResult,
+        error_context: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """
+        构建反思的触发指令（最后一条 user 消息）
+        
+        当使用 run_memory messages 模式时，工具调用结果已在 messages 中呈现，
+        这里只需补充说明整体执行状态和要求进行反思。
+        """
+        lines = [
+            f"当前轮执行状态: {'\u6210\u529f' if execution_result.success else '\u5931\u8d25'}",
+            f"整体结果: {str(execution_result.result)[:300]}"
+        ]
+
+        if error_context:
+            error_lines = []
+            for idx, err in enumerate(error_context, 1):
+                step_desc = err.get("step_desc", "未知步骤")
+                error_msg = err.get("error_msg", "")
+                error_type = err.get("error_type", "")
+                suggestion = err.get("suggestion", "")
+                line = f"{idx}. [{error_type}] {step_desc}: {error_msg}"
+                if suggestion:
+                    line += f" (建议: {suggestion})"
+                error_lines.append(line)
+            lines.append(f"\n本轮执行中发现 {len(error_context)} 个错误\uff1a\n" + "\n".join(error_lines))
+
+        # 用户拒绝评估约束
+        if execution_result.error and "[UserRejected]" in execution_result.error:
+            lines.append(
+                "\n【降级方案评估】若本轮已使用 python_executor 成功生成了用户可本地运行的脚本，success=true；"
+                "若尚未完成递交，可建议下一轮用 python_executor 生成脚本。"
+            )
+
+        lines.append("\n请基于以上执行过程和状态，对任务完成情况进行反思评估。请只返回 JSON，不要包含其他文本。")
+        return "\n".join(lines)
+
     def _build_reflection_prompt(
         self,
         task: str,

@@ -9,19 +9,25 @@
 2. 使用 LLM 进行智能规划
 3. 支持工具、技能、子 Agent 的组合使用
 4. 返回结构化的 JSON 计划
+5. 支持 AgentRunMemory：历史记忆以 OpenAI messages 格式传递，无需文字拼接
 
 作者: AI Agent Team
 创建时间: 2026-02-15
+更新时间: 2026-03-06（集成 AgentRunMemory 记忆系统）
 """
 
 import json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from loguru import logger
 from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.tools.base import Tool
 from app.skills.base import Skill
+
+# NOTE: 使用 TYPE_CHECKING 避免循环导入；运行时通过函数参数类型注解字符串引用
+if TYPE_CHECKING:
+    from app.memory.agent_run_memory import AgentRunMemory
 
 
 class PlanStep:
@@ -103,22 +109,28 @@ class PlanningEngine:
         available_skills: List[Skill],
         context: Optional[Dict[str, Any]] = None,
         error_context: Optional[List[Dict[str, Any]]] = None,
-        reflection_history: Optional[List[Dict[str, Any]]] = None
+        reflection_history: Optional[List[Dict[str, Any]]] = None,
+        # NOTE: AgentRunMemory 集成入参——当传入时，优先用 messages 格式传递历史记忆，
+        #       而非把错误/反思历史文字拼接到 prompt，提升 LLM 对上下文的理解准确度。
+        run_memory: Optional[Any] = None,
+        iteration: int = 0
     ) -> Plan:
         """
         创建执行计划
 
-        若传入 error_context，则为错误感知重规划；
-        若传入 reflection_history，则为历史反思感知重规划。
+        若传入 run_memory，则优先使用 messages 格式传递历史记忆（推荐）；
+        否则降级为文字拼接模式（向后兼容）。
 
         Args:
             agent: Agent 实例
             task: 任务描述
             available_tools: 可用工具列表
             available_skills: 可用技能列表
-            context: 额外上下文信息
-            error_context: 上一轮执行失败的步骤信息列表
-            reflection_history: 历次迭代的反思结论列表（{iteration, feedback, summary, success, needs_replanning}）
+            context: 额外上下文信息（兼容旧逻辑）
+            error_context: 上一轮执行失败的步骤信息列表（兼容旧逻辑）
+            reflection_history: 历次迭代的反思结论列表（兼容旧逻辑）
+            run_memory: AgentRunMemory 实例，记忆已按 OpenAI messages 格式存储
+            iteration: 当前迭代轮次（0-indexed，用于过滤记忆消息）
 
         Returns:
             Plan: 执行计划
@@ -138,10 +150,6 @@ class PlanningEngine:
             logger.info(
                 f"{Fore.YELLOW}[规划引擎] 本次携带 {len(reflection_history)} 条历史反思记录，引导改进规划方向{Style.RESET_ALL}"
             )
-        prompt = self._build_planning_prompt(
-            agent, task, available_tools, available_skills, context, error_context, reflection_history
-        )
-        
         # 使用 LLM 生成计划
         logger.info(f"{Fore.BLUE}调用 LLM 生成计划...{Style.RESET_ALL}")
         
@@ -153,7 +161,6 @@ class PlanningEngine:
             # 并在计划中反复规划调用它，导致无限迭代直到达到最大次数。
             tools = []
             if self.tool_hub and available_tools:
-                # 构建授权工具名称集合，用于过滤
                 allowed_tool_names = {t.name for t in available_tools}
                 all_schemas = self.tool_hub.get_schemas()
                 tools = [
@@ -171,15 +178,58 @@ class PlanningEngine:
                 max_tokens=2048,
                 tools=tools
             )
+
+            # ── 核心改造：优先使用 run_memory messages 格式传递历史记忆 ────────
+            # 当 run_memory 存在时，通过 build_messages_for_planning() 生成完整的
+            # messages 数组，历史的计划/工具调用/反思/用户操作等全部以标准 OpenAI
+            # 消息格式呈现给 LLM，准确度远优于文字拼接方式。
+            # 当 run_memory 不存在时（如子 Agent 首次调用等），降级为旧的 prompt 文字拼接。
+            if run_memory is not None:
+                system_prompt = self._build_system_prompt(
+                    agent, available_tools, available_skills
+                )
+                trigger_prompt = self._build_trigger_prompt(
+                    context=context,
+                    user_rejected_tools=context.get("user_rejected_tools", []) if context else []
+                )
+                messages = run_memory.build_messages_for_planning(
+                    system_prompt=system_prompt,
+                    current_iteration=iteration,
+                    trigger_prompt=trigger_prompt
+                )
+                logger.info(
+                    f"{Fore.GREEN}[规划引擎] 使用 AgentRunMemory messages 模式，"
+                    f"共 {len(messages)} 条消息（含历史记忆），iteration={iteration}{Style.RESET_ALL}"
+                )
+            else:
+                # 兼容旧调用路径：无 run_memory 时降级为文字拼接 Prompt
+                prompt = self._build_planning_prompt(
+                    agent, task, available_tools, available_skills,
+                    context, error_context, reflection_history
+                )
+                messages = [{"role": "user", "content": prompt}]
+                logger.info(
+                    f"{Fore.YELLOW}[规划引擎] 使用旧版文字拼接模式（未传入 run_memory）{Style.RESET_ALL}"
+                )
             
+            # ── 调用 LLM 生成规划决策 ──────────────────────────────────────────
+            # 此处将准备好的 messages 数组发送给 LLM，等待规划结果
+            logger.info(
+                f"{Fore.BLUE}[规划引擎] 正在调用 LLM 生成计划 "
+                f"(模型={agent.agent_config.planning_model}, messages条数={len(messages)}){Style.RESET_ALL}"
+            )
             response = await self.llm_hub.infer(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 config=config
             )
-            
-            # logger.info(f"{Fore.CYAN}LLM 生成计划: {response.content}{Style.RESET_ALL}")
-            
-            # 解析计划
+
+            # ── LLM 响应原文（方便查看大模型规划了什么）────────────────────────
+            logger.info(f"{Fore.GREEN}[规划引擎] LLM 返回原始规划内容:{Style.RESET_ALL}")
+            logger.info(
+                f"{Fore.GREEN}{response.content[:800] if response.content else '（空响应）'}{Style.RESET_ALL}"
+            )
+
+            # 解析计划：将 LLM 返回的 JSON 字符串解析为结构化 Plan 对象
             plan = self._parse_plan(response.content)
             
             logger.info(
@@ -201,6 +251,101 @@ class PlanningEngine:
                 reasoning="规划失败，返回错误信息"
             )
     
+    def _build_system_prompt(
+        self,
+        agent: Agent,
+        available_tools: List[Tool],
+        available_skills: List[Skill]
+    ) -> str:
+        """
+        构建规划的系统提示词（system role）
+
+        包含 Agent 角色定义、可用工具/技能/子Agent 清单以及 JSON 输出格式要求。
+        这部分内容固定不变，适合放在 system 消息中。
+        其余的历史上下文（错误记录、反思历史）通过 AgentRunMemory 注入 messages 数组，
+        而不是文字拼接到这里——这样 LLM 能以「真实对话」而非「描述文本」理解历史。
+        """
+        tools_text = self._format_tools(available_tools)
+        skills_text = self._format_skills(available_skills)
+        child_agents_text = ", ".join(agent.child_agents) if agent.child_agents else "无"
+        xxx = "xxx"
+
+        return f"""你是 {agent.name}，{agent.description}
+
+角色定义: {agent.role}
+
+可用工具:
+{tools_text}
+
+可用技能:
+{skills_text}
+
+子 Agent:
+{child_agents_text}
+
+请制定详细的执行计划，以 JSON 格式返回。计划应包含以下字段：
+{{
+  "steps": [
+    {{"action": "tool", "tool_name": "工具名称", "params": {{"参数名": "参数值"}}}},
+    {{"action": "skill", "skill_id": "技能ID", "params": {{"参数名": "参数值"}}}},
+    {{"action": "delegate", "agent_id": "子AgentID", "task": "委派的任务"}},
+    {{"action": "final_answer", "content": "最终答案"}}
+  ],
+  "reasoning": "你的推理过程"
+}}
+
+注意事项：
+1. 每个步骤只能有一个 action 字段，action 必须严格使用 "tool"、"skill"、"delegate"、"final_answer" 之一，禁止把工具名直接写作 action 值（例如不要写 "action": "database_query"，正确写法是 "action": "tool", "tool_name": "database_query"）
+2. 最后一步必须是 final_answer，其 content 只需写一句简短的意图说明即可（例如 "根据以上查询结果回答用户"），禁止使用 {{{xxx}}} 或 [{xxx}] 这类占位符——系统会自动将前序步骤的真实数据合成为最终回答
+3. 如果需要使用工具，确保工具名称正确
+4. 如果需要调用技能，确保技能 ID 正确
+5. 如果需要委派给子 Agent，确保子 Agent ID 在可用列表中
+6. 【重要】每个工具步骤的参数必须是完整的、自包含的，不能依赖其他步骤的运行时输出。具体规则：
+   - 数据库查询：必须用 JOIN 或子查询合并多表，不能使用 ? 占位符，禁止把前一步结果作为参数
+   - 计算器：只能计算纯数学表达式（如 "1+2*3"），不能引用数据库字段名或变量
+   - 如果需要先查询再计算，请在一条 SQL 里直接用 SUM/COUNT/AVG 等聚合函数完成
+   - 【重要】如果后续步骤需要使用前序搜索结果的 URL 地址，必须使用以下占位符格式：
+     * 使用 {{{{first_search_result_url}}}} 表示第一个搜索结果的 URL
+     * 使用 {{{{first_search_result_title}}}} 表示第一个搜索结果的标题
+     * 使用 {{{{first_search_result}}}} 表示第一个搜索结果的完整信息（包含 url, title, snippet）
+     * 使用 {{{{last_tool_result}}}} 表示最后一个工具的执行结果
+     * 例如：http_request 工具的 url 参数应该写成 "url": "{{{{first_search_result_url}}}}"
+
+请只返回 JSON，不要包含其他文本。"""
+
+    def _build_trigger_prompt(
+        self,
+        context: Optional[Dict[str, Any]] = None,
+        user_rejected_tools: Optional[List[str]] = None
+    ) -> str:
+        """
+        构建本轮规划的触发指令（最后一条 user 消息）
+
+        当使用 run_memory messages 模式时，此方法生成最终的触发请求。
+        历史错误/反思/用户操作已在 messages 数组前面的消息中呈现，
+        这里只需给出补充约束和本轮规划执行指令。
+        """
+        lines = ["请基于以上历史记录（包含之前各轮的执行结果、工具调用结果和反思结论），制定本轮的执行计划。"]
+
+        # 注入用户拒绝工具约束
+        rejected = user_rejected_tools or []
+        if rejected:
+            lines.append(
+                f"\n【强约束】用户已拒绝以下工具，本轮计划中严禁再次规划这些工具: {rejected}。"
+                "若原任务必须依赖这些工具才能完成，请在 final_answer 中如实告知用户并解释原因。"
+            )
+
+        # 文件写入降级通知
+        if "file_write" in rejected:
+            lines.append(
+                "\n【降级方案】若任务需要将内容保存到文件，且 file_write 已被禁用："
+                "若有 python_executor 可用，请生成一段用户可在本机运行的 Python 写文件脚本交付；"
+                "否则直接在最终答案中返回完整内容。"
+            )
+
+        lines.append("\n请只返回 JSON，不要包含其他文本。")
+        return "\n".join(lines)
+
     def _build_planning_prompt(
         self,
         agent: Agent,
