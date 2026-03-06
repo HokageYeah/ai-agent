@@ -115,6 +115,9 @@ class AgentRunMemory:
     agent_name: str     # 执行的 Agent 显示名称
     started_at: float = field(default_factory=time.time)
 
+    # 外部传入的前置上下文记忆（例如：Session Memory, Conversation History）
+    context_messages: list[dict] = field(default_factory=list)
+
     # 按时序追加的记忆消息列表（含 meta，不直接传给 LLM）
     _messages: list[AgentMemoryMessage] = field(default_factory=list)
 
@@ -131,7 +134,7 @@ class AgentRunMemory:
           重规划时，LLM 看到之前轮次的规划内容，能直接感知历史决策。
         """
         # 对步骤做简化摘要，控制 token 消耗
-        steps_summary = json.dumps(steps, ensure_ascii=False, indent=None)
+        steps_summary = json.dumps(steps, ensure_ascii=False, indent=None, default=str)
         if len(steps_summary) > 800:
             steps_summary = steps_summary[:800] + "...（步骤已截断）"
 
@@ -180,7 +183,7 @@ class AgentRunMemory:
         call_id = call_id or f"call_{uuid.uuid4().hex[:10]}"
 
         # ── 1. assistant 发起工具调用 ─────────────────────────
-        args_str = json.dumps(tool_args, ensure_ascii=False)
+        args_str = json.dumps(tool_args, ensure_ascii=False, default=str)
         if len(args_str) > 500:
             # 入参超长时截断，防止 Prompt 爆长
             args_str = args_str[:500] + "...}"
@@ -207,7 +210,7 @@ class AgentRunMemory:
 
         # ── 2. tool 返回结果 ──────────────────────────────────
         if isinstance(tool_result, (dict, list)):
-            result_str = json.dumps(tool_result, ensure_ascii=False)
+            result_str = json.dumps(tool_result, ensure_ascii=False, default=str)
         else:
             result_str = str(tool_result) if tool_result is not None else ""
 
@@ -275,7 +278,7 @@ class AgentRunMemory:
 
         # tool 返回结果
         if isinstance(skill_result, (dict, list)):
-            result_str = json.dumps(skill_result, ensure_ascii=False)
+            result_str = json.dumps(skill_result, ensure_ascii=False, default=str)
         else:
             result_str = str(skill_result) if skill_result is not None else ""
 
@@ -465,6 +468,12 @@ class AgentRunMemory:
             {"role": "user", "content": f"任务目标: {self.task}"},
         ]
 
+        if self.context_messages:
+            messages.extend(self.context_messages)
+            logger.info(
+                f"{Fore.CYAN}[记忆读取] 规划引擎注入 {len(self.context_messages)} 条前置上下文记忆{Style.RESET_ALL}"
+            )
+
         # 注入历史记忆（只含当前轮之前的记录）
         history_msgs = [
             m.to_openai_dict()
@@ -555,6 +564,12 @@ class AgentRunMemory:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"任务目标: {self.task}"},
         ]
+
+        if self.context_messages:
+            messages.extend(self.context_messages)
+            logger.info(
+                f"{Fore.CYAN}[记忆读取] 反思引擎注入 {len(self.context_messages)} 条前置上下文记忆{Style.RESET_ALL}"
+            )
 
         # 包含当前轮的执行记录，但排除当前轮的 reflection 消息自身
         history_msgs = [

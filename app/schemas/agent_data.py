@@ -49,6 +49,16 @@ class ChatResponse(BaseModel):
 class AgentExecuteRequest(BaseModel):
     """Agent 执行请求"""
     task: str = Field(..., description="要执行的任务描述")
+    
+    # NOTE: conversation_id 是跨任务“会话级”记忆的唯一标识符。
+    # 当用户连续在同一个聊天窗口下发多个任务时，前端需传入此 ID。
+    # 后端会根据此 ID 检索历史任务的执行摘要，并在规划阶段注入给 LLM，
+    # 使其能感知到上一项任务结论，避免重复调用工具或忘记上下文要素。
+    conversation_id: Optional[str] = Field(
+        None, 
+        description="会话 ID（用于实现跨任务的会话级上下文和记忆衔接）"
+    )
+    
     conversation_history: Optional[List[Dict[str, str]]] = Field(
         default_factory=list,
         description="对话历史记录"

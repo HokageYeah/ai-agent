@@ -233,7 +233,7 @@
                       <div v-if="item.event.data?.steps?.length" class="steps-list">
                         <div class="steps-label">执行计划</div>
                         <div v-for="(step, sIdx) in (item.event.data.steps || [])" :key="sIdx" class="step-item">
-                          <span class="step-number">{{ sIdx + 1 }}</span>
+                          <span class="step-number">{{ Number(sIdx) + 1 }}</span>
                           <el-tag v-if="step.action === 'tool'" size="small" type="success" effect="plain">
                             <el-icon style="margin-right:4px"><Promotion /></el-icon>{{ step.tool_name }}
                           </el-tag>
@@ -706,7 +706,7 @@
                           :key="'sug-'+sIdx"
                           style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; font-size: 0.83rem; padding: 6px 10px; background: var(--color-bg-secondary); border-radius: 6px;"
                         >
-                          <span style="color: var(--el-color-primary); font-weight: 700; flex-shrink: 0;">{{ sIdx + 1 }}.</span>
+                          <span style="color: var(--el-color-primary); font-weight: 700; flex-shrink: 0;">{{ Number(sIdx) + 1 }}.</span>
                           <span style="color: var(--color-text-primary);">{{ sug }}</span>
                         </div>
                       </div>
@@ -924,6 +924,23 @@
 
           <!-- 底部：任务输入区（像聊天框一样固定在底部） -->
           <div class="task-section" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--color-border); background: var(--color-bg-primary); z-index: 10;">
+            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+              <label class="input-label" style="margin-bottom: 0;">会话 ID</label>
+              <el-input 
+                v-model="conversationId" 
+                placeholder="可选：输入相同会话 ID 以保持多轮任务的上下文记忆" 
+                :disabled="executing"
+                clearable
+                style="width: 350px;" 
+              >
+                <template #prefix>
+                  <el-icon><ChatDotRound /></el-icon>
+                </template>
+              </el-input>
+              <el-tooltip content="相同会话 ID 下的多次任务，Agent 会记得你们之前聊过的内容；留空则表示全新会话" placement="top">
+                <el-icon style="color: var(--color-text-muted); cursor: help;"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </div>
             <div style="display: flex; justify-content: space-between; align-items: flex-end;">
               <label class="input-label">任务指令</label>
               <div class="quick-examples">
@@ -1039,6 +1056,7 @@ const agents = ref<AgentInfo[]>([])
 const selectedAgent = ref<AgentInfo | null>(null)
 const loadingAgents = ref<boolean>(false)
 const taskInput = ref<string>('')
+const conversationId = ref<string>('')
 const executing = ref<boolean>(false)
 const executeResult = ref<AgentExecuteResponse | null>(null)
 const executeError = ref<string>('')
@@ -1601,6 +1619,7 @@ async function handleExecute(): Promise<void> {
       selectedAgent.value.agent_id,
       {
         task: taskInput.value,
+        conversation_id: conversationId.value.trim() || undefined,
       },
       // 消息回调
       (event) => {

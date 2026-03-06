@@ -1,0 +1,242 @@
+✓ 已加载环境变量: /Users/yuye/YeahWork/AIAgent项目/ai-agent/.env
+
+======================================================================
+  AI Agent 全流程端到端集成测试 (Phase 0 - Phase 6)
+  时间: 2026-03-06 18:51:31
+  Provider: OPENAI    Model: deepseek-v3.2
+  执行阶段: [5]
+======================================================================
+
+  ▶ 初始化 LLM Hub — provider=openai, model=deepseek-v3.2
+  ✓ LLM Hub 初始化完成
+
+======================================================================
+【阶段五】LangGraph / Chat Service / Automation Service（真实 API）
+======================================================================
+
+2026-03-06 18:51:32 | INFO     | app.skills.library.data_analysis:<module>:61 - [数据分析技能] DATA_ANALYSIS_SKILL 已定义，参数元数据加载完成
+2026-03-06 18:51:32 | INFO     | app.skills.library.code_generation:<module>:77 - [代码生成技能] CODE_GENERATION_SKILL 已定义，参数元数据加载完成
+2026-03-06 18:51:32 | INFO     | app.skills.library.text_writing:<module>:86 - [文本写作技能] TEXT_WRITING_SKILL 已定义，参数元数据加载完成
+2026-03-06 18:51:32 | INFO     | app.skills.library.translation:<module>:66 - [翻译技能] TRANSLATION_SKILL 已定义，参数元数据加载完成
+2026-03-06 18:51:32 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-03-06 18:51:32 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-03-06 18:51:32 | INFO     | app.skills.manager:__init__:15 - SkillManager initialized.
+2026-03-06 18:51:32 | DEBUG    | app.skills.manager:register_skill:28 - Registered skill: 文本写作 (text_writing)
+  ▶ ChatService：多轮对话与短期记忆
+2026-03-06 18:51:32 | INFO     | app.services.chat_service:__init__:42 - 对话服务初始化完成
+2026-03-06 18:51:32 | INFO     | app.services.chat_service:chat:63 - 处理对话请求 - 会话ID: phase5_chat_001
+2026-03-06 18:51:32 | INFO     | app.services.chat_service:chat:66 - 用户消息: 你好，我叫小明，请记住我的名字。
+2026-03-06 18:51:32 | DEBUG    | app.services.chat_service:chat:71 - 获取到 0 条历史消息
+2026-03-06 18:51:32 | DEBUG    | app.services.chat_service:chat:95 - 构建消息列表，共 1 条消息
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:__init__:69 - 创建推理配置: model=deepseek-v3.2, stream=False, temperature=0.7
+2026-03-06 18:51:32 | INFO     | app.services.chat_service:chat:108 - 调用 LLM 进行推理...
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:infer:234 - [req-000001] 开始推理请求: model=deepseek-v3.2, stream=False, messages_count=1
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:infer:241 - [req-000001] 步骤 1/4: 构建 Prompt
+2026-03-06 18:51:32 | DEBUG    | app.llm_hub.prompt_builder:build:30 - Building prompt with 1 messages
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:infer:251 - [req-000001] 步骤 2/4: 选择模型
+模型引擎选择模型config.model: deepseek-v3.2
+模型引擎选择模型model_metadata: model_id='deepseek-v3.2' provider='openai' model_name='deepseek-v3.2' capabilities=['chat', 'function_call'] context_window=16385 max_output_tokens=4096 is_available=True
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:_select_model:643 - 选择模型: deepseek-v3.2 (供应商: openai)
+2026-03-06 18:51:32 | INFO     | app.llm_hub.inference:infer:267 - [req-000001] 步骤 3/4: 执行推理 (供应商: OpenAIProvider)
+2026-03-06 18:51:32 | INFO     | app.llm_hub.providers.openai:chat:136 - 发送对话请求到 OpenAI，模型: deepseek-v3.2, 温度: 0.7, 消息数: 1
+2026-03-06 18:51:33 | DEBUG    | app.llm_hub.providers.openai:chat:168 - [OpenAI] 原始响应: id=8739e68a-cc52-4d73-b8a7-ca61bf47376a, model=deepseek-v3.2, tokens=42
+2026-03-06 18:51:33 | INFO     | app.llm_hub.providers.openai:chat:189 - OpenAI 对话响应成功，响应ID: 8739e68a-cc52-4d73-b8a7-ca61bf47376a
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:275 - [req-000001] 首次推理完成，耗时: 1117.63ms
+2026-03-06 18:51:33 | DEBUG    | app.llm_hub.inference:infer:308 - [req-000001] 工具调用网关未配置，跳过工具调用循环
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:317 - [req-000001] 步骤 4/4: 后处理结果
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:_extract_content:899 - 提取内容成功: [{'finish_reason': 'stop', 'index': 0, 'logprobs': None, 'message': {'content': '你好，小明！我已经记住了你的名字啦～很高兴认识你，如果有任何问题或需要帮助的地方，随时告诉我哦！ 😊', 'refusal': None, 'role': 'assistant', 'annotations': None, 'audio': None, 'function_call': None, 'tool_calls': []}}]
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:_postprocess_result:686 - 后处理完成: content_len=50, finish_reason=stop
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:323 - [req-000001] 推理请求成功完成，结果长度: 50 字符
+2026-03-06 18:51:33 | INFO     | app.services.chat_service:chat:125 - 对话处理成功
+2026-03-06 18:51:33 | DEBUG    | app.services.chat_service:chat:126 - 响应: 你好，小明！我已经记住了你的名字啦～很高兴认识你，如果有任何问题或需要帮助的地方，随时告诉我哦！ 😊...
+    第一轮 AI: 你好，小明！我已经记住了你的名字啦～很高兴认识你，如果有任何问题或需要帮助的地方，随时告诉我哦！ 😊...
+2026-03-06 18:51:33 | INFO     | app.services.chat_service:chat:63 - 处理对话请求 - 会话ID: phase5_chat_001
+2026-03-06 18:51:33 | INFO     | app.services.chat_service:chat:66 - 用户消息: 我刚才自我介绍说我叫什么名字？
+2026-03-06 18:51:33 | DEBUG    | app.services.chat_service:chat:71 - 获取到 2 条历史消息
+2026-03-06 18:51:33 | DEBUG    | app.services.chat_service:chat:95 - 构建消息列表，共 3 条消息
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:__init__:69 - 创建推理配置: model=deepseek-v3.2, stream=False, temperature=0.7
+2026-03-06 18:51:33 | INFO     | app.services.chat_service:chat:108 - 调用 LLM 进行推理...
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:234 - [req-000002] 开始推理请求: model=deepseek-v3.2, stream=False, messages_count=3
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:241 - [req-000002] 步骤 1/4: 构建 Prompt
+2026-03-06 18:51:33 | DEBUG    | app.llm_hub.prompt_builder:build:30 - Building prompt with 3 messages
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:251 - [req-000002] 步骤 2/4: 选择模型
+模型引擎选择模型config.model: deepseek-v3.2
+模型引擎选择模型model_metadata: model_id='deepseek-v3.2' provider='openai' model_name='deepseek-v3.2' capabilities=['chat', 'function_call'] context_window=16385 max_output_tokens=4096 is_available=True
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:_select_model:643 - 选择模型: deepseek-v3.2 (供应商: openai)
+2026-03-06 18:51:33 | INFO     | app.llm_hub.inference:infer:267 - [req-000002] 步骤 3/4: 执行推理 (供应商: OpenAIProvider)
+2026-03-06 18:51:33 | INFO     | app.llm_hub.providers.openai:chat:136 - 发送对话请求到 OpenAI，模型: deepseek-v3.2, 温度: 0.7, 消息数: 3
+2026-03-06 18:51:34 | DEBUG    | app.llm_hub.providers.openai:chat:168 - [OpenAI] 原始响应: id=eb6bc128-d542-4641-8928-3eb57451197d, model=deepseek-v3.2, tokens=78
+2026-03-06 18:51:34 | INFO     | app.llm_hub.providers.openai:chat:189 - OpenAI 对话响应成功，响应ID: eb6bc128-d542-4641-8928-3eb57451197d
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:275 - [req-000002] 首次推理完成，耗时: 1237.18ms
+2026-03-06 18:51:34 | DEBUG    | app.llm_hub.inference:infer:308 - [req-000002] 工具调用网关未配置，跳过工具调用循环
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:317 - [req-000002] 步骤 4/4: 后处理结果
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:_extract_content:899 - 提取内容成功: [{'finish_reason': 'stop', 'index': 0, 'logprobs': None, 'message': {'content': '你刚才自我介绍时说你的名字是**小明**。我已经记下来啦～有什么需要帮忙的随时告诉我哦！ 😊', 'refusal': None, 'role': 'assistant', 'annotations': None, 'audio': None, 'function_call': None, 'tool_calls': []}}]
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:_postprocess_result:686 - 后处理完成: content_len=46, finish_reason=stop
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:323 - [req-000002] 推理请求成功完成，结果长度: 46 字符
+2026-03-06 18:51:34 | INFO     | app.services.chat_service:chat:125 - 对话处理成功
+2026-03-06 18:51:34 | DEBUG    | app.services.chat_service:chat:126 - 响应: 你刚才自我介绍时说你的名字是**小明**。我已经记下来啦～有什么需要帮忙的随时告诉我哦！ 😊...
+    第二轮 AI: 你刚才自我介绍时说你的名字是**小明**。我已经记下来啦～有什么需要帮忙的随时告诉我哦！ 😊...
+  ✓ [PASS] ChatService 多轮对话记忆 — 成功记住用户名 '小明'
+  ▶ AutomationService：代码生成（model=deepseek-v3.2）
+当前环境: development
+加载配置文件: .env
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:__init__:51 - 自动化服务初始化完成
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:255 - 开始代码生成自动化
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:302 - 使用直接 LLM 生成
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:328 - 需求: 请用 Python 写一个计算两数之和的函数 add(a, b)
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:329 - 编程语言: python
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:330 - 框架: None
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:331 - 代码配置: {'model': 'deepseek-v3.2'}
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:332 - 代码生成 Prompt: 请使用 python 生成代码：
+
+需求：
+请用 Python 写一个计算两数之和的函数 add(a, b)
+
+代码要求：
+1. 代码风格：清晰且符合最佳实践
+2. 包含必要的注释和文档字符串：是
+3. 包含单元测试：否
+4. 处理边界情况和错误
+5. 确保代码可以直接运行
+
+请生成完整的代码。
+
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:__init__:69 - 创建推理配置: model=deepseek-v3.2, stream=False, temperature=0.3
+2026-03-06 18:51:34 | INFO     | app.services.automation_service:code_generation:342 - 调用 LLM 生成代码...
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:234 - [req-000003] 开始推理请求: model=deepseek-v3.2, stream=False, messages_count=1
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:241 - [req-000003] 步骤 1/4: 构建 Prompt
+2026-03-06 18:51:34 | DEBUG    | app.llm_hub.prompt_builder:build:30 - Building prompt with 1 messages
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:251 - [req-000003] 步骤 2/4: 选择模型
+模型引擎选择模型config.model: deepseek-v3.2
+模型引擎选择模型model_metadata: model_id='deepseek-v3.2' provider='openai' model_name='deepseek-v3.2' capabilities=['chat', 'function_call'] context_window=16385 max_output_tokens=4096 is_available=True
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:_select_model:643 - 选择模型: deepseek-v3.2 (供应商: openai)
+2026-03-06 18:51:34 | INFO     | app.llm_hub.inference:infer:267 - [req-000003] 步骤 3/4: 执行推理 (供应商: OpenAIProvider)
+2026-03-06 18:51:34 | INFO     | app.llm_hub.providers.openai:chat:136 - 发送对话请求到 OpenAI，模型: deepseek-v3.2, 温度: 0.3, 消息数: 1
+2026-03-06 18:51:48 | DEBUG    | app.llm_hub.providers.openai:chat:168 - [OpenAI] 原始响应: id=cc71714b-2e3a-4079-a39c-4593bfbaaf65, model=deepseek-v3.2, tokens=769
+2026-03-06 18:51:48 | INFO     | app.llm_hub.providers.openai:chat:189 - OpenAI 对话响应成功，响应ID: cc71714b-2e3a-4079-a39c-4593bfbaaf65
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:275 - [req-000003] 首次推理完成，耗时: 13913.45ms
+2026-03-06 18:51:48 | DEBUG    | app.llm_hub.inference:infer:308 - [req-000003] 工具调用网关未配置，跳过工具调用循环
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:317 - [req-000003] 步骤 4/4: 后处理结果
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:_extract_content:899 - 提取内容成功: [{'finish_reason': 'stop', 'index': 0, 'logprobs': None, 'message': {'content': '```python\ndef add(a, b):\n    """\n    计算两个数的和\n    \n    参数:\n    a (int, float): 第一个数字\n    b (int, float): 第二个数字\n    \n    返回:\n    int, float: 两个数字的和\n    \n    异常:\n    TypeError: 当输入参数不是数字类型时抛出\n    \n    示例:\n    >>> add(2, 3)\n    5\n    >>> add(2.5, 3.7)\n    6.2\n    >>> add(-5, 10)\n    5\n    """\n    # 检查输入参数是否为数字类型\n    if not isinstance(a, (int, float)):\n        raise TypeError(f"参数a必须是数字类型，当前类型为: {type(a).__name__}")\n    \n    if not isinstance(b, (int, float)):\n        raise TypeError(f"参数b必须是数字类型，当前类型为: {type(b).__name__}")\n    \n    # 计算并返回两数之和\n    return a + b\n\n\n# 测试代码\nif __name__ == "__main__":\n    # 正常情况测试\n    print("正常情况测试:")\n    print(f"add(2, 3) = {add(2, 3)}")           # 整数相加\n    print(f"add(2.5, 3.7) = {add(2.5, 3.7)}")   # 浮点数相加\n    print(f"add(-5, 10) = {add(-5, 10)}")       # 负数相加\n    print(f"add(0, 0) = {add(0, 0)}")           # 零相加\n    \n    # 边界情况测试\n    print("\\n边界情况测试:")\n    print(f"add(1.5, 2) = {add(1.5, 2)}")       # 混合类型相加\n    print(f"add(-1.5, -2.5) = {add(-1.5, -2.5)}") # 负浮点数相加\n    \n    # 错误情况测试\n    print("\\n错误情况测试:")\n    try:\n        add("2", 3)\n    except TypeError as e:\n        print(f"错误捕获: {e}")\n    \n    try:\n        add(2, "3")\n    except TypeError as e:\n        print(f"错误捕获: {e}")\n    \n    try:\n        add([1], 2)\n    except TypeError as e:\n        print(f"错误捕获: {e}")\n```\n\n这个代码实现了以下功能：\n\n1. **清晰的函数定义**：函数名为 `add`，参数为 `a` 和 `b`\n2. **完整的文档字符串**：包含参数说明、返回值说明、异常说明和示例\n3. **错误处理**：检查输入参数是否为数字类型，如果不是则抛出 `TypeError`\n4. **边界情况处理**：\n   - 整数和浮点数相加\n   - 正数和负数相加\n   - 零值相加\n   - 混合类型相加\n5. **可直接运行**：包含测试代码，可以直接执行查看结果\n\n代码风格符合 Python 最佳实践，使用了适当的注释和错误处理机制。', 'refusal': None, 'role': 'assistant', 'annotations': None, 'audio': None, 'function_call': None, 'tool_calls': []}}]
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:_postprocess_result:686 - 后处理完成: content_len=1586, finish_reason=stop
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:323 - [req-000003] 推理请求成功完成，结果长度: 1586 字符
+2026-03-06 18:51:48 | INFO     | app.services.automation_service:code_generation:349 - 代码生成完成
+    生成代码片段: ```python
+def add(a, b):
+    """
+    计算两个数的和
+    
+    参数:
+    a (int, float): 第一...
+  ✓ [PASS] AutomationService 代码生成 — 成功生成 Python 代码
+  ▶ LangGraphAgentExecutor：完整 plan→execute→reflect 循环（model=deepseek-v3.2）
+2026-03-06 18:51:48 | INFO     | app.agents.planning:__init__:102 - 规划引擎初始化完成
+2026-03-06 18:51:48 | INFO     | app.agents.execution:__init__:110 - 执行引擎初始化完成 [工具网关: 未配置，使用直接调用模式]
+2026-03-06 18:51:48 | INFO     | app.agents.reflection:__init__:89 - 反思引擎初始化完成
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:_build_graph:308 - 构建 LangGraph 状态图
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:_build_graph:351 - 状态图构建完成
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:__init__:145 - LangGraph Agent 执行器初始化完成 [工具网关: 未配置]
+    任务: 告诉我今天是几月几日，并写一句关于时间的名言。
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:execute:1509 - 开始执行 Agent 任务 - Agent: LangGraph 测试 Agent
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:execute:1512 - 任务: 告诉我今天是几月几日，并写一句关于时间的名言。
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:execute:1563 - 开始执行状态图，recursion_limit=30，max_iterations=5
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:_plan_node:373 - [Plan Node] 开始规划 (迭代 0)
+2026-03-06 18:51:48 | INFO     | app.agents.langgraph_executor:_plan_node:423 - [Plan Node] Agent 'LangGraph 测试 Agent' 可用工具: ['calculator', 'datetime'] | 可用技能: ['text_writing']
+2026-03-06 18:51:48 | INFO     | app.agents.planning:create_plan:138 - 开始为 Agent 'LangGraph 测试 Agent' 创建执行计划
+2026-03-06 18:51:48 | INFO     | app.agents.planning:create_plan:154 - 调用 LLM 生成计划...
+2026-03-06 18:51:48 | DEBUG    | app.agents.planning:create_plan:170 - [规划引擎] 工具定义已过滤: 授权 2/2 个（过滤掉了未授权工具）
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:__init__:69 - 创建推理配置: model=deepseek-v3.2, stream=False, temperature=0.7
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:491 - [记忆读取] 首次规划，无历史记忆注入
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:498 - [记忆读取] 规划 messages 组装完成，共 3 条 (其中历史记忆 0 条)
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:505 - ────────────────────────────────────────────────────────────
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:506 - [传给LLM的messages结构 - 规划引擎]
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:528 -   [0] role=system | content='你是 LangGraph 测试 Agent，用于阶段五测试  角色定义: 你是一个智能助手  可用工具: - calculator: 执行数学计算。支持基本运算、三角函数、对数、指数、统计等。输入表达式，返回计算结果。 - datetime'
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:528 -   [1] role=user | content='任务目标: 告诉我今天是几月几日，并写一句关于时间的名言。'
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:528 -   [2] role=user | content='请基于以上历史记录（包含之前各轮的执行结果、工具调用结果和反思结论），制定本轮的执行计划。  请只返回 JSON，不要包含其他文本。'
+2026-03-06 18:51:48 | INFO     | app.memory.agent_run_memory:build_messages_for_planning:532 - ────────────────────────────────────────────────────────────
+2026-03-06 18:51:48 | INFO     | app.agents.planning:create_plan:200 - [规划引擎] 使用 AgentRunMemory messages 模式，共 3 条消息（含历史记忆），iteration=0
+2026-03-06 18:51:48 | INFO     | app.agents.planning:create_plan:217 - [规划引擎] 正在调用 LLM 生成计划 (模型=deepseek-v3.2, messages条数=3)
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:234 - [req-000004] 开始推理请求: model=deepseek-v3.2, stream=False, messages_count=3
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:241 - [req-000004] 步骤 1/4: 构建 Prompt
+2026-03-06 18:51:48 | DEBUG    | app.llm_hub.prompt_builder:build:30 - Building prompt with 3 messages
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:251 - [req-000004] 步骤 2/4: 选择模型
+模型引擎选择模型config.model: deepseek-v3.2
+模型引擎选择模型model_metadata: model_id='deepseek-v3.2' provider='openai' model_name='deepseek-v3.2' capabilities=['chat', 'function_call'] context_window=16385 max_output_tokens=4096 is_available=True
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:_select_model:643 - 选择模型: deepseek-v3.2 (供应商: openai)
+2026-03-06 18:51:48 | INFO     | app.llm_hub.inference:infer:267 - [req-000004] 步骤 3/4: 执行推理 (供应商: OpenAIProvider)
+2026-03-06 18:51:48 | INFO     | app.llm_hub.providers.openai:chat:136 - 发送对话请求到 OpenAI，模型: deepseek-v3.2, 温度: 0.7, 消息数: 3
+2026-03-06 18:51:52 | DEBUG    | app.llm_hub.providers.openai:chat:168 - [OpenAI] 原始响应: id=e8142b9d-f473-4da1-9a44-2c30b613242c, model=deepseek-v3.2, tokens=1524
+2026-03-06 18:51:52 | INFO     | app.llm_hub.providers.openai:chat:189 - OpenAI 对话响应成功，响应ID: e8142b9d-f473-4da1-9a44-2c30b613242c
+2026-03-06 18:51:52 | INFO     | app.llm_hub.inference:infer:275 - [req-000004] 首次推理完成，耗时: 3900.72ms
+2026-03-06 18:51:52 | DEBUG    | app.llm_hub.inference:infer:308 - [req-000004] 工具调用网关未配置，跳过工具调用循环
+2026-03-06 18:51:52 | INFO     | app.llm_hub.inference:infer:317 - [req-000004] 步骤 4/4: 后处理结果
+2026-03-06 18:51:52 | INFO     | app.llm_hub.inference:_extract_content:899 - 提取内容成功: [{'finish_reason': 'stop', 'index': 0, 'logprobs': None, 'message': {'content': '{\n  "steps": [\n    {\n      "action": "tool",\n      "tool_name": "datetime",\n      "params": {\n        "operation": "today",\n        "format": "M月d日",\n        "lang": "zh"\n      }\n    },\n    {\n      "action": "skill",\n      "skill_id": "text_writing",\n      "params": {\n        "content": "关于时间的名言：",\n        "style": "quote",\n        "topic": "时间名言"\n      }\n    },\n    {\n      "action": "final_answer",\n      "content": "提供今天的日期和一句时间名言"\n    }\n  ],\n  "reasoning": "首先使用 datetime 工具获取今天的日期（格式化为月日），然后使用 text_writing 技能写一句关于时间的名言，最后综合两者给出最终答案。"\n}', 'refusal': None, 'role': 'assistant', 'annotations': None, 'audio': None, 'function_call': None, 'tool_calls': []}}]
+2026-03-06 18:51:52 | INFO     | app.llm_hub.inference:_postprocess_result:686 - 后处理完成: content_len=543, finish_reason=stop
+2026-03-06 18:51:52 | INFO     | app.llm_hub.inference:infer:323 - [req-000004] 推理请求成功完成，结果长度: 543 字符
+2026-03-06 18:51:52 | INFO     | app.agents.planning:create_plan:227 - [规划引擎] LLM 返回原始规划内容:
+2026-03-06 18:51:52 | INFO     | app.agents.planning:create_plan:228 - {
+  "steps": [
+    {
+      "action": "tool",
+      "tool_name": "datetime",
+      "params": {
+        "operation": "today",
+        "format": "M月d日",
+        "lang": "zh"
+      }
+    },
+    {
+      "action": "skill",
+      "skill_id": "text_writing",
+      "params": {
+        "content": "关于时间的名言：",
+        "style": "quote",
+        "topic": "时间名言"
+      }
+    },
+    {
+      "action": "final_answer",
+      "content": "提供今天的日期和一句时间名言"
+    }
+  ],
+  "reasoning": "首先使用 datetime 工具获取今天的日期（格式化为月日），然后使用 text_writing 技能写一句关于时间的名言，最后综合两者给出最终答案。"
+}
+2026-03-06 18:51:52 | DEBUG    | app.agents.planning:_parse_plan:587 - 解析 LLM 输出为计划
+2026-03-06 18:51:52 | INFO     | app.agents.planning:_parse_plan:614 - 计划解析成功，共 3 个步骤
+2026-03-06 18:51:52 | INFO     | app.agents.planning:create_plan:235 - 计划创建成功，共 3 个步骤
+2026-03-06 18:51:52 | INFO     | app.agents.langgraph_executor:_plan_node:491 - [Plan Node] 计划创建完成
+2026-03-06 18:51:52 | DEBUG    | app.memory.agent_run_memory:write_plan:156 - [记忆写入] write_plan iteration=0, steps=3
+2026-03-06 18:51:52 | INFO     | app.agents.langgraph_executor:_plan_node:527 - [记忆写入] 规划产出已写入 run_memory, iteration=0, steps=3
+2026-03-06 18:51:52 | INFO     | app.agents.langgraph_executor:_execute_node:552 - [Execute Node] 开始执行计划 (迭代 0)
+2026-03-06 18:51:52 | INFO     | app.agents.execution:execute_plan:132 - 开始执行计划，共 3 个步骤
+2026-03-06 18:51:52 | INFO     | app.agents.execution:execute_plan:144 - 执行步骤 1/3: action=tool
+2026-03-06 18:51:52 | INFO     | app.agents.execution:_execute_tool:595 - 调用工具: datetime
+2026-03-06 18:51:52 | INFO     | app.tools.builtin.datetime:execute:335 - [DateTimeTool] 执行操作: today
+2026-03-06 18:51:52 | INFO     | app.agents.execution:_execute_tool:699 - 工具 datetime 执行成功
+2026-03-06 18:51:52 | INFO     | app.agents.execution:execute_plan:144 - 执行步骤 2/3: action=skill
+2026-03-06 18:51:52 | INFO     | app.agents.execution:_execute_skill:740 - 调用技能: text_writing, 原始参数: {'content': '关于时间的名言：', 'style': 'quote', 'topic': '时间名言'}
+2026-03-06 18:51:52 | ERROR    | app.agents.execution:_execute_skill:909 - 技能 text_writing 执行失败: Object of type date is not JSON serializable
+2026-03-06 18:51:52 | WARNING  | app.agents.execution:execute_plan:218 - 步骤 2 执行失败: Object of type date is not JSON serializable
+2026-03-06 18:51:52 | INFO     | app.agents.execution:execute_plan:144 - 执行步骤 3/3: action=final_answer
+2026-03-06 18:51:52 | INFO     | app.agents.execution:execute_plan:186 - [执行引擎] 存在工具/委派执行结果，调用 LLM 合成真实答案...
+2026-03-06 18:51:52 | ERROR    | app.agents.execution:execute_plan:238 - 执行计划时发生错误: Object of type date is not JSON serializable
+2026-03-06 18:51:52 | INFO     | app.agents.langgraph_executor:_execute_node:772 - [Execute Node] 计划执行完成
+2026-03-06 18:51:52 | DEBUG    | app.agents.langgraph_executor:_execute_node:779 - [Execute Node] 发送步骤事件 1/3: action=tool
+2026-03-06 18:51:52 | DEBUG    | app.agents.langgraph_executor:_execute_node:779 - [Execute Node] 发送步骤事件 2/3: action=skill
+2026-03-06 18:51:52 | DEBUG    | app.agents.langgraph_executor:_execute_node:779 - [Execute Node] 发送步骤事件 3/3: action=final_answer
+2026-03-06 18:51:52 | ERROR    | app.agents.langgraph_executor:execute:1614 - Agent 任务执行失败: Object of type date is not JSON serializable
+  ✗ [FAIL] LangGraphAgentExecutor 执行
+Traceback (most recent call last):
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/tests/integration/test_end_to_end_phase0_to_6.py", line 766, in test_phase5
+    assert "result" in exec_r
+           ^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+【测试结果汇总】
+  通过: 2   失败: 1   跳过: 0
+======================================================================
+
+  [PASS] ChatService 多轮对话记忆: 成功记住用户名 '小明'
+  [PASS] AutomationService 代码生成: 成功生成 Python 代码
+  [FAIL] LangGraphAgentExecutor 执行

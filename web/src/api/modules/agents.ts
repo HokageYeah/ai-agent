@@ -92,6 +92,7 @@ export function executeAgentStream(
     },
     body: JSON.stringify({
       task: data.task,
+      conversation_id: data.conversation_id, // 新增会话 ID 传递
       conversation_history: data.conversation_history || [],
       config: data.config || {}
     }),
@@ -200,7 +201,7 @@ export function executeAgentStream(
      * 每次 read() 获取下一个数据块，解码后追加到 buffer 并尝试解析消息。
      */
     function read() {
-      reader.read().then(({ done, value }) => {
+      reader?.read().then(({ done, value }) => {
         if (done) {
           // 流结束：处理 buffer 中剩余的内容
           if (buffer.trim()) {

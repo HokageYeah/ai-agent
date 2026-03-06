@@ -371,37 +371,13 @@ class ToolHub:
 
 ## 5. Memory System（记忆系统）
 
-### 5.1 短期记忆（会话上下文）
+### 5.1 运行级记忆 (AgentRunMemory)
 
-```python
-class ShortTermMemory:
-    """短期记忆（会话上下文）"""
-    
-    def __init__(self, max_messages: int = 10):
-        self.max_messages = max_messages
-        self.sessions: Dict[str, list[dict]] = {}
-    
-    def add_message(self, conversation_id: str, message: dict):
-        """添加消息"""
-        if conversation_id not in self.sessions:
-            self.sessions[conversation_id] = []
-        
-        self.sessions[conversation_id].append(message)
-        
-        # 保持窗口大小
-        if len(self.sessions[conversation_id]) > self.max_messages:
-            self.sessions[conversation_id] = \
-                self.sessions[conversation_id][-self.max_messages:]
-    
-    def get_context(self, conversation_id: str) -> list[dict]:
-        """获取上下文"""
-        return self.sessions.get(conversation_id, []).copy()
-    
-    def clear(self, conversation_id: str):
-        """清空会话"""
-        if conversation_id in self.sessions:
-            self.sessions[conversation_id] = []
-```
+存储单次 `execute` 任务过程中的详细行为消息（包括计划、工具调用、反思结论等），格式兼容 OpenAI `messages` 数组格式，便于在整个流程引擎的计算节点（Planning Engine, Execution Engine, Reflection Engine）间流转。
+
+### 5.2 会话级任务摘要记忆 (AgentSessionMemory)
+
+存储跨次任务的压缩摘要条目。每次 `execute` 完成后，系统会提取该次任务的核心结论和数据特征（TaskSummaryEntry），并追加至该会话的记忆仓库中。在下一次执行新任务时，这些摘要将作为前置背景上下文（conversation_history），提供给大模型参考，实现对话的连贯度与避免信息重复获取。
 
 ---
 
@@ -1200,9 +1176,8 @@ class LangGraphAgentExecutor:
 class ChatService:
     """对话服务"""
     
-    def __init__(self, llm_hub, memory: ShortTermMemory):
+    def __init__(self, llm_hub):
         self.llm_hub = llm_hub
-        self.memory = memory
     
     async def chat(
         self,
@@ -1212,8 +1187,9 @@ class ChatService:
     ) -> dict:
         """处理对话"""
         
-        # 1. 获取上下文
-        context = self.memory.get_context(conversation_id)
+        # 1. 获取上下文（从 Redis 或数据库获取，目前存在内存中）
+        from app.services.chat_service import _chat_memory
+        context = _chat_memory.get(conversation_id, [])
         
         # 2. 构建消息
         messages = context + [{"role": "user", "content": message}]
@@ -1226,8 +1202,10 @@ class ChatService:
         response = await self.llm_hub.infer(messages=messages, config={})
         
         # 5. 更新记忆
-        self.memory.add_message(conversation_id, {"role": "user", "content": message})
-        self.memory.add_message(conversation_id, {"role": "assistant", "content": response.content})
+        _chat_memory.setdefault(conversation_id, []).extend([
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": response.content}
+        ])
         
         return response
 ```

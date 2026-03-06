@@ -39,7 +39,7 @@
 │   ├── llm_hub/          # 底层 LLM 提供者核心工厂
 │   │   ├── providers/   # 不同的厂商适配文件 (OpenAI, Anthropic 等)
 │   │   ├── inference.py, prompt_builder.py # 通用大模型流式推理与提示词生成封装
-│   ├── memory/           # 记忆力管理层 (如 短期多轮记忆上下文提取)
+│   ├── memory/           # 记忆力管理层 (如 运行级详尽记忆与会话级任务摘要提取)
 │   ├── middleware/       # 拦截器与自定义异常处理器 (含报错美化格式转换)
 │   ├── models/           # 数据库模型对象 (ORM 映射定义)
 │   ├── schemas/          # Pydantic 校验模型层 (统一通信数据结构)
@@ -107,7 +107,7 @@ graph TD
     %% 核心基础设施
     subgraph InfraLayer ["大模型基座与基础设施 (app/llm_hub, app/memory)"]
         LLMHub["InferenceEngine (大模型路由网关)"]
-        Memory["Short-Term Memory (会话上下文)"]
+        Memory["Memory System (运行级记忆与会话级摘要)"]
     end
     
     %% 数据流向

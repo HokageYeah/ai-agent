@@ -31,6 +31,7 @@ from app.agents.planning import PlanningEngine, Plan
 from app.agents.execution import ExecutionEngine, ExecutionResult
 from app.agents.reflection import ReflectionEngine
 from app.memory.agent_run_memory import AgentRunMemory
+from app.memory.session_memory import get_session_memory, extract_summary_from_run_memory
 import asyncio
 
 
@@ -1487,6 +1488,7 @@ class LangGraphAgentExecutor:
         self,
         agent: Agent,
         task: str,
+        conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
@@ -1496,7 +1498,9 @@ class LangGraphAgentExecutor:
         Args:
             agent: Agent 实例
             task: 任务描述
-            conversation_history: 对话历史（可选）
+            conversation_id: 会话 ID（可选）。若提供，则激活会话级记忆（Session Memory），
+                             能将过往独立任务的执行摘要注入到本次任务的上下文中。
+            conversation_history: 对话历史记录（通常来自于外部对话记录系统）
             user_rejected_tools: 用户已拒绝的工具列表（可选）
             
         Returns:
@@ -1508,9 +1512,23 @@ class LangGraphAgentExecutor:
         logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
         
         try:
+            # ── 提取会话级前置记忆（Session Memory） ──
+            # 从全局的 AgentSessionMemory 获取当前会话以前的任务摘要，作为系统级历史记录前置发送。
+            session_ctx_messages = []
+            if conversation_id:
+                session_mem = get_session_memory(conversation_id)
+                session_ctx_messages = session_mem.build_context_messages()
+                if session_ctx_messages:
+                    logger.info(
+                        f"{Fore.CYAN}[会话记忆] 成功获取会话 '{conversation_id}' 的 {len(session_ctx_messages)} 条历史任务摘要，"
+                        f"将注入为本次任务的前置上下文{Style.RESET_ALL}"
+                    )
+                else:
+                    logger.debug(f"{Fore.CYAN}[会话记忆] 会话 '{conversation_id}' 无历史任务摘要{Style.RESET_ALL}")
+
             # 初始化状态
             initial_state: AgentState = {
-                "messages": conversation_history or [],
+                "messages": session_ctx_messages + (conversation_history or []),
                 "current_plan": None,
                 "tool_outputs": [],
                 "iterations": 0,
@@ -1533,7 +1551,8 @@ class LangGraphAgentExecutor:
                 "run_memory": AgentRunMemory(
                     task=task,
                     agent_id=agent.agent_id,
-                    agent_name=agent.name
+                    agent_name=agent.name,
+                    context_messages=session_ctx_messages + (conversation_history or [])
                 )
             }
             
@@ -1571,6 +1590,18 @@ class LangGraphAgentExecutor:
                     content = getattr(msg, "content", str(msg))
                     serialized_messages.append({"role": role, "content": content})
             
+            # ── 写入会话级记忆摘要 ──
+            if conversation_id:
+                try:
+                    entry = extract_summary_from_run_memory(
+                        run_memory=initial_state["run_memory"],
+                        final_result=final_state.get("final_result", {}) or {}
+                    )
+                    get_session_memory(conversation_id).append_task_summary(entry)
+                    logger.info(f"{Fore.GREEN}[会话记忆] 任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")
+                except Exception as e:
+                    logger.error(f"{Fore.RED}[会话记忆] 提取/写入任务摘要失败: {e}{Style.RESET_ALL}")
+
             # 返回最终结果
             return {
                 "success": True,
@@ -1592,6 +1623,7 @@ class LangGraphAgentExecutor:
         agent: Agent,
         task: str,
         stream_callback: Callable,
+        conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
@@ -1610,6 +1642,7 @@ class LangGraphAgentExecutor:
             agent: Agent 实例
             task: 任务描述
             stream_callback: 父级 SSE 流式回调（异步函数）
+            conversation_id: 会话 ID（可选）。子 Agent 通常不需要自己查，这里支持预留以便极端复合情况。
             conversation_history: 对话历史（可选）
             user_rejected_tools: 用户已拒绝的工具列表（可选）
 
@@ -1625,11 +1658,16 @@ class LangGraphAgentExecutor:
         )
 
         try:
+            session_ctx_messages = []
+            if conversation_id:
+                session_mem = get_session_memory(conversation_id)
+                session_ctx_messages = session_mem.build_context_messages()
+
             # 构建带流式回调的状态图（与 execute_stream 共用同一图构建逻辑）
             graph = self._build_graph(stream_callback=stream_callback)
 
             initial_state: AgentState = {
-                "messages": conversation_history or [],
+                "messages": session_ctx_messages + (conversation_history or []),
                 "current_plan": None,
                 "tool_outputs": [],
                 "iterations": 0,
@@ -1648,7 +1686,8 @@ class LangGraphAgentExecutor:
                 "run_memory": AgentRunMemory(
                     task=task,
                     agent_id=agent.agent_id,
-                    agent_name=agent.name
+                    agent_name=agent.name,
+                    context_messages=session_ctx_messages + (conversation_history or [])
                 )
             }
 
@@ -1671,6 +1710,18 @@ class LangGraphAgentExecutor:
                 f"{Fore.GREEN}[子Agent] execute_with_callback 完成，"
                 f"迭代次数={total_iterations}{Style.RESET_ALL}"
             )
+            
+            # ── 写入会话级记忆摘要 ──
+            if conversation_id:
+                try:
+                    entry = extract_summary_from_run_memory(
+                        run_memory=initial_state["run_memory"],
+                        final_result=final_result or {}
+                    )
+                    get_session_memory(conversation_id).append_task_summary(entry)
+                    logger.info(f"{Fore.GREEN}[会话记忆] 子Agent任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")
+                except Exception as e:
+                    logger.error(f"{Fore.RED}[会话记忆] 提取/写入子Agent任务摘要失败: {e}{Style.RESET_ALL}")
 
             return {
                 "success": final_result.get("status") == "success" if final_result else False,
@@ -1708,6 +1759,7 @@ class LangGraphAgentExecutor:
         self,
         agent: Agent,
         task: str,
+        conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         user_rejected_tools: Optional[List[str]] = None
     ) -> AsyncIterator[Dict[str, Any]]:
@@ -1733,7 +1785,9 @@ class LangGraphAgentExecutor:
         Args:
             agent: Agent 实例
             task: 任务描述
-            conversation_history: 对话历史（可选）
+            conversation_id: 会话 ID（可选）。如果提供，会自动读取该会话历史任务的摘要作为初始上下文。
+            conversation_history: 外部对话系统的多轮历史聊天记录（可选）
+            user_rejected_tools: 用户拒绝过的工具黑名单列表（可选）
             
         Yields:
             Dict[str, Any]: 流式事件字典，字段：
@@ -1777,11 +1831,28 @@ class LangGraphAgentExecutor:
         # ─────────────────────────────────────────────────────────────────────
         # 2. 构建带有流式回调的状态图（每次 execute_stream 创建独立图实例）
         # ─────────────────────────────────────────────────────────────────────
+        try:
+            # ── 提取会话级前置记忆（Session Memory） ──
+            session_ctx_messages = []
+            if conversation_id:
+                session_mem = get_session_memory(conversation_id)
+                session_ctx_messages = session_mem.build_context_messages()
+                if session_ctx_messages:
+                    logger.info(
+                        f"{Fore.CYAN}[会话记忆] (流式) 成功为会话 '{conversation_id}' 抽取 {len(session_ctx_messages)} 条历史任务摘要{Style.RESET_ALL}"
+                    )
+                    logger.info(
+                        f"{Fore.CYAN}[会话记忆] (流式) 历史任务摘要: {session_ctx_messages}{Style.RESET_ALL}"
+                    )
+        except Exception as e:
+            logger.error(f"{Fore.RED}[会话记忆] 读取历史任务摘要失败: {e}{Style.RESET_ALL}")
+            session_ctx_messages = []
+
         graph = self._build_graph(stream_callback=stream_callback)
 
         # 初始化 Agent 状态
         initial_state: AgentState = {
-            "messages": conversation_history or [],
+            "messages": session_ctx_messages + (conversation_history or []),
             "current_plan": None,
             "tool_outputs": [],
             "iterations": 0,
@@ -1956,6 +2027,22 @@ class LangGraphAgentExecutor:
         
         # 发送执行完成事件（表示整个流式会话结束）
         success_flag = final_result.get("success", False) if final_result else False
+        
+        # ── 写入会话级记忆摘要 ──
+        if conversation_id:
+            try:
+                # 获取存在 result 里的 final_state 来获取 run_memory
+                state_snapshot = final_state_holder.get("result", {})
+                run_memory_obj = state_snapshot.get("run_memory") or initial_state["run_memory"]
+                entry = extract_summary_from_run_memory(
+                    run_memory=run_memory_obj,
+                    final_result=final_result or {}
+                )
+                get_session_memory(conversation_id).append_task_summary(entry)
+                logger.info(f"{Fore.GREEN}[会话记忆] 流式任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")
+            except Exception as e:
+                logger.error(f"{Fore.RED}[会话记忆] 提取/写入流式任务摘要失败: {e}{Style.RESET_ALL}")
+                
         yield self._create_stream_event(
             event_type="complete",
             iteration=total_iterations,

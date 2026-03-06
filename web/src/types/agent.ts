@@ -30,6 +30,7 @@ export interface AgentDetail extends AgentInfo {
 // 执行 Agent 的请求体（POST /api/v1/agents/{id}/execute）
 export interface AgentExecuteRequest {
   task: string                          // 任务描述
+  conversation_id?: string              // 可选会话 ID
   config?: Record<string, unknown>      // 可选覆盖配置
   conversation_history?: Array<{        // 可选对话历史
     role: string

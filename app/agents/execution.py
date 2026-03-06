@@ -202,7 +202,7 @@ class ExecutionEngine:
                             label = r.get("tool_name") or r.get("agent_id") or r.get("action", "")
                             val = r["result"]
                             if isinstance(val, dict):
-                                val = _json.dumps(val, ensure_ascii=False, indent=2)
+                                val = _json.dumps(val, ensure_ascii=False, indent=2, default=str)
                             parts.append(f"【{label}】\n{val}")
                         final_result = "\n\n".join(parts)
                     else:
@@ -294,7 +294,7 @@ class ExecutionEngine:
             else:
                 val = r.get("result", "")
             if isinstance(val, dict):
-                val_str = _json.dumps(val, ensure_ascii=False, indent=2)
+                val_str = _json.dumps(val, ensure_ascii=False, indent=2, default=str)
             else:
                 val_str = str(val)
             # 截断超长输出，防止 token 超限
@@ -356,7 +356,7 @@ class ExecutionEngine:
             # 合成失败时降级：把原始工具结果直接拼接返回
             return "\n\n".join(
                 f"【{r.get('tool_name') or r.get('action', '')}】\n"
-                + (_json.dumps(r["result"], ensure_ascii=False, indent=2)
+                + (_json.dumps(r["result"], ensure_ascii=False, indent=2, default=str)
                    if isinstance(r["result"], dict) else str(r["result"]))
                 for r in tool_results
                 if r.get("result")
@@ -767,7 +767,7 @@ class ExecutionEngine:
                     label = r.get("tool_name") or r.get("agent_id") or r.get("action", "")
                     val = r["result"]
                     if isinstance(val, dict):
-                        val_str = _json.dumps(val, ensure_ascii=False, indent=2)
+                        val_str = _json.dumps(val, ensure_ascii=False, indent=2, default=str)
                     else:
                         val_str = str(val)
                     if len(val_str) > 2000:
@@ -960,7 +960,7 @@ class ExecutionEngine:
             if successful_prev:
                 def _to_text(value: Any, max_len: int = 2200) -> str:
                     if isinstance(value, (dict, list)):
-                        s = _json.dumps(value, ensure_ascii=False, indent=2)
+                        s = _json.dumps(value, ensure_ascii=False, indent=2, default=str)
                     else:
                         s = str(value)
                     if len(s) > max_len:

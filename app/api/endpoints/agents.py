@@ -98,6 +98,7 @@ async def execute_agent(
                 "metadata": {
                     "service_type": "agent",        # 路由目标：Agent 执行器
                     "agent_id": agent_id,
+                    "conversation_id": request.conversation_id,
                     "conversation_history": request.conversation_history or [],
                     "config": request.config or {},
                 }
@@ -106,14 +107,32 @@ async def execute_agent(
             result = await channel_manager.route_message("rest_api", raw_message)
 
         else:
+
             # ── 降级模式：直接调用 AgentExecutor（兼容测试/独立部署）────
             logger.info(
                 f"{Fore.YELLOW}【Agent接口】Channel Layer 未就绪，"
                 f"降级为直接调用 AgentExecutor{Style.RESET_ALL}"
             )
+            
+            # 使用依赖注入获取全局 Agent 执行器（内部已包含完整的 llm_hub/tool_hub 等）
+            from app.utils.dependencies import get_agent_executor
+            agent_executor = get_agent_executor()
+            if request.conversation_id:
+                logger.info(
+                    f"{Fore.CYAN}[API路由] 检测到参数 conversation_id='{request.conversation_id}'，"
+                    f"将激活会话级上下文记忆链{Style.RESET_ALL}"
+                )
+            else:
+                logger.debug(
+                    f"{Fore.YELLOW}[API路由] 未提供 conversation_id，本次执行将独立进行"
+                    f"{Style.RESET_ALL}"
+                )
+
+            # 阻塞执行 Agent
             result = await agent_executor.execute(
                 agent=agent,
                 task=request.task,
+                conversation_id=request.conversation_id,
                 conversation_history=request.conversation_history
             )
 
@@ -214,15 +233,28 @@ async def execute_agent_stream(
         
         使用 SSE (Server-Sent Events) 格式发送事件：
         data: {json}
-        
-        Yields:
-            str: SSE 格式的事件数据
         """
+        # 使用依赖注入获取全局流式 Agent 执行器
+        from app.utils.dependencies import get_agent_executor
+        agent_executor = get_agent_executor()
+        
+        if request.conversation_id:
+            logger.info(
+                f"{Fore.CYAN}[API路由] (流式运行) 检测到 conversation_id='{request.conversation_id}'，"
+                f"将激活会话级任务摘要注入机制{Style.RESET_ALL}"
+            )
+        else:
+            logger.debug(
+                f"{Fore.YELLOW}[API路由] (流式运行) 无 conversation_id 参数，本次执行保持完全隔离"
+                f"{Style.RESET_ALL}"
+            )
+
+        # 使用 execute_stream 方法获取异步生成器
         try:
-            # 使用 execute_stream 方法获取异步生成器
             async for event in agent_executor.execute_stream(
                 agent=agent,
                 task=request.task,
+                conversation_id=request.conversation_id,
                 conversation_history=request.conversation_history
             ):
                 # 将事件序列化为 JSON 并用 SSE 格式发送
@@ -441,4 +473,5 @@ async def confirm_agent_action(
         ret=["success"],
         v=1
     )
+
 
