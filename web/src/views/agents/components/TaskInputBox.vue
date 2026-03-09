@@ -5,10 +5,16 @@
         <el-icon><ChatDotRound /></el-icon>
         配置并执行任务
       </div>
+      <!-- 示例标签：从 API 返回的 Agent 数据中动态渲染 -->
       <div class="quick-examples">
-        <span class="example-tag" @click="setExample(1)">示例1：简单任务</span>
-        <span class="example-tag" @click="setExample(2)">示例2：复杂查询</span>
-        <span class="example-tag example-tag-delegate" @click="setExample(3)">示例3：子Agent委派</span>
+        <span
+          v-for="(example, index) in agentExamples"
+          :key="index"
+          :class="['example-tag', example.style === 'delegate' ? 'example-tag-delegate' : '']"
+          @click="setExample(index)"
+        >
+          {{ example.label }}
+        </span>
       </div>
     </div>
     
@@ -68,11 +74,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ChatDotRound, Setting, InfoFilled, Loading, Promotion } from '@element-plus/icons-vue'
+import type { AgentInfo, AgentExample } from '@/types/agent'
 
 const props = defineProps<{
   taskInput: string
   conversationId: string
-  agentId: string
+  selectedAgent: AgentInfo | null
   executing: boolean
   isStreaming: boolean
   streamStatusText: string
@@ -95,34 +102,33 @@ const internalConversationId = computed({
   set: (val) => emit('update:conversationId', val)
 })
 
-const EXAMPLE_MAP: Record<number, Record<string, string>> = {
-  1: {
-    default:      '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。',
-    cs_master:    '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。',
-    order_agent:  '查询订单号 1002 的详细信息：买了什么商品、支付了多少、现在的配送状态是什么，物流单号是多少？',
-    refund_agent: '查询订单号 1003 的退款进度，请告知当前处理状态和退款金额。',
-    general_agent: '请把这句话翻译成英文："人工智能在改变我们的生活。"',
-  },
-  2: {
-    default:      '帮我查询客户"李娜"的所有订单记录，列出每笔订单的金额和当前状态。',
-    cs_master:    '帮我查询客户"李娜"的所有订单，并汇总她的总消费金额。',
-    order_agent:  '查询客户ID为2的所有订单，统计她的订单总数、总金额。',
-    refund_agent: '查询所有待审核的退款申请（status=pending），列出申请人。',
-    general_agent: '搜一下什么是 MCP，通俗地解释一下。',
-  },
-  3: {
-    default:      '统计各种订单状态的订单数量，给出业务分析。',
-    cs_master:    '查询订单号 1002 的详细情况，找到订单的总金额，写入本地',
-    order_agent:  '分析已发货但未签收的订单，列出订单号、客户。',
-    refund_agent: '统计所有退款记录的总退款金额，按退款状态分组。',
-    general_agent: '用 Python 写一个快速排序算法。',
-  },
-}
+/**
+ * 从 selectedAgent 中获取示例列表
+ * 如果 API 未返回 examples，则使用默认示例
+ */
+const agentExamples = computed<AgentExample[]>(() => {
+  // NOTE: 优先使用 API 返回的 examples 数据
+  if (props.selectedAgent?.examples && props.selectedAgent.examples.length > 0) {
+    return props.selectedAgent.examples
+  }
+  // 降级：未返回时使用默认示例（兜底逻辑）
+  return [
+    { label: '示例1：简单任务', content: '帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。' },
+    { label: '示例2：复杂查询', content: '帮我查询客户"李娜"的所有订单记录，列出每笔订单的金额和当前状态。' },
+    { label: '示例3：子Agent委派', content: '统计各种订单状态的订单数量，给出业务分析。', style: 'delegate' },
+  ]
+})
 
-function setExample(num: number) {
-  const map = EXAMPLE_MAP[num] || {}
-  const text = map[props.agentId] || map['default'] || ''
-  internalTaskInput.value = text
+/**
+ * 点击示例标签，将示例内容填入输入框
+ * @param index - 示例索引
+ */
+function setExample(index: number) {
+  const example = agentExamples.value[index]
+  if (example?.content) {
+    internalTaskInput.value = example.content
+    console.log('[TaskInputBox] 填入示例任务:', example.label)
+  }
 }
 </script>
 

@@ -14,7 +14,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
-from app.agents.base import Agent, AgentConfig
+from app.agents.base import Agent, AgentConfig, AgentExample
 
 
 # =============================================================================
@@ -44,7 +44,23 @@ CUSTOMER_SERVICE_MASTER = Agent(
     agent_config=AgentConfig(
         max_iterations=5,
         timeout_seconds=120
-    )
+    ),
+    # NOTE: 示例任务配置，前端从 API 获取后动态渲染
+    examples=[
+        AgentExample(
+            label="示例1：简单查询",
+            content="帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。"
+        ),
+        AgentExample(
+            label="示例2：复杂查询",
+            content="帮我查询客户\"李娜\"的所有订单，并汇总她的总消费金额。"
+        ),
+        AgentExample(
+            label="示例3：子Agent委派",
+            content="查询订单号 1002 的详细情况，找到订单的总金额，写入本地",
+            style="delegate"
+        ),
+    ]
 )
 
 
@@ -64,7 +80,23 @@ ORDER_AGENT = Agent(
     agent_config=AgentConfig(
         max_iterations=3,
         timeout_seconds=60
-    )
+    ),
+    # NOTE: 示例任务配置
+    examples=[
+        AgentExample(
+            label="示例1：订单详情",
+            content="查询订单号 1002 的详细信息：买了什么商品、支付了多少、现在的配送状态是什么，物流单号是多少？"
+        ),
+        AgentExample(
+            label="示例2：客户订单统计",
+            content="查询客户ID为2的所有订单，统计她的订单总数、总金额。"
+        ),
+        AgentExample(
+            label="示例3：订单分析",
+            content="分析已发货但未签收的订单，列出订单号、客户。",
+            style="delegate"
+        ),
+    ]
 )
 
 
@@ -84,7 +116,23 @@ REFUND_AGENT = Agent(
     agent_config=AgentConfig(
         max_iterations=3,
         timeout_seconds=60
-    )
+    ),
+    # NOTE: 示例任务配置
+    examples=[
+        AgentExample(
+            label="示例1：退款进度",
+            content="查询订单号 1003 的退款进度，请告知当前处理状态和退款金额。"
+        ),
+        AgentExample(
+            label="示例2：待审核退款",
+            content="查询所有待审核的退款申请（status=pending），列出申请人。"
+        ),
+        AgentExample(
+            label="示例3：退款统计",
+            content="统计所有退款记录的总退款金额，按退款状态分组。",
+            style="delegate"
+        ),
+    ]
 )
 
 
@@ -150,7 +198,23 @@ GENERAL_AGENT = Agent(
         # NOTE: 通用任务可能涉及多步骤推理（如搜索+分析+写作），给予更多迭代次数
         max_iterations=8,
         timeout_seconds=180
-    )
+    ),
+    # NOTE: 示例任务配置
+    examples=[
+        AgentExample(
+            label="示例1：中英翻译",
+            content="请把这句话翻译成英文：\"人工智能在改变我们的生活。\""
+        ),
+        AgentExample(
+            label="示例2：网络查询",
+            content="搜一下什么是 MCP，通俗地解释一下。"
+        ),
+        AgentExample(
+            label="示例3：代码生成",
+            content="用 Python 写一个快速排序算法。",
+            style="delegate"
+        ),
+    ]
 )
 
 logger.info(

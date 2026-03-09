@@ -49,7 +49,7 @@
           <TaskInputBox 
             v-model:taskInput="taskInput"
             v-model:conversationId="conversationId"
-            :agentId="selectedAgent.agent_id"
+            :selectedAgent="selectedAgent"
             :executing="executing"
             :isStreaming="isStreaming"
             :streamStatusText="getStreamStatusText()"

@@ -324,7 +324,8 @@ async def list_agents(
                 capabilities=agent.capabilities,
                 available_tools=agent.available_tools,
                 available_skills=agent.available_skills,
-                child_agents=agent.child_agents
+                child_agents=agent.child_agents,
+                examples=[ex.model_dump() for ex in agent.examples]
             )
             for agent in agents
         ]

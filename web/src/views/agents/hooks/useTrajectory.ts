@@ -225,6 +225,18 @@ export function useTrajectory(options: {
                  event: ev
              })
         }
+        
+        // 步骤完成：展示步骤执行结果
+        if (ev.event === 'step_complete') {
+             targetParentList.push({
+                 id: `step-${actualIteration}-${i}`,
+                 level: actionLevel,
+                 type: 'action',
+                 isParent: false,
+                 isExpanded: false,
+                 event: ev
+             })
+        }
     }
 
     return tree

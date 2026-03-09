@@ -5,6 +5,13 @@
 
 // ======================== Agent 相关 ========================
 
+// Agent 示例任务（对应后端 AgentExample）
+export interface AgentExample {
+  label: string      // 示例标签（如：示例1：简单查询）
+  content: string    // 示例任务内容（点击后填入输入框）
+  style?: string     // 可选样式标识（如：delegate 表示委派类型）
+}
+
 // Agent 基础信息（GET /api/v1/agents 列表返回）
 export interface AgentInfo {
   agent_id: string
@@ -14,6 +21,8 @@ export interface AgentInfo {
   available_tools: string[]
   available_skills: string[]
   child_agents: string[]
+  // NOTE: 示例任务列表，从 API 获取后动态渲染
+  examples?: AgentExample[]
 }
 
 // Agent 详情（GET /api/v1/agents/{id} 返回额外字段）

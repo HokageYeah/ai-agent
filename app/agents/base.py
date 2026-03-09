@@ -3,6 +3,19 @@ from pydantic import BaseModel, Field
 from enum import Enum
 import os
 
+
+class AgentExample(BaseModel):
+    """
+    Agent 示例任务模型
+
+    用于前端展示快捷示例标签，帮助用户快速了解 Agent 的使用方式。
+    每个 Agent 可以配置多个示例任务，前端从 API 获取后动态渲染。
+    """
+    label: str = Field(..., description="示例标签（如：示例1：简单查询）")
+    content: str = Field(..., description="示例任务内容（点击后填入输入框）")
+    style: Optional[str] = Field(None, description="可选样式标识（如：delegate 表示委派类型）")
+
+
 class AgentConfig(BaseModel):
     """
     Agent 配置模型
@@ -39,7 +52,13 @@ class Agent(BaseModel):
     
     # 配置
     agent_config: AgentConfig = Field(default_factory=lambda: AgentConfig(), description="模型配置")
-    
+
+    # 示例任务列表（供前端展示快捷示例标签）
+    examples: List[AgentExample] = Field(
+        default_factory=list,
+        description="示例任务列表，用于前端展示快捷示例标签"
+    )
+
     model_config = {
         "json_schema_extra": {
             "example": {

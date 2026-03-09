@@ -89,6 +89,11 @@ class AgentInfo(BaseModel):
     available_tools: List[str] = Field(..., description="可用工具列表")
     available_skills: List[str] = Field(..., description="可用技能列表")
     child_agents: List[str] = Field(default_factory=list, description="子 Agent 列表")
+    # NOTE: 示例任务列表，供前端展示快捷示例标签
+    examples: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="示例任务列表，每个示例包含 label、content、style 字段"
+    )
 
 
 class AgentDetail(BaseModel):

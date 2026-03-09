@@ -15,3 +15,328 @@
 2026-03-09 17:00:22 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
 2026-03-09 17:00:22 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000101] 推理请求失败: Connection error.[0m
 2026-03-09 17:00:22 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-09 19:11:19 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid character '。' (U+3002) (customer_service.py, line 158)[0m
+2026-03-09 19:12:54 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/middleware/response_validator.py", line 144, in dispatch
+    return await call_next(request)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 121, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 107, in app
+    response = await f(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 416, in app
+    solved_result = await solve_dependencies(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/dependencies/utils.py", line 650, in solve_dependencies
+    solved = await run_in_threadpool(call, **solved_result.values)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/utils/dependencies.py", line 188, in get_agent_registry
+    from app.agents.library.customer_service import register_customer_service_agents
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/__init__.py", line 12, in <module>
+    from app.agents.library.customer_service import (
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/customer_service.py", line 158
+    content="请把这句话翻译成英文："人工智能在改变我们的生活。""
+                                     ^
+
+SyntaxError: invalid character '。' (U+3002)
+2026-03-09 19:13:07 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid character '。' (U+3002) (customer_service.py, line 158)[0m
+2026-03-09 19:13:25 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/middleware/response_validator.py", line 144, in dispatch
+    return await call_next(request)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 121, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 107, in app
+    response = await f(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 416, in app
+    solved_result = await solve_dependencies(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/dependencies/utils.py", line 650, in solve_dependencies
+    solved = await run_in_threadpool(call, **solved_result.values)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/utils/dependencies.py", line 188, in get_agent_registry
+    from app.agents.library.customer_service import register_customer_service_agents
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/__init__.py", line 12, in <module>
+    from app.agents.library.customer_service import (
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/customer_service.py", line 158
+    content="请把这句话翻译成英文："人工智能在改变我们的生活。""
+                                     ^
+
+SyntaxError: invalid character '。' (U+3002)
+2026-03-09 19:13:53 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid character '。' (U+3002) (customer_service.py, line 174)[0m
+2026-03-09 19:14:17 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid character '。' (U+3002) (customer_service.py, line 190)[0m
+2026-03-09 19:14:56 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid character '。' (U+3002) (customer_service.py, line 206)[0m
+2026-03-09 19:16:38 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): cannot import name 'AgentExample' from 'app.agents.base' (/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/base.py)[0m
+2026-03-09 19:17:08 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/middleware/response_validator.py", line 144, in dispatch
+    return await call_next(request)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 121, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 107, in app
+    response = await f(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 416, in app
+    solved_result = await solve_dependencies(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/dependencies/utils.py", line 650, in solve_dependencies
+    solved = await run_in_threadpool(call, **solved_result.values)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/utils/dependencies.py", line 188, in get_agent_registry
+    from app.agents.library.customer_service import register_customer_service_agents
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/__init__.py", line 12, in <module>
+    from app.agents.library.customer_service import (
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/library/customer_service.py", line 17, in <module>
+    from app.agents.base import Agent, AgentConfig, AgentExample
+
+ImportError: cannot import name 'AgentExample' from 'app.agents.base' (/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/base.py)
+2026-03-09 19:39:28 | ERROR    | app.tools.builtin.database:execute:479 - [DatabaseQueryTool] 数据库操作错误: no such column: p.brand
+2026-03-09 19:40:19 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m

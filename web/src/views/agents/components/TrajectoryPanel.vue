@@ -126,8 +126,21 @@
 
              <!-- 普通动作 (Action/Event) -->
              <div v-else-if="node.type === 'action'" class="node-action" :class="{ 'is-thinking': isStreaming && isLastNode(node) }">
+                 <!-- 子 Agent 完成委派 -->
+                 <template v-if="node.event?.event === 'delegate_complete'">
+                    <el-icon class="action-icon success"><User /></el-icon>
+                    <span>{{ getAgentDisplayName(node.event?.data) }} 完成委派</span>
+                    <span v-if="node.event?.data?.success" class="result-preview success">执行成功</span>
+                    <span v-else class="result-preview error">执行失败</span>
+                 </template>
+                 <!-- 步骤完成 -->
+                 <template v-else-if="node.event?.event === 'step_complete'">
+                    <el-icon class="action-icon success"><Check /></el-icon>
+                    <span>{{ node.event?.data?.step_name || '步骤完成' }}</span>
+                    <span v-if="node.event?.data?.message" class="result-preview">{{ node.event?.data?.message }}</span>
+                 </template>
                  <!-- 工具调用 -->
-                 <template v-if="node.event?.event === 'tool_complete' || node.event?.event === 'skill_complete'">
+                 <template v-else-if="node.event?.event === 'tool_complete' || node.event?.event === 'skill_complete'">
                     <el-icon class="action-icon success"><CopyDocument /></el-icon>
                     <span>调用 <span class="mono-tag" style="background:#f3f4f6">{{ node.event?.data?.tool_name || node.event?.data?.skill_id }}</span></span>
                     <span v-if="node.event?.data?.result" class="result-preview" :title="formatResult(node.event?.data?.result)">
@@ -293,6 +306,37 @@ function copyText(text: string) {
     }
     textArea.remove()
   }
+}
+
+/**
+ * 代理 ID 到中文名称的映射表
+ * 用于显示代理委派完成时的代理名称
+ */
+const AGENT_NAME_MAP: Record<string, string> = {
+  'order_agent': '订单专员',
+  'refund_agent': '退款专员',
+  'general_agent': '通用助手',
+  'cs_master': '客服总监'
+}
+
+/**
+ * 获取代理的中文名称
+ * 优先从 event.data.result.agent_name 获取，如果没有则使用映射表
+ * @param agentId - 代理 ID
+ * @returns 代理的中文名称
+ */
+function getAgentDisplayName(eventData: any): string {
+  // 优先从 result.agent_name 获取
+  if (eventData?.result?.agent_name) {
+    return eventData.result.agent_name
+  }
+  // 降级：使用 agent_id 从映射表获取
+  const agentId = eventData?.agent_id
+  if (agentId && AGENT_NAME_MAP[agentId]) {
+    return AGENT_NAME_MAP[agentId]
+  }
+  // 最后降级：直接返回 agent_id
+  return agentId || '未知代理'
 }
 </script>
 
