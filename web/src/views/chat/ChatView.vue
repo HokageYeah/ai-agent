@@ -52,7 +52,7 @@
             <span class="toggle-label">流式回复</span>
             <el-switch 
               :model-value="chatStore.useStreamMode" 
-              @change="val => chatStore.useStreamMode = val as boolean"
+              @change="chatStore.useStreamMode = Boolean($event)"
               size="small" 
             />
           </div>

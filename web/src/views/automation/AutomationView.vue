@@ -22,7 +22,7 @@
           v-for="service in services"
           :key="service.type"
           class="service-card card-base"
-          :class="{ active: selectedService?.type === service.type }"
+          :class="{ active: isServiceSelected(service) }"
           @click="selectService(service)"
         >
           <div class="service-card-top">
@@ -358,6 +358,13 @@ function selectService(service: AutomationServiceInfo): void {
   }
 
   console.log('[AutomationView] 已选择服务:', service.type, '参数:', Object.keys(schemas))
+}
+
+/**
+ * 判断服务是否处在激活状态
+ */
+function isServiceSelected(service: AutomationServiceInfo): boolean {
+  return selectedService.value !== null && (selectedService.value as AutomationServiceInfo).type === service.type
 }
 
 /**
