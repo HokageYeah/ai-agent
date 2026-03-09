@@ -1,0 +1,11 @@
+2026-03-08 13:25:04 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-03-08 13:25:04 | INFO     | logging:callHandlers:1736 - 启动应用服务器...
+2026-03-08 13:25:06 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-03-08 13:25:06 | DEBUG    | logging:callHandlers:1736 - Using selector: SelectSelector
+2026-03-08 13:25:06 | INFO     | app.core.logging_uru:setup_logging:88 - 日志系统初始化完成 - 使用 loguru
+2026-03-08 13:25:06 | INFO     | logging:callHandlers:1736 - Started server process [13872]
+2026-03-08 13:25:06 | INFO     | logging:callHandlers:1736 - Waiting for application startup.
+2026-03-08 13:25:06 | INFO     | app.main:lifespan:42 - [36m=======================================================[0m
+2026-03-08 13:25:06 | INFO     | app.main:lifespan:43 - [36m  AI Agent 服务启动中...[0m
+2026-03-08 13:25:06 | INFO     | app.main:lifespan:44 - [36m=======================================================[0m
+2026-03-08 13:25:06 | INFO     | app.main:lifespan:47 - [34m[启动] 连接 MySQL 数据库...[0m
