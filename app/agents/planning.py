@@ -312,6 +312,7 @@ class PlanningEngine:
      * 使用 {{{{first_search_result}}}} 表示第一个搜索结果的完整信息（包含 url, title, snippet）
      * 使用 {{{{last_tool_result}}}} 表示最后一个工具的执行结果
      * 例如：http_request 工具的 url 参数应该写成 "url": "{{{{first_search_result_url}}}}"
+7. 【重要】文件写入限制：如任务包含"写入本地"、"保存文件"等需求，必须明确规划使用 `file_write` 工具。其他生成类工具（如 `text_writing`、`code_generation`）仅负责生成内容（返回字符串），绝对不会自动将内容保存到文件中。必须组合使用：先调用生成工具/技能 -> 再调用 `file_write` 工具实际写入。
 
 请只返回 JSON，不要包含其他文本。"""
 
@@ -432,6 +433,7 @@ class PlanningEngine:
      * 使用 {{first_search_result}} 表示第一个搜索结果的完整信息（包含 url, title, snippet）
      * 使用 {{last_tool_result}} 表示最后一个工具的执行结果
      * 例如：http_request 工具的 url 参数应该写成 "url": "{{first_search_result_url}}"
+7. 【重要】文件写入限制：如任务包含"写入本地"、"保存文件"等需求，必须明确规划使用 `file_write` 工具。其他生成类工具（如 `text_writing`、`code_generation`）仅负责生成内容（返回字符串），绝对不会自动将内容保存到文件中。必须组合使用：先调用生成工具/技能 -> 再调用 `file_write` 工具实际写入。
 
 请只返回 JSON，不要包含其他文本。
 """

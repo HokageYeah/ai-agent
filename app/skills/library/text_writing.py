@@ -21,7 +21,9 @@ from app.skills.base import Skill, MemoryStrategy, ParamSchema
 TEXT_WRITING_SKILL = Skill(
     skill_id="text_writing",
     name="文本写作",
-    description="专业文本写作，支持多种类型和风格",
+    # NOTE: 描述中明确声明"不写入本地文件"——防止 LLM 规划时误解为文件写入工具。
+    # 本技能仅生成文本内容（返回字符串），实际文件保存必须由 file_write 工具完成。
+    description="专业文本写作，支持多种类型和风格。【重要】本技能只生成文本内容，不具备任何写入本地文件的能力，不会在磁盘上创建文件。若需将生成的内容保存到本地文件，必须在后续步骤中调用 file_write 工具",
     prompt_template="""你是一个专业的文本创作者。请根据以下要求撰写文本:
 
 写作主题:
@@ -43,12 +45,15 @@ TEXT_WRITING_SKILL = Skill(
 4. 语言准确 - 用词精准，表达专业
 5. 符合风格 - 严格按照指定的写作风格进行创作
 
+【重要提醒】本技能只负责生成文本内容。若需将文本保存到本地文件，请在计划中另外添加 file_write 工具步骤完成实际写入。
+
 请直接输出最终文本内容。
 """,
     required_tools=[],
     optional_tools=[],
     memory_strategy=MemoryStrategy(include_short_term=False),
     tags=["写作", "文本", "创作", "内容"],
+
     examples=[],
     # NOTE: 参数元数据，告知前端每个参数的含义和示例，帮助用户快速填写
     param_schemas={

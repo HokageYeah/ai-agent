@@ -1144,14 +1144,24 @@ const groupedIterations = computed<IterationGroup[]>(() => {
   const list = streamEvents.value
   const iterationsMap = new Map<number, IterationGroup>()
 
+  let lastMasterIteration = 0; // 跟踪当前主 Agent 的 iteration
+
   for (const ev of list) {
-    // 关键修复：final_answer 和 complete 的 iteration 可能比其他事件大1
-    // 这表示"已完成X次迭代"，而非"新的迭代"，需要归入前一个迭代组
     let actualIteration = ev.iteration
     
-    // 如果是 final_answer 或 complete 且 iteration > 0，归入 iteration-1 组
-    if (['final_answer', 'complete'].includes(ev.event) && ev.iteration > 0) {
-      actualIteration = ev.iteration - 1
+    // 关键修复：子 Agent 的事件流（包括开始、结束及内部流转）自身带有 iteration: 0，
+    // 前端如果直接用 ev.iteration 会导致它们漂移回第0轮。因此强制其跟随最近的主轮次！
+    if (ev.event === 'sub_agent_start' || ev.event === 'sub_agent_end' || ev.data?.is_sub_agent) {
+      actualIteration = lastMasterIteration
+    } else {
+      // 主 Agent 事件处理：
+      // 如果是 final_answer 或 complete 且 iteration > 0，"已完成"意味着要归入上一个组
+      if (['final_answer', 'complete'].includes(ev.event) && ev.iteration > 0) {
+        actualIteration = ev.iteration - 1
+      } else {
+        // 其他主 Agent 正常规划流转事件，更新主轮次跟踪变量
+        lastMasterIteration = actualIteration
+      }
     }
     
     if (!iterationsMap.has(actualIteration)) {
