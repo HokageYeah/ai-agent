@@ -177,12 +177,39 @@ class ExecutionEngine:
                         and r.get("action") != "final_answer"
                     ]
                     
-                    # 只要有真实数据（工具/技能/委派结果），就调用 LLM 合成最终答案。
-                    # LLM 在规划阶段还没有执行结果，final_answer.content 只是意图描述
-                    # 或占位符模板，不能直接返回给用户。
-                    should_synthesize = bool(tool_results)
+                    # ══════════════════════════════════════════════════════════
+                    # 【合成策略判断】LLM 规划的 final_answer.content 有两种情况：
+                    # - 情况A（有工具前置）：content 只是意图描述 → 用工具结果 LLM 合成
+                    # - 情况B（纯记忆问答）：LLM 理应在 content 写出真实答案，
+                    #   但有时仍会写意图描述（如"根据历史记录回答..."）→ 需要兜底合成
+                    # ══════════════════════════════════════════════════════════
                     
-                    if should_synthesize:
+                    # 判断 content 是否是"意图描述"而非真实自然语言答案
+                    # 意图描述的特征：包含"根据"/"历史"/"回答用户"/"以上"等指令性词汇，
+                    # 且不包含具体信息（通常较短）
+                    def _is_intent_description(content: str) -> bool:
+                        """判断 content 是否是意图/占位符描述，而非真实答案"""
+                        if not content:
+                            return True
+                        intent_keywords = [
+                            "根据历史", "根据以上", "根据上面", "根据前面",
+                            "回答用户", "回答关于", "回答该", "回答此",
+                            "结合历史", "参考历史", "基于历史",
+                            "用户关于", "告知用户",
+                            "查询结果回答", "执行结果回答",
+                        ]
+                        # 短内容（<30字）且包含意图关键词 → 判断为意图描述
+                        if len(content) < 80:
+                            for kw in intent_keywords:
+                                if kw in content:
+                                    return True
+                        return False
+                    
+                    # 获取会话历史上下文（用于兜底合成）
+                    context_messages = (context or {}).get("context_messages", [])
+                    
+                    if bool(tool_results):
+                        # 情况A：有前置工具结果 → 用工具结果驱动 LLM 合成
                         logger.info(
                             f"{Fore.BLUE}[执行引擎] 存在工具/委派执行结果，"
                             f"调用 LLM 合成真实答案...{Style.RESET_ALL}"
@@ -193,18 +220,30 @@ class ExecutionEngine:
                             tool_results=tool_results,
                             template=template
                         )
+                    elif context_messages and _is_intent_description(template):
+                        # ══════════════════════════════════════════════════════
+                        # 【兜底安全网】情况B：计划只有 final_answer 一步，
+                        # 且 LLM 仍然写了意图描述而非真实答案。
+                        # 此时用会话历史 context_messages 重新触发 LLM 直接合成真实答案，
+                        # 防止把意图描述文本（如"根据历史记录回答..."）直接返回给用户。
+                        # ══════════════════════════════════════════════════════
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行引擎] 检测到纯 final_answer 场景，"
+                            f"且 content 为意图描述（'{template[:50]}'）。"
+                            f"存在会话历史上下文（{len(context_messages)} 条），"
+                            f"触发兜底 LLM 合成真实答案...{Style.RESET_ALL}"
+                        )
+                        final_result = await self._synthesize_from_context(
+                            agent=agent,
+                            task=context.get("task", "") if context else "",
+                            context_messages=context_messages,
+                        )
                     elif template:
+                        logger.info(
+                            f"{Fore.CYAN}[执行引擎] 直接使用 final_answer.content 作为最终结果"
+                            f"（长度={len(template)}）{Style.RESET_ALL}"
+                        )
                         final_result = template
-                    elif tool_results:
-                        # 没有 LLM 合成条件，直接拼接工具结果
-                        parts = []
-                        for r in tool_results:
-                            label = r.get("tool_name") or r.get("agent_id") or r.get("action", "")
-                            val = r["result"]
-                            if isinstance(val, dict):
-                                val = _json.dumps(val, ensure_ascii=False, indent=2, default=str)
-                            parts.append(f"【{label}】\n{val}")
-                        final_result = "\n\n".join(parts)
                     else:
                         final_result = "执行完成，但没有产生具体结果。"
 
@@ -361,6 +400,99 @@ class ExecutionEngine:
                 for r in tool_results
                 if r.get("result")
             ) or template or "执行完成，但未能生成最终答案。"
+
+    async def _synthesize_from_context(
+        self,
+        agent: Agent,
+        task: str,
+        context_messages: List[Dict[str, Any]],
+    ) -> str:
+        """
+        【兜底合成】基于会话历史上下文（context_messages）用 LLM 直接生成答案。
+
+        当计划只有 final_answer 一步（纯记忆问答场景），且 LLM 写了意图描述而非真实答案时，
+        此方法作为兜底安全网被调用，利用注入的历史会话摘要让 LLM 给出真正的自然语言回答。
+
+        设计原因：
+        - 规划 Prompt 已要求 LLM 在情况A（无工具）时把 final_answer.content 写成真实答案
+        - 但由于 LLM 惯性，仍可能写出意图描述（"根据历史记录回答..."）
+        - 此方法作为最后防线，确保最终用户收到的是具体答案而非意图描述
+
+        Args:
+            agent: 当前执行的 Agent 实例
+            task: 原始用户任务描述
+            context_messages: 会话历史消息列表（含历史任务摘要等上下文）
+
+        Returns:
+            str: 基于历史上下文合成的自然语言答案
+        """
+        logger.info(
+            f"{Fore.BLUE}[执行引擎] 开始基于会话历史上下文兜底合成答案，"
+            f"上下文消息数量: {len(context_messages)}{Style.RESET_ALL}"
+        )
+
+        # 将历史上下文消息格式化为文本，供 LLM 参考
+        context_text_parts = []
+        for msg in context_messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if not content:
+                continue
+            # 截断超长消息，防止 token 超限
+            if len(str(content)) > 1500:
+                content = str(content)[:1500] + "...(已截断)"
+            if role == "system":
+                context_text_parts.append(f"[系统上下文]\n{content}")
+            elif role == "user":
+                context_text_parts.append(f"[用户]\n{content}")
+            elif role == "assistant":
+                context_text_parts.append(f"[助手]\n{content}")
+
+        context_text = "\n\n---\n\n".join(context_text_parts) if context_text_parts else "（无可用上下文）"
+
+        synthesis_prompt = f"""你是 {agent.name}，{agent.description}
+
+用户当前的问题（任务）：{task}
+
+以下是本次会话的历史上下文信息（包含之前各轮任务的摘要）：
+
+{context_text}
+
+请根据以上历史上下文，直接、准确地回答用户的问题。
+要求：
+1. 基于历史信息给出具体、完整的回答，不要模糊或含糊其辞
+2. 如果历史上下文中有明确的信息，直接陈述（如"您第一次的提问是'xxx'，任务是yyy"）
+3. 语言简洁友好，格式清晰
+4. 如果历史记录中确实没有相关信息，如实告知
+
+请直接输出最终回答，不要包含任何前缀说明。"""
+
+        try:
+            from app.llm_hub.inference import InferenceConfig
+
+            config = InferenceConfig(
+                model=agent.agent_config.execution_model,
+                stream=False,
+                temperature=0.2,   # 记忆召回用极低温度，确保精准引用历史信息
+            )
+            response = await self.llm_hub.infer(
+                messages=[{"role": "user", "content": synthesis_prompt}],
+                config=config
+            )
+            answer = response.content.strip()
+            logger.info(
+                f"{Fore.GREEN}[执行引擎] 兜底上下文合成完成，"
+                f"答案长度: {len(answer)} 字符，"
+                f"预览: {answer[:100]}{Style.RESET_ALL}"
+            )
+            return answer
+
+        except Exception as e:
+            logger.error(
+                f"{Fore.RED}[执行引擎] 兜底上下文合成失败: {e}，"
+                f"返回空结果{Style.RESET_ALL}"
+            )
+            return "抱歉，我无法根据历史记录找到相关信息，请重新描述您的问题。"
 
     def _resolve_step_placeholders(
         self,

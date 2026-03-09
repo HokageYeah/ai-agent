@@ -733,6 +733,16 @@ class LangGraphAgentExecutor:
         # 把 task、stream_callback、pending_confirmations 一起放入 context，
         # 以便执行引擎在委派子 Agent 时能透传流式回调和挂起确认映射表，
         # 从而支持子 Agent 内部触发的用户确认弹窗通过同一 SSE 流推送到前端
+        
+        # 从 run_memory 中获取会话历史上下文消息（用于纯记忆问答兜底合成）
+        # NOTE: 只有 run_memory 存在时才有 context_messages，否则为空列表
+        _run_memory_for_ctx: Optional[AgentRunMemory] = state.get("run_memory")
+        _ctx_messages_for_exec = (
+            _run_memory_for_ctx.context_messages
+            if _run_memory_for_ctx is not None
+            else []
+        )
+        
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
             plan=plan,
@@ -744,8 +754,13 @@ class LangGraphAgentExecutor:
                 "pending_confirmations": self._pending_confirmations,
                 # 透传用户拒绝的工具黑名单防止在子流程(如技能引擎/子Agent中)穿透
                 "user_rejected_tools": state.get("user_rejected_tools", []),
+                # 传入会话历史上下文消息：执行引擎在纯记忆问答场景（无工具调用）时使用，
+                # 当 LLM 规划的 final_answer.content 仍是意图描述而非真实答案时，
+                # 兜底利用这些历史摘要触发 LLM 合成真正的回答。
+                "context_messages": _ctx_messages_for_exec,
             }
         )
+
         
         # NOTE: 关键修复 - 如果本轮包含被拒绝的操作，强制置 success 为 False，并修改 result 结果文案
         #       避免因为剩余步骤（如 final_answer）成功执行导致整体被判定为成功
@@ -1839,10 +1854,19 @@ class LangGraphAgentExecutor:
                 session_ctx_messages = session_mem.build_context_messages()
                 if session_ctx_messages:
                     logger.info(
-                        f"{Fore.CYAN}[会话记忆] (流式) 成功为会话 '{conversation_id}' 抽取 {len(session_ctx_messages)} 条历史任务摘要{Style.RESET_ALL}"
+                        f"{Fore.GREEN}[会话记忆] (流式) 会话 '{conversation_id}' 中读取到 "
+                        f"{len(session_ctx_messages)} 条历史任务摘要，即将注入 AgentRunMemory{Style.RESET_ALL}"
                     )
+                    # 逐条打印摘要内容摘要，方便确认注入内容是否正确
+                    for idx, sm in enumerate(session_ctx_messages):
+                        preview = str(sm.get("content", ""))[:100].replace("\n", " ")
+                        logger.info(
+                            f"{Fore.GREEN}[会话记忆] (流式) 摘要[{idx}]: {preview!r}{Style.RESET_ALL}"
+                        )
+                else:
                     logger.info(
-                        f"{Fore.CYAN}[会话记忆] (流式) 历史任务摘要: {session_ctx_messages}{Style.RESET_ALL}"
+                        f"{Fore.CYAN}[会话记忆] (流式) 会话 '{conversation_id}' 暂无历史任务摘要"
+                        f"（这是该会话的第一次任务）{Style.RESET_ALL}"
                     )
         except Exception as e:
             logger.error(f"{Fore.RED}[会话记忆] 读取历史任务摘要失败: {e}{Style.RESET_ALL}")
@@ -1873,11 +1897,22 @@ class LangGraphAgentExecutor:
             #       防止反思阶段 LLM 通过 tool_gateway 绕过用户确认再次执行被拒绝操作
             "user_rejected_tools": user_rejected_tools or [],
             # NOTE: 初始化 AgentRunMemory 实例，挂载本次流式任务运行记忆仓库。
-            #       Plan/Execute/Reflect 三个节点均从此读写检索和德入新行为记录。
+            #       Plan/Execute/Reflect 三个节点均从此读写检索和写入新行为记录。
+            #
+            # ⚠️ 重要：必须传入 context_messages！
+            #   这里包含了"会话摘要（session_ctx_messages）"和"对话历史（conversation_history）"。
+            #   build_messages_for_planning() 和 build_messages_for_reflection() 会从
+            #   self.context_messages 中读取这些前置上下文，注入到规划/反思 messages 的最前面。
+            #   若不传，会话级记忆虽然被读取，但永远无法进入 LLM 的感知范围！
             "run_memory": AgentRunMemory(
                 task=task,
                 agent_id=agent.agent_id,
-                agent_name=agent.name
+                agent_name=agent.name,
+                context_messages=session_ctx_messages + (conversation_history or [])
+                # 📌 解释：
+                #   session_ctx_messages → 来自 AgentSessionMemory 的跨任务历史摘要
+                #   conversation_history → 来自外部对话系统的多轮聊天记录（可选）
+                #   两者合并后作为整次任务的「前置上下文背景」，优先于当前任务目标展示给 LLM
             )
         }
 

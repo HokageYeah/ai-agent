@@ -463,18 +463,37 @@ class AgentRunMemory:
         Returns:
             list[dict]: 符合 OpenAI messages 格式的列表
         """
+        # ── 第一步：system 角色定义（固定放最前面）──
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"任务目标: {self.task}"},
         ]
 
+        # ── 第二步：注入前置上下文（会话摘要 + 对话历史）──
+        # 为什么放在任务描述之前：先给 LLM 历史背景，再告知本轮任务，
+        # 语义上更自然（先看背景 → 再理解当前任务 → 再制定计划）
         if self.context_messages:
             messages.extend(self.context_messages)
+            # 打印摘要内容摘要，方便调试确认注入是否正确
+            for i, ctx_msg in enumerate(self.context_messages):
+                preview = str(ctx_msg.get("content", ""))[:80].replace("\n", " ")
+                logger.info(
+                    f"{Fore.GREEN}[记忆读取] 规划引擎前置上下文 [{i}]: "
+                    f"role={ctx_msg.get('role','?')} | 内容摘要: {preview!r}{Style.RESET_ALL}"
+                )
             logger.info(
-                f"{Fore.CYAN}[记忆读取] 规划引擎注入 {len(self.context_messages)} 条前置上下文记忆{Style.RESET_ALL}"
+                f"{Fore.GREEN}[记忆读取] 规划引擎共注入 {len(self.context_messages)} 条前置上下文记忆"
+                f"（会话摘要+对话历史）{Style.RESET_ALL}"
+            )
+        else:
+            logger.debug(
+                f"{Fore.CYAN}[记忆读取] 规划引擎：无前置上下文（首次会话或会话摘要为空）{Style.RESET_ALL}"
             )
 
-        # 注入历史记忆（只含当前轮之前的记录）
+        # ── 第三步：当前任务描述 ──
+        messages.append({"role": "user", "content": f"任务目标: {self.task}"})
+
+        # ── 第四步：注入历史记忆（当前轮次内的执行记录，仅在重规划时有内容）──
+        # 只含当前轮之前的操作记录，不包含当前轮（当前轮还未开始执行）
         history_msgs = [
             m.to_openai_dict()
             for m in self._messages
@@ -484,12 +503,12 @@ class AgentRunMemory:
         if history_msgs:
             messages.extend(history_msgs)
             logger.info(
-                f"{Fore.CYAN}[记忆读取] 规划引擎注入 {len(history_msgs)} 条历史记忆消息 "
-                f"(iteration < {current_iteration}){Style.RESET_ALL}"
+                f"{Fore.CYAN}[记忆读取] 规划引擎注入 {len(history_msgs)} 条任务内历史记忆消息 "
+                f"(iteration < {current_iteration}，重规划场景){Style.RESET_ALL}"
             )
         else:
             logger.info(
-                f"{Fore.CYAN}[记忆读取] 首次规划，无历史记忆注入{Style.RESET_ALL}"
+                f"{Fore.CYAN}[记忆读取] 首次规划（iteration=0），无任务内历史记忆注入{Style.RESET_ALL}"
             )
 
         # 本轮规划触发指令
@@ -560,18 +579,30 @@ class AgentRunMemory:
         Returns:
             list[dict]: 符合 OpenAI messages 格式的列表
         """
+        # ── 第一步：system 角色定义 ──
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"任务目标: {self.task}"},
         ]
 
+        # ── 第二步：注入前置上下文（会话摘要 + 对话历史）──
+        # 与规划引擎保持一致：先给 LLM 历史会话背景，再看本轮任务
         if self.context_messages:
             messages.extend(self.context_messages)
             logger.info(
-                f"{Fore.CYAN}[记忆读取] 反思引擎注入 {len(self.context_messages)} 条前置上下文记忆{Style.RESET_ALL}"
+                f"{Fore.GREEN}[记忆读取] 反思引擎注入 {len(self.context_messages)} 条前置上下文记忆"
+                f"（会话摘要+对话历史）{Style.RESET_ALL}"
+            )
+        else:
+            logger.debug(
+                f"{Fore.CYAN}[记忆读取] 反思引擎：无前置上下文（首次会话或会话摘要为空）{Style.RESET_ALL}"
             )
 
+        # ── 第三步：当前任务描述 ──
+        messages.append({"role": "user", "content": f"任务目标: {self.task}"})
+
+        # ── 第四步：注入当前轮的执行记录（含工具调用结果，排除反思自身）──
         # 包含当前轮的执行记录，但排除当前轮的 reflection 消息自身
+        # 为什么排除当前轮 reflection：反思评估是这次调用要产出的结果，不能作为输入
         history_msgs = [
             m.to_openai_dict()
             for m in self._messages
