@@ -668,7 +668,10 @@ class ExecutionEngine:
         """
         try:
             if step.action == "tool":
-                return await self._execute_tool(step, agent)
+                # NOTE: 必须传入 context，否则 SpawnAgentTool / MessageAgentTool 等
+                #       需要运行时注入 stream_callback 的工具将以 None 回调执行，
+                #       导致子 Agent 事件无法推入 SSE 流、用户确认弹窗无法展示。
+                return await self._execute_tool(step, agent, context)
             elif step.action == "skill":
                 return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
@@ -693,7 +696,8 @@ class ExecutionEngine:
                     if "tool_name" not in step.params:
                         step.params["tool_name"] = original_action
                     step.action = "tool"
-                    return await self._execute_tool(step, agent)
+                    # 同样传入 context，保证兜底路径下工具也能获得运行时上下文
+                    return await self._execute_tool(step, agent, context)
                 
                 logger.warning(
                     f"{Fore.YELLOW}未知的 action 类型: {step.action}{Style.RESET_ALL}"
@@ -714,22 +718,38 @@ class ExecutionEngine:
             }
     
     async def _execute_tool(
-        self, step: PlanStep, agent: Optional[Agent] = None
+        self,
+        step: PlanStep,
+        agent: Optional[Agent] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         执行工具调用
 
         Args:
-            step: 计划步骤
-            agent: 当前 Agent 实例（用于授权校验）
+            step:    计划步骤
+            agent:   当前 Agent 实例（用于授权校验）
+            context: 执行上下文（含 stream_callback / pending_confirmations 等运行时依赖）
+                     对于 SpawnAgentTool、MessageAgentTool 等需要运行时注入的工具，
+                     必须传入此参数，否则这类工具无法正确推送 SSE 事件。
 
         Returns:
             Dict[str, Any]: 执行结果
+
+        NOTE 运行时上下文注入机制：
+             部分工具（如 spawn_agent、send_message）在注册到 ToolHub 时尚无 stream_callback，
+             需要在每次调用前通过 update_context() 注入当前执行上下文。
+             本方法通过鸭子类型检测工具是否有 update_context 方法：
+               - 有 → 在调用 execute() 前先注入 stream_callback / pending_confirmations
+               - 无 → 普通工具，直接调用即可
         """
         tool_name = step.params.get("tool_name")
         params = step.params.get("params", {})
-        
-        logger.info(f"{Fore.CYAN}调用工具: {tool_name}{Style.RESET_ALL}")
+
+        logger.info(
+            f"{Fore.CYAN}[执行工具] 准备调用工具: {tool_name} "
+            f"| context={'已传入' if context else '未传入'}{Style.RESET_ALL}"
+        )
 
         # ── 工具授权校验 ──────────────────────────────────────────
         # 若 agent 声明了 available_tools（非空），则只允许使用授权内的工具
@@ -758,7 +778,36 @@ class ExecutionEngine:
                 "action": "tool",
                 "tool_name": tool_name
             }
-        
+
+        # ── 运行时上下文注入（context-aware 工具专用）────────────────────────
+        # 工具如 spawn_agent / send_message 在注册时没有 stream_callback，
+        # 每次调用前需要通过 update_context() 注入当前执行环境的运行时依赖：
+        #   - stream_callback:      SSE 事件推送回调（子 Agent 事件透传给前端）
+        #   - pending_confirmations: 挂起确认映射表（/agents/confirm 接口能找到对应确认）
+        #   - user_rejected_tools:  已拒绝工具黑名单（子 Agent 回避重复尝试）
+        # 通过鸭子类型检测 update_context，避免对工具类名硬编码（扩展性更强）
+        if context and hasattr(tool, "update_context") and callable(tool.update_context):
+            _stream_cb      = context.get("stream_callback")
+            _pending_confs  = context.get("pending_confirmations")
+            _rejected_tools = context.get("user_rejected_tools")
+            tool.update_context(
+                stream_callback       = _stream_cb,
+                pending_confirmations = _pending_confs,
+                user_rejected_tools   = _rejected_tools,
+            )
+            logger.info(
+                f"{Fore.GREEN}[执行工具] 已为工具 '{tool_name}' 注入运行时上下文 "
+                f"| stream_callback={'✅ 已注入' if _stream_cb else '❌ 未传入，子Agent事件将无法推流'} "
+                f"| pending_confirmations={'✅ 已注入' if _pending_confs else '⚠️ 未传入'}{Style.RESET_ALL}"
+            )
+        elif tool_name in ("spawn_agent", "send_message") and not context:
+            # 对已知需要上下文的工具，发出明确警告
+            logger.warning(
+                f"{Fore.YELLOW}[执行工具⚠️] 工具 '{tool_name}' 需要运行时上下文（stream_callback 等），"
+                f"但调用时未传入 context！子 Agent 的 SSE 事件将无法推入当前流。"
+                f"请确保 _execute_step 正确传入 context 参数。{Style.RESET_ALL}"
+            )
+
         # ── 路径一：通过 ToolCallingGateway 执行（推荐路径）─────────────────
         # 当网关已配置时，所有工具调用统一走网关，享受：
         #   - 参数 JSON Schema 校验（防止非法参数进入工具）
@@ -1068,13 +1117,72 @@ class ExecutionEngine:
 
         Returns:
             Dict[str, Any]: 执行结果
+
+        NOTE: 此方法包含防御性"需求完整性检查"：
+              若规划阶段的 LLM 在生成 delegate task 时省略了原始用户需求中的
+              文件写入、搜索等附加操作，此处会检测并发出 WARNING，
+              并在子 Agent 的 task 末尾补充原始用户任务作为补救上下文。
         """
         agent_id = step.params.get("agent_id")
         task = step.params.get("task")
         if not isinstance(task, str):
             task = str(task or "")
 
-        logger.info(f"{Fore.CYAN}委派任务给子 Agent: {agent_id}{Style.RESET_ALL}")
+        # ── 从 context 中提取原始用户任务（用于后续完整性诊断） ────────────────
+        # NOTE: 原始任务是顶层用户输入，从 execution context 中传入；
+        #       若 LLM 规划时截断了某些需求（如"写入本地"），可通过对比检测并补救
+        original_task: str = context.get("task", "") if context else ""
+
+        logger.info(
+            f"{Fore.CYAN}[委派] 准备委派任务给子 Agent: {agent_id} "
+            f"| 委派任务长度={len(task)}字符 "
+            f"| 原始用户任务长度={len(original_task)}字符{Style.RESET_ALL}"
+        )
+        logger.debug(
+            f"{Fore.BLUE}[委派] 委派任务摘要: {task[:150]}...{Style.RESET_ALL}"
+        )
+        if original_task:
+            logger.debug(
+                f"{Fore.BLUE}[委派] 原始用户任务摘要: {original_task[:150]}...{Style.RESET_ALL}"
+            )
+
+        # ── 防御性检查：委派任务是否遗漏了原始用户需求中的关键操作 ────────────
+        # 典型遗漏场景：用户说"查询订单并写入本地"，LLM 规划只把"查询订单"
+        # 传给 order_agent，把"写入本地"直接丢弃，导致子 Agent 不知道还需要写文件
+        FILE_WRITE_KEYWORDS = ["写入本地", "保存文件", "写入文件", "保存到", "写到", "file_write"]
+        if original_task:
+            missing_keywords = []
+            for kw in FILE_WRITE_KEYWORDS:
+                # 原始任务中包含该关键词，但规划的委派 task 中没有
+                if kw in original_task and kw not in task:
+                    missing_keywords.append(kw)
+
+            if missing_keywords:
+                # 检测到需求可能被遗漏，发出警告日志并补充原始任务上下文
+                logger.warning(
+                    f"{Fore.YELLOW}[委派⚠️] 检测到委派任务可能遗漏了原始用户需求！"
+                    f"\n  原始用户任务: '{original_task[:120]}'"
+                    f"\n  委派的 task : '{task[:120]}'"
+                    f"\n  疑似遗漏关键词: {missing_keywords}"
+                    f"\n  🔧 已自动追加原始用户完整需求到委派 task 末尾，防止信息丢失。{Style.RESET_ALL}"
+                )
+                # 自动修复：将原始用户任务作为"完整需求上下文"补充到委派 task 末尾，
+                # 让子 Agent 知道用户的完整意图，避免因 LLM 规划截断导致需求遗漏
+                task = (
+                    f"{task}\n\n"
+                    "【⚠️ 完整用户需求（请务必全部完成，不要遗漏）】\n"
+                    f"用户原始请求：{original_task}\n"
+                    "注意：如任务包含文件写入、搜索等操作而你的工具不支持，"
+                    "必须通过 spawn_agent 将任务连同已查到的数据转交给 general_agent 完成。"
+                )
+                logger.info(
+                    f"{Fore.GREEN}[委派🔧] 已向子 Agent '{agent_id}' 补充原始需求上下文，"
+                    f"修复后 task 长度={len(task)}字符{Style.RESET_ALL}"
+                )
+            else:
+                logger.debug(
+                    f"{Fore.GREEN}[委派✅] 委派任务完整性检查通过，未发现需求遗漏{Style.RESET_ALL}"
+                )
 
         if not self.child_agent_manager:
             error_msg = "子 Agent 管理器未初始化"
@@ -1167,38 +1275,115 @@ class ExecutionEngine:
                 f"子 Agent {agent_id} 将以静默模式执行（无用户确认交互）{Style.RESET_ALL}"
             )
 
-        # 委派任务（parent_agent_id 设为 None，因为在执行引擎层面不跟踪父 Agent）
+        # ═══════════════════════════════════════════════════════════════════
+        # 【统一委派路径：优先通过已注册的 SpawnAgentTool 执行委派】
+        #
+        # 设计动机：
+        #   系统中已在 ToolHub 注册了 SpawnAgentTool（spawn_agent 工具），
+        #   所有子 Agent 委派应统一经过该工具，以便享受：
+        #     - SpawnAgentTool 自身的参数校验和日志
+        #     - 工具网关的统一统计和超时管理
+        #     - 将来可在 SpawnAgentTool 层面扩展拦截/修改逻辑
+        #
+        #   当 LLM 生成 action="delegate" 计划步骤时，执行引擎也应走同一路径，
+        #   而不是直接绕过 SpawnAgentTool 调用 ChildAgentManager。
+        #
+        # 备用路径：
+        #   若 SpawnAgentTool 未注册（如测试环境）或调用失败，
+        #   回退到直接调用 ChildAgentManager.delegate_task（保证向后兼容）。
+        # ═══════════════════════════════════════════════════════════════════
+        spawn_tool = self.tool_hub.get_tool("spawn_agent") if self.tool_hub else None
+
+        if spawn_tool and hasattr(spawn_tool, "update_context") and callable(spawn_tool.update_context):
+            # ── 路径一（推荐）：通过 SpawnAgentTool 委派 ──────────────────────
+            # 先更新工具的运行时上下文（stream_callback / pending_confirmations）
+            spawn_tool.update_context(
+                stream_callback       = stream_callback,
+                pending_confirmations = pending_confirmations,
+                user_rejected_tools   = user_rejected_tools_in,
+            )
+            logger.info(
+                f"{Fore.GREEN}[委派→SpawnAgentTool] 通过已注册的 spawn_agent 工具委派任务 "
+                f"→ {agent_id} | stream_callback={'✅ 已注入' if stream_callback else '❌ 未传入'}"
+                f"{Style.RESET_ALL}"
+            )
+            try:
+                result = await spawn_tool.execute({
+                    "agent_id": agent_id,
+                    "task":     task,   # 已包含上游结果注入 + 原始需求补充
+                })
+
+                _sub_success = result.get("success", False)
+                # NOTE: result 来自 execute_with_callback，结构为
+                #   {"success": bool, "result": ExecutionResult.to_dict(), "error": str|None, ...}
+                # 这里需要从内层 result 里提取真实的错误信息，供父 Agent 错误收集使用
+                _sub_error = result.get("error") or (
+                    # 内层 result 也可能有 error 字段（ExecutionResult.to_dict()）
+                    result.get("result", {}).get("error") if isinstance(result.get("result"), dict) else None
+                )
+                logger.info(
+                    f"{Fore.GREEN if _sub_success else Fore.YELLOW}"
+                    f"[委派←SpawnAgentTool] 子 Agent '{agent_id}' 通过 spawn_agent 工具执行完毕 "
+                    f"| success={_sub_success} | error={_sub_error or '无'}"
+                    f"{Style.RESET_ALL}"
+                )
+                return {
+                    "success": _sub_success,
+                    "result":  result,
+                    "error":   _sub_error,          # 失败时传递真实错误，避免 "Unknown error"
+                    "action":  "delegate",
+                    "agent_id": agent_id,
+                    "user_rejected_tools": result.get("user_rejected_tools", []),
+                }
+
+            except Exception as e:
+                # SpawnAgentTool 调用失败时降级到直接委派，不中断流程
+                logger.warning(
+                    f"{Fore.YELLOW}[委派⚠️] SpawnAgentTool 调用异常，回退直接委派: {e}{Style.RESET_ALL}"
+                )
+                # fall-through to direct delegation
+
+        # ── 路径二（兜底）：直接通过 ChildAgentManager 委派 ──────────────────
+        # 当 SpawnAgentTool 未注册（如测试环境）或上方调用失败时走此路径
+        # NOTE: child_agent_manager 在此处一定非 None，因为函数顶部已做早期返回保护
+        logger.info(
+            f"{Fore.BLUE}[委派→ChildAgentManager] 通过 ChildAgentManager 直接委派任务 "
+            f"→ {agent_id}（SpawnAgentTool 不可用，使用兜底路径）{Style.RESET_ALL}"
+        )
         try:
             result = await self.child_agent_manager.delegate_task(
-                parent_agent_id=None,
-                child_agent_id=agent_id,
-                task=task,
-                stream_callback=stream_callback,          # 透传父级流式回调
-                pending_confirmations=pending_confirmations, # 透传父级挂起确认表
-                user_rejected_tools=user_rejected_tools_in # ── 新增: 透传已拒绝工具黑名单
+                parent_agent_id      = None,
+                child_agent_id       = agent_id,
+                task                 = task,
+                stream_callback      = stream_callback,
+                pending_confirmations = pending_confirmations,
+                user_rejected_tools  = user_rejected_tools_in,
             )
-            
+
+            _sub_success = result.get("success", False)
+            _sub_error   = result.get("error")
             logger.info(
-                f"{Fore.GREEN}子 Agent {agent_id} 任务执行完成{Style.RESET_ALL}"
+                f"{Fore.GREEN if _sub_success else Fore.YELLOW}"
+                f"[委派←ChildAgentManager] 子 Agent '{agent_id}' 执行完成 "
+                f"| success={_sub_success}{Style.RESET_ALL}"
             )
-            
             return {
-                "success": True,
-                "result": result,
-                "action": "delegate",
+                "success": _sub_success,   # 根据子 Agent 实际成功状态，不再硬编码 True
+                "result":  result,
+                "error":   _sub_error,     # 传递子 Agent 的错误信息
+                "action":  "delegate",
                 "agent_id": agent_id,
-                # ── 新增: 向上冒泡子 Agent 新增的 user_rejected_tools
-                "user_rejected_tools": result.get("user_rejected_tools", [])
+                "user_rejected_tools": result.get("user_rejected_tools", []),
             }
-            
+
         except Exception as e:
             error_msg = f"委派给 Agent {agent_id} 失败: {e}"
             logger.error(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
             return {
                 "success": False,
-                "error": str(e),
-                "action": "delegate",
-                "agent_id": agent_id
+                "error":   str(e),
+                "action":  "delegate",
+                "agent_id": agent_id,
             }
 
 

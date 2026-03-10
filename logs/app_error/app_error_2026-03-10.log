@@ -165,3 +165,10 @@ asyncio.exceptions.CancelledError
 2026-03-10 18:00:25 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
 2026-03-10 18:00:25 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000007] 推理请求失败: Connection error.[0m
 2026-03-10 18:00:25 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-10 19:27:34 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid syntax. Perhaps you forgot a comma? (customer_service.py, line 30)[0m
+2026-03-10 19:28:03 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid syntax. Perhaps you forgot a comma? (customer_service.py, line 30)[0m
+2026-03-10 19:28:18 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid syntax. Perhaps you forgot a comma? (customer_service.py, line 30)[0m
+2026-03-10 19:28:58 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): invalid syntax. Perhaps you forgot a comma? (customer_service.py, line 30)[0m
+2026-03-10 19:40:22 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-03-10 19:43:39 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-03-10 19:45:30 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m

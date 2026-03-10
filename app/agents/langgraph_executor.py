@@ -1738,11 +1738,25 @@ class LangGraphAgentExecutor:
                 except Exception as e:
                     logger.error(f"{Fore.RED}[会话记忆] 提取/写入子Agent任务摘要失败: {e}{Style.RESET_ALL}")
 
+            # NOTE: final_result 来自 ExecutionResult.to_dict()，其结构为：
+            #   {"success": bool, "result": str, "step_results": list, "error": str|None, ...}
+            #   注意：键名是 "success"（布尔值），而非 "status"（字符串），
+            #   不能用 final_result.get("status") == "success" 判断，否则永远为 False。
+            _exec_success = bool(final_result.get("success")) if final_result else False
+            _exec_error   = final_result.get("error") if (final_result and not _exec_success) else None
+
+            logger.info(
+                f"{Fore.GREEN if _exec_success else Fore.YELLOW}"
+                f"[子Agent] execute_with_callback 结果: success={_exec_success}, "
+                f"result_len={len(str(final_result.get('result', ''))) if final_result else 0}字符"
+                f"{Style.RESET_ALL}"
+            )
+
             return {
-                "success": final_result.get("status") == "success" if final_result else False,
-                "result": final_result,
-                "error": final_result.get("message") if final_result and final_result.get("status") == "failed" else None,
-                # ── 新增: 子 Agent 运行结束后，将其最终的黑名单向上交差
+                "success": _exec_success,
+                "result":  final_result,
+                "error":   _exec_error,
+                # ── 子 Agent 运行结束后，将其最终的黑名单向上交差
                 "user_rejected_tools": final_state.get("user_rejected_tools", []),
                 # NOTE: 不返回 messages —— final_state["messages"] 包含 LangChain BaseMessage 对象，
                 #       无法被 json.dumps() 序列化，且父 Agent 不需要子 Agent 的对话历史
