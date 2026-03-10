@@ -548,8 +548,11 @@ class ExecutionEngine:
                         search_result_title = first_result.get("title")
                         search_result_snippet = first_result.get("snippet")
             
-            # 记录最后一个工具结果
-            if result.get("action") == "tool":
+            # 记录最后一个工具/技能结果，作为 {{last_tool_result}} 的替换来源
+            # NOTE: 同时覆盖 skill 类型，是因为 LLM 经常规划 text_writing(skill) → file_write(tool) 的两步链。
+            # 若只记录 action=="tool"，则 text_writing 的输出永远不会成为 last_tool_result，
+            # 导致 file_write 步骤的 content 参数占位符被替换为空字符串，触发"文件内容不能为 None"错误。
+            if result.get("action") in ("tool", "skill"):
                 last_tool_result = result.get("result")
         
         # 如果没有搜索结果，检查是否可以从任何工具结果中提取 URL

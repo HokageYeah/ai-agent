@@ -1,1 +1,167 @@
 2026-03-10 12:03:17 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-03-10 13:03:28 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b740217731190088212396e0d6d', 'requestId': '6ed310bda2550217bd19da7a5527ce86'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2ab57624-bd69-43e9-9034-4dd7bf3b3989'}[0m
+2026-03-10 13:03:28 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000026] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b740217731190088212396e0d6d', 'requestId': '6ed310bda2550217bd19da7a5527ce86'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2ab57624-bd69-43e9-9034-4dd7bf3b3989'}[0m
+2026-03-10 13:03:28 | ERROR    | app.agents.execution:_synthesize_answer:394 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '212b740217731190088212396e0d6d', 'requestId': '6ed310bda2550217bd19da7a5527ce86'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2ab57624-bd69-43e9-9034-4dd7bf3b3989'}[0m
+2026-03-10 14:40:32 | ERROR    | app.api.endpoints.agents:generate_stream:286 - [31m【Agent流式接口】Agent 流式执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-10 15:18:28 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-10 15:18:28 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000027] 推理请求失败: Connection error.[0m
+2026-03-10 15:18:28 | ERROR    | app.agents.planning:create_plan:242 - [31m创建计划失败: Connection error.[0m
+2026-03-10 15:18:29 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-10 15:18:29 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000028] 推理请求失败: Connection error.[0m
+2026-03-10 15:18:29 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-10 15:18:53 | ERROR    | app.llm_hub.providers.openai:stream:286 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-10 15:18:53 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-10 15:18:53 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-10 15:18:53 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Connection error.[0m
+2026-03-10 15:18:53 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-10 15:27:28 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '2150137017731276487532109e0c65', 'requestId': '6a0f339c3314b5e3e93c7d2f113b6fb6'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 727c0760-6731-4310-aa82-82d2d7cba274'}[0m
+2026-03-10 15:27:28 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000012] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2150137017731276487532109e0c65', 'requestId': '6a0f339c3314b5e3e93c7d2f113b6fb6'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 727c0760-6731-4310-aa82-82d2d7cba274'}[0m
+2026-03-10 15:27:28 | ERROR    | app.agents.execution:_synthesize_answer:394 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '2150137017731276487532109e0c65', 'requestId': '6a0f339c3314b5e3e93c7d2f113b6fb6'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 727c0760-6731-4310-aa82-82d2d7cba274'}[0m
+2026-03-10 15:53:34 | ERROR    | app.tools.builtin.search:_search_via_html:400 - [31m[SearchTool] HTML 搜索 HTTP 错误: 422[0m
+2026-03-10 15:53:41 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '216663f017731292216574209e0eed', 'requestId': '43e047722f8f372174f766bc748b2f9a'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: eaa5d998-8b90-440d-8de3-6517c175a471'}[0m
+2026-03-10 15:53:41 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000003] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '216663f017731292216574209e0eed', 'requestId': '43e047722f8f372174f766bc748b2f9a'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: eaa5d998-8b90-440d-8de3-6517c175a471'}[0m
+2026-03-10 15:53:41 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Error code: 429 - {'extend_fields': {'traceId': '216663f017731292216574209e0eed', 'requestId': '43e047722f8f372174f766bc748b2f9a'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: eaa5d998-8b90-440d-8de3-6517c175a471'}[0m
+2026-03-10 15:53:57 | ERROR    | app.tools.builtin.search:_search_via_html:400 - [31m[SearchTool] HTML 搜索 HTTP 错误: 422[0m
+2026-03-10 15:53:59 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b1ce317731292396628529e0f60', 'requestId': 'd41f2ca56df3b36b3c74ca81ca357cfb'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 678ed90a-f226-424e-8ba8-2a9ceef1f952'}[0m
+2026-03-10 15:53:59 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000005] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b1ce317731292396628529e0f60', 'requestId': 'd41f2ca56df3b36b3c74ca81ca357cfb'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 678ed90a-f226-424e-8ba8-2a9ceef1f952'}[0m
+2026-03-10 15:53:59 | ERROR    | app.agents.execution:_synthesize_answer:394 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '212b1ce317731292396628529e0f60', 'requestId': 'd41f2ca56df3b36b3c74ca81ca357cfb'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 678ed90a-f226-424e-8ba8-2a9ceef1f952'}[0m
+2026-03-10 15:54:06 | ERROR    | app.tools.builtin.search:_search_via_html:400 - [31m[SearchTool] HTML 搜索 HTTP 错误: 422[0m
+2026-03-10 15:54:19 | ERROR    | app.tools.builtin.search:_search_via_html:400 - [31m[SearchTool] HTML 搜索 HTTP 错误: 422[0m
+2026-03-10 15:54:45 | ERROR    | logging:callHandlers:1736 - Traceback (most recent call last):
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+    ~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 70, in serve
+    with self.capture_signals():
+         ~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 331, in capture_signals
+    signal.raise_signal(captured_signal)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 157, in _on_sigint
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 701, in lifespan
+    await receive()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+2026-03-10 15:54:45 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 70, in serve
+    with self.capture_signals():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 331, in capture_signals
+    signal.raise_signal(captured_signal)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 157, in _on_sigint
+    raise KeyboardInterrupt()
+
+KeyboardInterrupt
+
+
+During handling of the above exception, another exception occurred:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 194, in run
+    with Runner(debug=debug, loop_factory=loop_factory) as runner:
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 62, in __exit__
+    self.close()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 70, in close
+    _cancel_all_tasks(loop)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 206, in _cancel_all_tasks
+    loop.run_until_complete(tasks.gather(*to_cancel, return_exceptions=True))
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 192, in __call__
+    async with anyio.create_task_group() as task_group:
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 787, in __aexit__
+    raise exc_val
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 755, in __aexit__
+    await self._on_completed_fut
+
+asyncio.exceptions.CancelledError
+2026-03-10 16:16:46 | ERROR    | app.agents.execution:_execute_tool:754 - [31m工具不存在: list_dir[0m
+2026-03-10 16:17:17 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '0b1bf97117731306373798621e0de1', 'requestId': '977f14c4bfb0622d457b25ae9ab240e4'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 85173e51-6fcc-4e01-8c6b-007d5eca6b2a'}[0m
+2026-03-10 16:17:17 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000006] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '0b1bf97117731306373798621e0de1', 'requestId': '977f14c4bfb0622d457b25ae9ab240e4'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 85173e51-6fcc-4e01-8c6b-007d5eca6b2a'}[0m
+2026-03-10 16:17:17 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Error code: 429 - {'extend_fields': {'traceId': '0b1bf97117731306373798621e0de1', 'requestId': '977f14c4bfb0622d457b25ae9ab240e4'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 85173e51-6fcc-4e01-8c6b-007d5eca6b2a'}[0m
+2026-03-10 16:21:51 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'ListDirTool' is not defined[0m
+2026-03-10 16:21:53 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'ListDirTool' is not defined[0m
+2026-03-10 16:22:01 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): name 'ListDirTool' is not defined[0m
+2026-03-10 18:00:23 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-10 18:00:23 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000006] 推理请求失败: Connection error.[0m
+2026-03-10 18:00:23 | ERROR    | app.agents.planning:create_plan:242 - [31m创建计划失败: Connection error.[0m
+2026-03-10 18:00:25 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-10 18:00:25 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000007] 推理请求失败: Connection error.[0m
+2026-03-10 18:00:25 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Connection error.[0m

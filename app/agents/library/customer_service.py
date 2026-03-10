@@ -28,16 +28,19 @@ CUSTOMER_SERVICE_MASTER = Agent(
     description="负责客户服务的总协调，识别用户意图并委派给专业子 Agent 处理",
     role=(
         "你是一个专业的客服总监，负责协调处理各类客户问题。\n"
-        "【重要】你只拥有 datetime 工具，没有数据库查询或搜索能力。\n"
+        "【重要】你只拥有 datetime 和 spawn_agent 工具，没有数据库查询或搜索能力。\n"
+        "【spawn_agent 工具说明】使用 spawn_agent 工具将任务委派给子 Agent 执行，\n"
+        "  - agent_id: 指定要委派的子 Agent（order_agent / refund_agent / general_agent）\n"
+        "  - task: 清晰描述子 Agent 需要完成的任务（务必包含足够上下文信息）\n"
         "必须根据以下规则委派给对应子 Agent，禁止自行回答专业性问题：\n"
-        "- 订单查询、订单状态、配送跟踪、商品明细 → 委派给 order_agent（订单专员）\n"
-        "- 退款申请、退款审核、退款进度 → 委派给 refund_agent（退款专员）\n"
-        "- 搜索信息、写代码、翻译、数据分析、文本写作、网络请求、计算、文件处理等通用任务 → 委派给 general_agent（通用助手）\n"
-        "- 如果自己没有能力处理，优先委派给 general_agent 尝试处理\n"
-        "你的职责是：理解用户问题 → 判断类型 → 委派给合适的子 Agent → 整合结果回复用户。"
+        "- 订单查询、订单状态、配送跟踪、商品明细 → spawn_agent(agent_id='order_agent')\n"
+        "- 退款申请、退款审核、退款进度 → spawn_agent(agent_id='refund_agent')\n"
+        "- 搜索信息、写代码、翻译、数据分析、文本写作、网络请求、计算、文件处理等通用任务 → spawn_agent(agent_id='general_agent')\n"
+        "- 如果自己没有能力处理，优先 spawn_agent 委派给 general_agent 尝试处理\n"
+        "你的职责是：理解用户问题 → 判断类型 → 调用 spawn_agent 委派给合适的子 Agent → 整合结果回复用户。"
     ),
     capabilities=["问题分类", "任务委派", "结果整合", "客户沟通"],
-    available_tools=["datetime"],
+    available_tools=["datetime", "spawn_agent"],
     available_skills=["text_writing"],
     # NOTE: 更新 child_agents，纳入新增的通用助手 Agent
     child_agents=["order_agent", "refund_agent", "general_agent"],
@@ -155,9 +158,12 @@ GENERAL_AGENT = Agent(
         "【重要工具说明】\n"
         "- search: 搜索网络信息，适合回答「搜一下 X」「查询 X 的最新资讯」等\n"
         "- http_request: 发起 HTTP 请求，适合调用外部 API 或抓取网页内容\n"
-        "- python_executor: 执行 Python 代码，适合数据处理、数值计算、验证逻辑\n"
+        "- python_executor: 执行 Python 代码，适合数据处理、数值计算、验证逻辑、以及没有的工具可以调用可以写代码执行\n"
         "- file_read: 读取本地文件内容\n"
-        "- file_write: 将内容写入本地文件\n"
+        "- file_write: 将内容写入本地文件（全量覆盖或追加）\n"
+        "- file_edit: 精准编辑本地文件——将文件中指定的 old_text 替换为 new_text，适合只修改文件中某一段内容而不覆盖整个文件\n"
+        "- list_dir: 列出目录中的文件和子目录，显示大小和条目数，适合先浏览目录结构再决定读哪个文件\n"
+        "- shell_exec: 执行 Shell 命令，适合运行系统命令、查看进程/环境变量/文件列表、执行脚本等；危险命令（如 rm -rf）会被自动拦截，请勿尝试\n"
         "- calculator: 进行数学计算\n"
         "- datetime: 获取当前日期时间\n"
         "【重要技能说明】\n"
@@ -174,7 +180,8 @@ GENERAL_AGENT = Agent(
     ),
     capabilities=[
         "网络搜索", "信息查询", "代码生成", "文本翻译",
-        "数据分析", "文本写作", "HTTP 请求", "文件读写", "数学计算"
+        "数据分析", "文本写作", "HTTP 请求", "文件读写",
+        "文件精准编辑", "目录浏览", "Shell 命令执行", "数学计算"
     ],
     # NOTE: 囊括除 database_query 之外的所有内置工具
     available_tools=[
@@ -183,6 +190,10 @@ GENERAL_AGENT = Agent(
         "python_executor",
         "file_read",
         "file_write",
+        "file_edit",    # 精准文本替换，避免全量覆写
+        "list_dir",     # 目录浏览，了解文件结构
+        "shell_exec",   # Shell 命令执行，含内置安全防护
+        "send_message", # 实时消息反馈
         "calculator",
         "datetime",
     ],

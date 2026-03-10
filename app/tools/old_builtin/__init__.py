@@ -7,11 +7,6 @@
 - PythonExecutorTool: Python 代码执行工具
 - FileReadTool: 文件读取工具
 - FileWriteTool: 文件写入工具
-- FileEditTool: 文件精准编辑工具
-- FileListDirTool: 目录列表工具
-- ShellExecutorTool: Shell 命令执行工具
-- SpawnAgentTool: 子 Agent 任务委派工具
-- MessageAgentTool: 消息发送工具（需运行时注入 stream_callback）
 - DatabaseQueryTool: 数据库查询工具
 - CalculatorTool: 计算器工具
 - DateTimeTool: 日期时间工具
@@ -22,11 +17,7 @@
 from app.tools.builtin.search import SearchTool
 from app.tools.builtin.http import HTTPRequestTool
 from app.tools.builtin.executor import PythonExecutorTool
-from app.tools.builtin.file import FileReadTool, FileWriteTool, FileEditTool, FileListDirTool
-from app.tools.builtin.shell import ShellExecutorTool
-# NOTE: SpawnAgentTool 和 MessageAgentTool 需要运行时注入依赖，不参与自动批量注册
-from app.tools.builtin.spawn import SpawnAgentTool
-from app.tools.builtin.message import MessageAgentTool
+from app.tools.builtin.file import FileReadTool, FileWriteTool
 from app.tools.builtin.database import DatabaseQueryTool
 from app.tools.builtin.calculator import CalculatorTool
 from app.tools.builtin.datetime import DateTimeTool
@@ -38,12 +29,6 @@ __all__ = [
     "PythonExecutorTool",
     "FileReadTool",
     "FileWriteTool",
-    "FileEditTool",
-    "FileListDirTool",
-    "ShellExecutorTool",
-    # NOTE: SpawnAgentTool 和 MessageAgentTool 不加入 register_all_builtin_tools
-    "SpawnAgentTool",
-    "MessageAgentTool",
     "DatabaseQueryTool",
     "CalculatorTool",
     "DateTimeTool",
@@ -82,9 +67,6 @@ def register_all_builtin_tools(tool_hub, seed_order_data: bool = True) -> None:
         PythonExecutorTool(),
         FileReadTool(),
         FileWriteTool(),
-        FileEditTool(),
-        FileListDirTool(),
-        ShellExecutorTool(),    # Shell 命令执行工具
         db_tool,        # 复用已创建的实例，确保种子数据注入到同一连接
         CalculatorTool(),
         DateTimeTool(),
