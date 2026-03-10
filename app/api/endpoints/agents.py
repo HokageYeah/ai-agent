@@ -115,8 +115,8 @@ async def execute_agent(
             )
             
             # 使用依赖注入获取全局 Agent 执行器（内部已包含完整的 llm_hub/tool_hub 等）
-            from app.utils.dependencies import get_agent_executor
-            agent_executor = get_agent_executor()
+            # from app.utils.dependencies import get_agent_executor
+            # agent_executor = get_agent_executor()
             if request.conversation_id:
                 logger.info(
                     f"{Fore.CYAN}[API路由] 检测到参数 conversation_id='{request.conversation_id}'，"
@@ -205,6 +205,15 @@ async def execute_agent_stream(
       - final_answer: 最终答案
       - error: 执行错误
       - complete: 执行完成
+      - user_confirm_required: 需要用户确认
+      - user_confirm_result: 用户确认结果
+      - skill_complete: 技能执行完成
+      - execute_complete: 执行完成
+      - error_analysis_start: 开始错误分析
+      - error_analysis: 错误分析
+      - step_error: 步骤执行错误
+      - sub_agent_start: 开始委派子 Agent
+      - sub_agent_end: 委派子 Agent 完成
 
     Args:
         agent_id: Agent ID
@@ -235,8 +244,8 @@ async def execute_agent_stream(
         data: {json}
         """
         # 使用依赖注入获取全局流式 Agent 执行器
-        from app.utils.dependencies import get_agent_executor
-        agent_executor = get_agent_executor()
+        # from app.utils.dependencies import get_agent_executor
+        # agent_executor = get_agent_executor()
         
         if request.conversation_id:
             logger.info(

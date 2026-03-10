@@ -175,6 +175,12 @@ export function useAgentStream(options: {
       case 'complete':        return '✅ 执行完毕'
       case 'step_error':      return `⚠️ 步骤执行失败`
       case 'error':           return `❌ 发生错误`
+      case 'error_analysis_start': return `🔍 正在分析错误...`
+      case 'error_analysis': return `🔍 错误分析完成`
+      case 'user_confirm_required': return `⚠️ 需要用户确认`
+      case 'user_confirm_result': return `✅ 用户确认结果`
+      case 'sub_agent_start': return `🤖 子Agent开始: ${event.data?.sub_agent_name || 'unknown'}`
+      case 'sub_agent_end': return `🤖 子Agent完成: ${event.data?.sub_agent_name || 'unknown'}`
       default:                return `处理中...`
     }
   }

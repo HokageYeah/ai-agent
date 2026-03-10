@@ -1,0 +1,1 @@
+2026-03-10 12:03:17 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
