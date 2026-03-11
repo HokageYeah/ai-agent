@@ -1,6 +1,6 @@
 import { ref, computed, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { executeAgentStream, confirmAgentAction } from '@/api/modules/agents'
+import { executeAgentStream, confirmAgentAction, submitUserInput } from '@/api/modules/agents'
 import type { AgentInfo, AgentExecuteResponse } from '@/types/agent'
 import type { StreamEvent, ExecutionPhase, ParsedExecuteResult } from '@/types/stream'
 
@@ -22,6 +22,22 @@ export function useAgentStream(options: {
   const confirmLoading = ref<string | null>(null)
   const confirmedIds = ref<string[]>([])
   const confirmActionMap = ref<Record<string, 'confirm' | 'reject'>>({})
+
+  // 用户输入请求相关的状态
+  const userInputLoading = ref<string | null>(null)
+  const pendingInputRequest = ref<{
+    input_request_id: string
+    tool_name: string
+    required_fields: Array<{
+      name: string
+      label: string
+      type: string
+      placeholder?: string
+      default?: string
+      secret?: boolean
+    }>
+    message: string
+  } | null>(null)
 
   // 进度指示器
   const currentPhase = computed<ExecutionPhase>(() => {
@@ -62,6 +78,21 @@ export function useAgentStream(options: {
     switch (event.event) {
       case 'user_confirm_result':
         confirmLoading.value = null
+        break
+      case 'await_user_input':
+        // 收到用户输入请求事件，显示输入框（不设置 userInputLoading，避免提交按钮一直转圈）
+        pendingInputRequest.value = {
+          input_request_id: event.data?.input_request_id || '',
+          tool_name: event.data?.tool_name || '',
+          required_fields: event.data?.required_fields || [],
+          message: event.data?.message || '请提供以下信息'
+        }
+        ElMessage.info('请提供所需信息')
+        break
+      case 'user_input_received':
+        // 用户输入已提交，关闭输入对话框
+        userInputLoading.value = null
+        pendingInputRequest.value = null
         break
       case 'complete': {
         executing.value = false
@@ -120,6 +151,21 @@ export function useAgentStream(options: {
     }
   }
 
+  async function handleUserInputSubmit(inputRequestId: string, inputs: Record<string, any>) {
+    if (!inputRequestId || !pendingInputRequest.value) return
+
+    userInputLoading.value = inputRequestId
+    try {
+      await submitUserInput(inputRequestId, inputs)
+      ElMessage.success('✅ 信息已提交')
+      userInputLoading.value = null
+      pendingInputRequest.value = null
+    } catch (error) {
+      ElMessage.error('提交信息失败' + (error instanceof Error ? error.message : ''))
+      userInputLoading.value = null
+    }
+  }
+
   async function handleExecute() {
     if (!options.selectedAgent.value || !options.taskInput.value.trim()) return
 
@@ -132,6 +178,8 @@ export function useAgentStream(options: {
     confirmLoading.value = null
     confirmedIds.value = []
     confirmActionMap.value = {}
+    userInputLoading.value = null
+    pendingInputRequest.value = null
 
     try {
       executeAgentStream(
@@ -179,6 +227,8 @@ export function useAgentStream(options: {
       case 'error_analysis': return `🔍 错误分析完成`
       case 'user_confirm_required': return `⚠️ 需要用户确认`
       case 'user_confirm_result': return `✅ 用户确认结果`
+      case 'await_user_input': return `⚠️ 需要您提供信息`
+      case 'user_input_received': return `✅ 信息已提交`
       case 'sub_agent_start': return `🤖 子Agent开始: ${event.data?.sub_agent_name || 'unknown'}`
       case 'sub_agent_end': return `🤖 子Agent完成: ${event.data?.sub_agent_name || 'unknown'}`
       default:                return `处理中...`
@@ -195,11 +245,14 @@ export function useAgentStream(options: {
     confirmLoading,
     confirmedIds,
     confirmActionMap,
+    userInputLoading,
+    pendingInputRequest,
     currentPhase,
     progressPercent,
     parsedResult,
     handleExecute,
     handleConfirm,
+    handleUserInputSubmit,
     getStreamStatusText
   }
 }

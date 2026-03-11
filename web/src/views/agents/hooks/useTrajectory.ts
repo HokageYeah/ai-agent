@@ -214,6 +214,19 @@ export function useTrajectory(options: {
             continue
         }
 
+        // 需要用户提供额外信息（如 SMTP 配置）
+        if (ev.event === 'await_user_input') {
+            targetParentList.push({
+                 id: `user-input-${actualIteration}-${i}`,
+                 level: actionLevel,
+                 type: 'user_input',
+                 isParent: false,
+                 isExpanded: false,
+                 event: ev
+            })
+            continue
+        }
+
         // 默认将工具调用、子节点调用、最终答案作为 Action 叶子节点
         if (['tool_complete', 'skill_complete', 'delegate_complete', 'final_answer', 'step_error', 'error'].includes(ev.event)) {
              targetParentList.push({

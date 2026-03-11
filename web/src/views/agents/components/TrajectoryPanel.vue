@@ -124,6 +124,102 @@
                 </div>
              </div>
 
+             <!-- 需要用户提供额外信息 - 直接在轨迹中显示输入框 -->
+             <div v-else-if="node.type === 'user_input' || node.event?.event === 'await_user_input'" class="node-user-input-wrap">
+                <div class="user-input-header-line">
+                  <el-icon class="user-input-icon"><WarningFilled /></el-icon>
+                  <span class="user-input-title">需要您提供以下信息</span>
+                  <span class="mono-tag user-input-tag">{{ node.event?.data?.tool_name || '工具' }}</span>
+                </div>
+                <p class="user-input-desc">{{ (pendingInputRequest || node.event?.data)?.message || '请提供以下信息' }}</p>
+                <!-- 邮件服务专用输入布局（SMTP 配置） -->
+                <div v-if="isMailInputNode(node)" class="inline-input-form mail-input-form">
+                  <el-form label-position="top" size="small" class="inline-form">
+                    <el-row :gutter="8">
+                      <el-col :span="14">
+                        <el-form-item label="SMTP 服务器地址" class="inline-form-item">
+                          <el-input
+                            size="small"
+                            v-model="inputForm['smtp_server']"
+                            placeholder="例如: smtp.qq.com"
+                          />
+                        </el-form-item>
+                      </el-col>
+                      <el-col :span="10">
+                        <el-form-item label="端口" class="inline-form-item">
+                          <el-input
+                            size="small"
+                            type="number"
+                            v-model="inputForm['smtp_port']"
+                            placeholder="465 / 587"
+                          />
+                        </el-form-item>
+                      </el-col>
+                    </el-row>
+                    <el-form-item label="发件人邮箱" class="inline-form-item">
+                      <el-input
+                        size="small"
+                        type="email"
+                        v-model="inputForm['sender_email']"
+                        placeholder="例如: your_email@qq.com"
+                      />
+                    </el-form-item>
+                    <el-form-item label="SMTP 授权码" class="inline-form-item">
+                      <el-input
+                        size="small"
+                        type="password"
+                        v-model="inputForm['sender_password']"
+                        placeholder="邮箱设置中生成的授权码"
+                      />
+                    </el-form-item>
+                  </el-form>
+                  <div class="inline-input-actions">
+                    <el-button type="primary" size="small" :loading="userInputLoading === pendingInputRequest?.input_request_id" @click.stop="submitUserInput">
+                      提交
+                    </el-button>
+                  </div>
+                </div>
+                <!-- 通用输入布局（其他类型的用户输入） -->
+                <div v-else class="inline-input-form">
+                  <el-form label-position="top" size="small" class="inline-form">
+                    <el-form-item
+                      v-for="field in (pendingInputRequest?.required_fields || node.event?.data?.required_fields || [])"
+                      :key="field.name"
+                      :label="field.label"
+                      class="inline-form-item"
+                    >
+                      <el-input
+                        v-if="field.type === 'number'"
+                        type="number"
+                        size="small"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                        :default="field.default"
+                      />
+                      <el-input
+                        v-else-if="field.secret"
+                        type="password"
+                        size="small"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                      />
+                      <el-input
+                        v-else
+                        size="small"
+                        :type="field.type === 'email' ? 'email' : 'text'"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                      />
+                    </el-form-item>
+                  </el-form>
+                  <div class="inline-input-actions">
+                    <el-button type="primary" size="small" :loading="userInputLoading === pendingInputRequest?.input_request_id" @click.stop="submitUserInput">
+                      提交
+                    </el-button>
+                  </div>
+                </div>
+             </div>
+
              <!-- 普通动作 (Action/Event) -->
              <div v-else-if="node.type === 'action'" class="node-action" :class="{ 'is-thinking': isStreaming && isLastNode(node) }">
                  <!-- 子 Agent 完成委派 -->
@@ -198,7 +294,7 @@
 import { ref, toRefs } from 'vue'
 import {
   DataLine, Aim, Promotion, ChatDotRound, Finished, CaretRight, User, Check,
-  WarningFilled, CopyDocument, Warning, List, Bottom, InfoFilled, Fold, Expand, DocumentCopy
+  WarningFilled, CopyDocument, Warning, List, Bottom, InfoFilled, Fold, Expand, DocumentCopy, Loading
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { StreamEvent, ExecutionPhase, TrajectoryNode } from '@/types/stream'
@@ -215,10 +311,25 @@ const props = defineProps<{
   confirmLoading: string | null
   confirmedIds: string[]
   confirmActionMap: Record<string, string>
+  userInputLoading: string | null
+  pendingInputRequest: {
+    input_request_id: string
+    tool_name: string
+    required_fields: Array<{
+      name: string
+      label: string
+      type: string
+      placeholder?: string
+      default?: string
+      secret?: boolean
+    }>
+    message: string
+  } | null
 }>()
 
 const emit = defineEmits<{
   (e: 'confirm', confirmId: string, action: 'confirm'|'reject'): void
+  (e: 'submitInput', inputRequestId: string, inputs: Record<string, any>): void
 }>()
 
 const propRefs = toRefs(props)
@@ -238,6 +349,37 @@ const {
 })
 
 const isAllExpanded = ref(true)
+
+// 用户输入表单相关
+const inputForm = ref<Record<string, string>>({})
+
+// 判断当前节点是否属于「邮件服务配置」类型输入
+function isMailInputNode(node: TrajectoryNode): boolean {
+  // 优先使用挂起的 pendingInputRequest，其次回退到当前节点事件数据
+  const data: any = props.pendingInputRequest || node.event?.data
+  const fields: Array<{ name: string }> = data?.required_fields || []
+  if (!fields.length) return false
+
+  const names = fields.map(f => f.name)
+  const REQUIRED_SMTP_FIELDS = ['smtp_server', 'smtp_port', 'sender_email', 'sender_password']
+
+  return REQUIRED_SMTP_FIELDS.every(key => names.includes(key))
+}
+
+function submitUserInput() {
+  if (!props.pendingInputRequest) return
+  emit('submitInput', props.pendingInputRequest.input_request_id, inputForm.value)
+  // 清空表单
+  inputForm.value = {}
+}
+
+function cancelUserInput() {
+  // 取消输入时，也需要通知后端（可以发送一个空输入或者特殊标记）
+  if (props.pendingInputRequest) {
+    emit('submitInput', props.pendingInputRequest.input_request_id, {})
+  }
+  inputForm.value = {}
+}
 
 function expandAll() {
   visibleNodes.value.forEach(node => {
@@ -694,5 +836,159 @@ function getAgentDisplayName(eventData: any): string {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+/* 用户输入对话框样式 */
+.user-input-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.user-input-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 480px;
+  max-width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.user-input-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #303133;
+}
+
+.user-input-content {
+  margin-bottom: 20px;
+}
+
+.input-message {
+  color: #606266;
+  margin-bottom: 16px;
+}
+
+.input-form .el-form-item {
+  margin-bottom: 12px;
+}
+
+.user-input-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* 需要用户提供信息 - 整体区块 */
+.node-user-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 14px 12px;
+  background: #fdf6ec;
+  border-left: 3px solid #e6a23c;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+/* 标题行：单行紧凑，不撑高 */
+.user-input-header-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  line-height: 1.4;
+  min-height: unset;
+}
+
+.user-input-icon {
+  flex-shrink: 0;
+  color: #e6a23c;
+  font-size: 1rem;
+}
+
+.user-input-title {
+  color: #92400e;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.user-input-tag {
+  flex-shrink: 0;
+  background: #fef3c7 !important;
+  color: #92400e;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 说明文案：紧凑一行或两行 */
+.user-input-desc {
+  color: #606266;
+  font-size: 0.8125rem;
+  margin: 6px 0 10px 0;
+  padding: 0;
+  line-height: 1.4;
+}
+
+.input-waiting-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #909399;
+  font-size: 13px;
+  padding-left: 24px;
+  margin-top: 8px;
+}
+
+/* 内联输入表单 - 紧凑排版 */
+.inline-input-form {
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #fde68a;
+  margin-top: 2px;
+}
+
+.inline-form {
+  --el-form-item-margin-bottom: 8px;
+}
+
+.inline-form .el-form-item.inline-form-item {
+  margin-bottom: 8px;
+}
+
+.inline-form .el-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.inline-form .el-form-item__label {
+  font-size: 0.8125rem;
+  color: #606266;
+  line-height: 1.3;
+  padding-bottom: 2px;
+}
+
+.inline-form .el-input__wrapper {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.inline-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 4px;
 }
 </style>

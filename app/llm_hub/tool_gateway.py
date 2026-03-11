@@ -443,6 +443,21 @@ class ToolCallingGateway:
             if not hasattr(tool, "execute"):
                 raise AttributeError(f"Tool {tool_call.tool_name} has no 'execute' method")
             
+            # ── 注入运行时上下文 ────────────────────────────────
+            # 如果工具支持 update_context 方法，注入 context（包含 stream_callback、pending_user_inputs 等）
+            # 注意：只有当 context 中有值时才传递，避免覆盖工具已有值
+            if hasattr(tool, "update_context") and callable(tool.update_context):
+                stream_callback = context.get("stream_callback")
+                pending_confirmations = context.get("pending_confirmations")
+                pending_user_inputs = context.get("pending_user_inputs")
+                
+                # 只有当 context 中存在该值时才传递，避免覆盖工具已保存的引用
+                tool.update_context(
+                    stream_callback=stream_callback if stream_callback is not None else None,
+                    pending_confirmations=pending_confirmations if pending_confirmations is not None else None,
+                    pending_user_inputs=pending_user_inputs if pending_user_inputs is not None else None
+                )
+            
             # 调用工具的 execute 方法
             execute_func = getattr(tool, "execute")
             
@@ -590,7 +605,8 @@ class ToolCallingGateway:
         self,
         tool_name: str,
         arguments: Dict[str, Any],
-        call_id: Optional[str] = None
+        call_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
     ) -> "ToolCallResult":
         """
         直接执行工具调用（ExecutionEngine 专用入口）
@@ -612,6 +628,7 @@ class ToolCallingGateway:
             tool_name: 要执行的工具名称（必须已在网关中注册）
             arguments: 工具参数字典（JSON-serializable）
             call_id: 调用 ID（可选，不传则自动生成）
+            context: 执行上下文（可选，包含 stream_callback、pending_user_inputs 等）
             
         Returns:
             ToolCallResult: 工具执行结果（含状态、结果数据、耗时等）
@@ -647,7 +664,9 @@ class ToolCallingGateway:
         # 原因：规划引擎生成的参数名（如 file_path）可能与 Schema 定义（如 path）存在别名差异，
         #       工具的 execute() 内部已做容错（params.get("path") or params.get("file_path") ...），
         #       由工具自身处理参数兼容，避免网关误判 validation_error 导致工具无法执行
-        result = await self._execute_single_call(tool_call, {}, skip_validation=True)
+        # context 用于传递 stream_callback、pending_user_inputs 等运行时信息
+        actual_context = context if context is not None else {}
+        result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
         
         # 更新统计信息
         self._stats["total_calls"] += 1

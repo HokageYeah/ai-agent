@@ -64,6 +64,7 @@ class SpawnAgentTool(Tool):
         parent_agent_id: Optional[str] = None,
         stream_callback: Optional[Callable] = None,
         pending_confirmations: Optional[Dict[str, Any]] = None,
+        pending_user_inputs: Optional[Dict[str, Any]] = None,
         user_rejected_tools: Optional[List[str]] = None,
     ):
         """
@@ -74,16 +75,18 @@ class SpawnAgentTool(Tool):
             parent_agent_id:      调用方（父 Agent）的 ID，用于循环依赖检测
             stream_callback:      父级 SSE 流式回调，子 Agent 事件会透传给前端
             pending_confirmations: 父级挂起确认映射表，子 Agent 共用同一张表
+            pending_user_inputs:   父级挂起用户输入映射表，子 Agent 共用同一张表（/agents/input 能找到）
             user_rejected_tools:  父级已拒绝的工具列表，子 Agent 回避使用
         """
         if child_agent_manager is None:
             raise ValueError("SpawnAgentTool 需要注入有效的 ChildAgentManager 实例")
 
-        self._manager              = child_agent_manager
-        self._parent_agent_id      = parent_agent_id
-        self._stream_callback      = stream_callback
+        self._manager               = child_agent_manager
+        self._parent_agent_id       = parent_agent_id
+        self._stream_callback       = stream_callback
         self._pending_confirmations = pending_confirmations
-        self._user_rejected_tools  = user_rejected_tools or []
+        self._pending_user_inputs   = pending_user_inputs
+        self._user_rejected_tools   = user_rejected_tools or []
 
         # 构建可用子 Agent 列表（用于工具描述，帮助 LLM 选择正确的 agent_id）
         self._available_agents = self._build_available_agents_desc()
@@ -130,30 +133,36 @@ class SpawnAgentTool(Tool):
         self,
         stream_callback: Optional[Callable] = None,
         pending_confirmations: Optional[Dict[str, Any]] = None,
+        pending_user_inputs: Optional[Dict[str, Any]] = None,
         user_rejected_tools: Optional[List[str]] = None,
     ) -> None:
         """
         更新运行时上下文（每次 Agent 执行前由执行引擎调用）
 
-        NOTE: 每次新任务执行前必须重新注入最新的 stream_callback 和
-              pending_confirmations，确保子 Agent 通过共享字典唤醒确认。
+        NOTE: 每次新任务执行前必须重新注入最新的 stream_callback、
+              pending_confirmations 和 pending_user_inputs，
+              确保子 Agent 通过共享字典唤醒确认/用户输入。
 
         Args:
             stream_callback:      最新的 SSE 流式回调
             pending_confirmations: 最新的挂起确认字典
+            pending_user_inputs:  最新的挂起用户输入字典（/agents/input 用）
             user_rejected_tools:  最新的已拒绝工具列表
         """
         if stream_callback is not None:
             self._stream_callback = stream_callback
         if pending_confirmations is not None:
             self._pending_confirmations = pending_confirmations
+        if pending_user_inputs is not None:
+            self._pending_user_inputs = pending_user_inputs
         if user_rejected_tools is not None:
             self._user_rejected_tools = user_rejected_tools
 
         logger.debug(
             f"{Fore.BLUE}[SpawnAgentTool] 运行时上下文已更新 "
             f"| stream={'已更新' if stream_callback else '未变'} "
-            f"| confirmations={'已更新' if pending_confirmations else '未变'}{Style.RESET_ALL}"
+            f"| confirmations={'已更新' if pending_confirmations else '未变'} "
+            f"| user_inputs={'已更新' if pending_user_inputs else '未变'}{Style.RESET_ALL}"
         )
 
     @property
@@ -271,12 +280,13 @@ class SpawnAgentTool(Tool):
         # ═══════════════ 委派给 ChildAgentManager ═══════════════
         try:
             result = await self._manager.delegate_task(
-                parent_agent_id      = self._parent_agent_id,
+                parent_agent_id       = self._parent_agent_id,
                 child_agent_id       = agent_id,
                 task                 = full_task,
                 context              = context if context else None,
                 stream_callback      = self._stream_callback,
                 pending_confirmations = self._pending_confirmations,
+                pending_user_inputs   = self._pending_user_inputs,
                 user_rejected_tools  = self._user_rejected_tools or []
             )
 

@@ -321,3 +321,20 @@ export function confirmAgentAction(confirmId: string, action: 'confirm' | 'rejec
   console.log(`[Agent API] 用户确认操作 - confirmId: ${confirmId}, action: ${action}`)
   return httpPost<any>(`/agents/confirm/${confirmId}`, { action })
 }
+
+/**
+ * 用户提交工具执行所需的额外信息
+ * POST /api/v1/agents/input/{input_request_id}
+ *
+ * 当工具（如 python_executor）执行失败并检测到需要用户提供额外信息时，
+ * LLM 会决定暂停执行并发送 await_user_input 事件给前端。
+ * 前端展示输入框，用户输入后调用本接口提交。
+ *
+ * @param inputRequestId - 输入请求的唯一 ID（由 await_user_input 事件携带）
+ * @param inputs - 用户输入的字段和值字典
+ * @returns 提交结果
+ */
+export function submitUserInput(inputRequestId: string, inputs: Record<string, any>): Promise<any> {
+  console.log(`[Agent API] 用户提交输入 - inputRequestId: ${inputRequestId}, inputs:`, inputs)
+  return httpPost<any>(`/agents/input/${inputRequestId}`, { inputs })
+}

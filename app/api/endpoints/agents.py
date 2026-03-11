@@ -30,6 +30,7 @@ from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.agents.registry import AgentRegistry
 from app.agents.langgraph_executor import LangGraphAgentExecutor
 from app.utils.dependencies import get_agent_registry, get_agent_executor
+from typing import Dict, Any
 
 # 创建路由器
 router = APIRouter()
@@ -480,6 +481,74 @@ async def confirm_agent_action(
         platform=PlatformEnum.WX_PUBLIC,
         api=f"/agents/confirm/{confirm_id}",
         data={"confirm_id": confirm_id, "action": request.action, "message": action_text},
+        ret=["success"],
+        v=1
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 用户输入请求接口
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class UserInputRequest(BaseModel):
+    """用户输入请求体"""
+    inputs: Dict[str, Any]  # 用户输入的字段和值
+
+
+@router.post("/agents/input/{input_request_id}")
+async def submit_user_input(
+    input_request_id: str,
+    request: UserInputRequest,
+    agent_executor: LangGraphAgentExecutor = Depends(get_agent_executor)
+) -> ApiResponseData:
+    """
+    用户提交工具执行所需的额外信息。
+
+    当工具（如 python_executor）执行失败并检测到需要用户提供额外信息时，
+    LLM 会决定暂停执行并发送 await_user_input 事件给前端。
+    前端展示输入框，用户输入后调用本接口提交。
+
+    本接口通过 input_request_id 找到进程内挂起的 asyncio.Event，
+    写入用户输入并 set event，唤醒挂起的执行节点继续流程。
+
+    Args:
+        input_request_id: 唯一输入请求 ID（由 await_user_input 事件携带）
+        request: 包含用户输入的字典
+        agent_executor: Agent 执行器（依赖注入）
+
+    Returns:
+        ApiResponseData: 统一响应格式
+    """
+    logger.info(
+        f"{Fore.CYAN}【用户输入接口】收到用户输入请求 — "
+        f"input_request_id: {input_request_id}, inputs: {request.inputs}{Style.RESET_ALL}"
+    )
+
+    # 在执行器的 _pending_user_inputs 中查找挂起的输入请求
+    pending = agent_executor._pending_user_inputs.get(input_request_id)
+    if not pending:
+        logger.warning(
+            f"{Fore.YELLOW}【用户输入接口】input_request_id 不存在或已超时: {input_request_id}{Style.RESET_ALL}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=f"输入请求 ID 不存在或已超时: {input_request_id}"
+        )
+
+    # 写入用户输入并唤醒挂起的执行节点
+    pending["inputs"] = request.inputs
+    pending["event"].set()
+
+    logger.info(
+        f"{Fore.GREEN}【用户输入接口】用户已提交输入，"
+        f"input_request_id={input_request_id}{Style.RESET_ALL}"
+    )
+
+    return ApiResponseData(
+        platform=PlatformEnum.WX_PUBLIC,
+        api=f"/agents/input/{input_request_id}",
+        data={"input_request_id": input_request_id, "inputs": request.inputs, "message": "输入已提交"},
         ret=["success"],
         v=1
     )

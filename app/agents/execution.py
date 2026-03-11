@@ -788,7 +788,9 @@ class ExecutionEngine:
 
         logger.info(
             f"{Fore.CYAN}[执行工具] 准备调用工具: {tool_name} "
-            f"| context={'已传入' if context else '未传入'}{Style.RESET_ALL}"
+            f"| context={'已传入' if context else '未传入'}"
+            f" | pending_user_inputs={'已传入' if context and context.get('pending_user_inputs') is not None else '未传入'}"
+            f"{Style.RESET_ALL}"
         )
 
         # ── 工具授权校验 ──────────────────────────────────────────
@@ -824,21 +826,26 @@ class ExecutionEngine:
         # 每次调用前需要通过 update_context() 注入当前执行环境的运行时依赖：
         #   - stream_callback:      SSE 事件推送回调（子 Agent 事件透传给前端）
         #   - pending_confirmations: 挂起确认映射表（/agents/confirm 接口能找到对应确认）
+        #   - pending_user_inputs:   挂起用户输入映射表（/agents/input 接口能找到对应输入）
         #   - user_rejected_tools:  已拒绝工具黑名单（子 Agent 回避重复尝试）
         # 通过鸭子类型检测 update_context，避免对工具类名硬编码（扩展性更强）
+        # 注意：使用 `is not None` 判断，避免空字典被误判为未传入
         if context and hasattr(tool, "update_context") and callable(tool.update_context):
-            _stream_cb      = context.get("stream_callback")
+            _stream_cb       = context.get("stream_callback")
             _pending_confs  = context.get("pending_confirmations")
+            _pending_inputs = context.get("pending_user_inputs")
             _rejected_tools = context.get("user_rejected_tools")
             tool.update_context(
                 stream_callback       = _stream_cb,
                 pending_confirmations = _pending_confs,
+                pending_user_inputs   = _pending_inputs,
                 user_rejected_tools   = _rejected_tools,
             )
             logger.info(
                 f"{Fore.GREEN}[执行工具] 已为工具 '{tool_name}' 注入运行时上下文 "
                 f"| stream_callback={'✅ 已注入' if _stream_cb else '❌ 未传入，子Agent事件将无法推流'} "
-                f"| pending_confirmations={'✅ 已注入' if _pending_confs else '⚠️ 未传入'}{Style.RESET_ALL}"
+                f"| pending_confirmations={'✅ 已注入' if _pending_confs is not None else '⚠️ 未传入'} "
+                f"| pending_user_inputs={'✅ 已注入' if _pending_inputs is not None else '⚠️ 未传入'}{Style.RESET_ALL}"
             )
         elif tool_name in ("spawn_agent", "send_message") and not context:
             # 对已知需要上下文的工具，发出明确警告
@@ -864,7 +871,8 @@ class ExecutionEngine:
                 from app.llm_hub.tool_gateway import ToolCallStatus
                 gateway_result = await self.tool_gateway.execute_direct_tool_call(
                     tool_name=tool_name,
-                    arguments=params
+                    arguments=params,
+                    context=context
                 )
                 
                 if gateway_result.status == ToolCallStatus.SUCCESS:
@@ -872,9 +880,84 @@ class ExecutionEngine:
                         f"{Fore.GREEN}[执行引擎←网关] 工具 {tool_name} 执行成功，"
                         f"耗时: {gateway_result.execution_time_ms:.2f}ms{Style.RESET_ALL}"
                     )
+                    
+                    # ── 检测工具是否需要用户输入 ────────────────────────────────
+                    # 检查工具返回结果中是否包含 "needs_user_input" 标记
+                    result = gateway_result.result
+                    if result and isinstance(result, dict) and result.get("needs_user_input"):
+                        logger.info(
+                            f"{Fore.CYAN}[执行工具-网关路径] 工具 {tool_name} 需要用户额外输入，"
+                            f"准备请求用户输入{Style.RESET_ALL}"
+                        )
+                        # 获取用户输入请求的详细信息
+                        user_input_request = result.get("user_input_request", {})
+                        required_fields = user_input_request.get("required_fields", [])
+                        prompt_message = user_input_request.get("message", "请提供以下信息")
+                        
+                        # 优先从工具返回结果中获取 _pending_user_inputs（这是工具实际持有的引用）
+                        tool_pending_user_inputs = result.get("_pending_user_inputs")
+                        
+                        # 调用等待用户输入（会暂停执行直到用户输入）
+                        user_inputs = await self._wait_for_user_input(
+                            tool_name=tool_name,
+                            required_fields=required_fields,
+                            prompt_message=prompt_message,
+                            context=context,
+                            pending_user_inputs=tool_pending_user_inputs,
+                            iteration=context.get("iteration", 0) if context else 0
+                        )
+                        
+                        # 用户输入已获取，将用户输入注入到工具参数中，重新执行
+                        if user_inputs:
+                            logger.info(
+                                f"{Fore.GREEN}[执行工具-网关路径] 已获取用户输入，"
+                                f"重新执行工具 {tool_name}{Style.RESET_ALL}"
+                            )
+                            # 合并用户输入到原始参数
+                            merged_params = {**params, **user_inputs}
+                            
+                            # 合并 context，确保重试执行时也能访问 pending_user_inputs
+                            retry_context = {**context} if context else {}
+                            if tool_pending_user_inputs:
+                                retry_context["pending_user_inputs"] = tool_pending_user_inputs
+
+                            # 重新通过网关执行工具
+                            retry_result = await self.tool_gateway.execute_direct_tool_call(
+                                tool_name=tool_name,
+                                arguments=merged_params,
+                                context=retry_context
+                            )
+                            
+                            if retry_result.status == ToolCallStatus.SUCCESS:
+                                return {
+                                    "success": True,
+                                    "result": retry_result.result,
+                                    "action": "tool",
+                                    "tool_name": tool_name,
+                                    "user_inputs_provided": user_inputs,
+                                    "execution_time_ms": retry_result.execution_time_ms
+                                }
+                            else:
+                                error_msg = f"工具 {tool_name} 重新执行失败: {retry_result.error}"
+                                return {
+                                    "success": False,
+                                    "error": error_msg,
+                                    "action": "tool",
+                                    "tool_name": tool_name
+                                }
+                        else:
+                            # 用户取消输入或超时
+                            return {
+                                "success": False,
+                                "error": "用户取消输入或输入超时",
+                                "action": "tool",
+                                "tool_name": tool_name,
+                                "user_input_cancelled": True
+                            }
+                    
                     return {
                         "success": True,
-                        "result": gateway_result.result,
+                        "result": result,
                         "action": "tool",
                         "tool_name": tool_name,
                         # 附加网关统计信息，供调试和监控使用
@@ -924,6 +1007,73 @@ class ExecutionEngine:
             result = await tool.execute(params)
             logger.info(f"{Fore.GREEN}工具 {tool_name} 执行成功{Style.RESET_ALL}")
             
+            # ── 检测工具是否需要用户输入 ────────────────────────────────
+            # 检查工具返回结果中是否包含 "needs_user_input" 标记
+            # 如果是，暂停执行并向用户请求额外信息
+            if result and isinstance(result, dict) and result.get("needs_user_input"):
+                logger.info(
+                    f"{Fore.CYAN}[执行工具] 工具 {tool_name} 需要用户额外输入，"
+                    f"准备请求用户输入{Style.RESET_ALL}"
+                )
+                # 获取用户输入请求的详细信息
+                user_input_request = result.get("user_input_request", {})
+                required_fields = user_input_request.get("required_fields", [])
+                prompt_message = user_input_request.get("message", "请提供以下信息")
+                
+                # 优先从工具返回结果中获取 _pending_user_inputs（这是工具实际持有的引用）
+                tool_pending_user_inputs = result.get("_pending_user_inputs")
+                
+                # 调用等待用户输入（会暂停执行直到用户输入）
+                user_inputs = await self._wait_for_user_input(
+                    tool_name=tool_name,
+                    required_fields=required_fields,
+                    prompt_message=prompt_message,
+                    context=context,
+                    pending_user_inputs=tool_pending_user_inputs,
+                    iteration=context.get("iteration", 0) if context else 0
+                )
+                
+                # 用户输入已获取，将用户输入注入到工具参数中，重新执行
+                if user_inputs:
+                    logger.info(
+                        f"{Fore.GREEN}[执行工具] 已获取用户输入，"
+                        f"重新执行工具 {tool_name}{Style.RESET_ALL}"
+                    )
+                    # 合并用户输入到原始参数
+                    merged_params = {**params, **user_inputs}
+                    
+                    # 重新执行工具
+                    try:
+                        result = await tool.execute(merged_params)
+                        logger.info(
+                            f"{Fore.GREEN}工具 {tool_name} 重新执行成功{Style.RESET_ALL}"
+                        )
+                        return {
+                            "success": True,
+                            "result": result,
+                            "action": "tool",
+                            "tool_name": tool_name,
+                            "user_inputs_provided": user_inputs  # 记录用户提供的输入
+                        }
+                    except Exception as retry_e:
+                        error_msg = f"工具 {tool_name} 重新执行失败: {retry_e}"
+                        logger.error(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+                        return {
+                            "success": False,
+                            "error": error_msg,
+                            "action": "tool",
+                            "tool_name": tool_name
+                        }
+                else:
+                    # 用户取消输入或超时
+                    return {
+                        "success": False,
+                        "error": "用户取消输入或输入超时",
+                        "action": "tool",
+                        "tool_name": tool_name,
+                        "user_input_cancelled": True
+                    }
+            
             return {
                 "success": True,
                 "result": result,
@@ -939,6 +1089,134 @@ class ExecutionEngine:
                 "action": "tool",
                 "tool_name": tool_name
             }
+
+    async def _wait_for_user_input(
+        self,
+        tool_name: str,
+        required_fields: List[Dict[str, Any]],
+        prompt_message: str,
+        context: Optional[Dict[str, Any]],
+        pending_user_inputs: Optional[Dict[str, Any]] = None,
+        iteration: int = 0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        暂停执行，等待用户输入额外信息
+
+        Args:
+            tool_name: 需要用户输入的工具名称
+            required_fields: 需要用户提供的字段列表
+            prompt_message: 提示用户的信息
+            context: 执行上下文
+            iteration: 当前迭代次数
+
+        Returns:
+            用户输入的字典，如果用户取消或超时则返回 None
+        """
+        import uuid
+        import asyncio
+
+        # 获取 stream_callback
+        stream_callback = context.get("stream_callback") if context else None
+        
+        # 优先使用传入的 pending_user_inputs，否则从 context 获取
+        actual_pending_user_inputs = pending_user_inputs
+        if actual_pending_user_inputs is None:
+            actual_pending_user_inputs = context.get("pending_user_inputs") if context else None
+
+        # 使用 is not None 判断，避免空字典被误判
+        if not stream_callback or actual_pending_user_inputs is None:
+            logger.warning(
+                f"{Fore.YELLOW}[等待用户输入] 缺少 stream_callback 或 pending_user_inputs，"
+                f"stream_callback={'已传入' if stream_callback else '未传入'}, "
+                f"pending_user_inputs={'已传入' if actual_pending_user_inputs is not None else '未传入'}，"
+                f"无法请求用户输入{Style.RESET_ALL}"
+            )
+            return None
+        
+        # 生成唯一的输入请求 ID
+        input_request_id = str(uuid.uuid4())
+        
+        # 推送 await_user_input 事件到前端
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="await_user_input",
+            iteration=iteration,
+            data={
+                "input_request_id": input_request_id,
+                "tool_name": tool_name,
+                "required_fields": required_fields,
+                "message": prompt_message
+            }
+        )
+        
+        # 创建 asyncio.Event 等待用户输入
+        input_event = asyncio.Event()
+        actual_pending_user_inputs[input_request_id] = {
+            "event": input_event,
+            "inputs": None  # 用户输入的字典
+        }
+        
+        logger.info(
+            f"{Fore.CYAN}[等待用户输入] 已发送输入请求，"
+            f"input_request_id={input_request_id}，等待用户输入...{Style.RESET_ALL}"
+        )
+        
+        try:
+            # 等待用户输入，最多 300 秒超时
+            await asyncio.wait_for(input_event.wait(), timeout=300)
+            user_inputs = actual_pending_user_inputs[input_request_id].get("inputs")
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"{Fore.YELLOW}[等待用户输入] 用户输入超时 "
+                f"(input_request_id={input_request_id}){Style.RESET_ALL}"
+            )
+            user_inputs = None
+        finally:
+            # 清理挂起的输入请求
+            actual_pending_user_inputs.pop(input_request_id, None)
+        
+        # 推送用户输入已接收事件
+        await self._emit_stream_event(
+            stream_callback,
+            event_type="user_input_received",
+            iteration=iteration,
+            data={
+                "input_request_id": input_request_id,
+                "tool_name": tool_name,
+                "has_inputs": user_inputs is not None
+            }
+        )
+        
+        return user_inputs
+    
+    async def _emit_stream_event(
+        self,
+        stream_callback: Optional[Callable],
+        event_type: str,
+        iteration: int = 0,
+        data: Optional[Dict[str, Any]] = None
+    ):
+        """发送流式事件的辅助方法"""
+        import time
+        if stream_callback is None:
+            return
+        
+        event = {
+            "event": event_type,
+            "iteration": iteration,
+            "timestamp": time.time() * 1000,
+        }
+        if data is not None:
+            event["data"] = data
+        
+        try:
+            import asyncio
+            if asyncio.iscoroutinefunction(stream_callback):
+                await stream_callback(event)
+            else:
+                stream_callback(event)
+        except Exception as e:
+            logger.warning(f"{Fore.YELLOW}[流式事件] 发送事件失败: {e}{Style.RESET_ALL}")
     
     async def _execute_skill(
         self,
@@ -1299,15 +1577,17 @@ class ExecutionEngine:
         # 从 context 中提取父级流式回调和挂起确认映射表
         # 这两个对象需要透传给子 Agent，使子 Agent：
         #   1. 也能向同一条 SSE 流推送 user_confirm_required 等事件
-        #   2. 注册到父级的 pending_confirmations 字典，使 /agents/confirm 接口能够找到
+        #   2. 注册到父级的 pending_confirmations / pending_user_inputs 字典，
+        #      使 /agents/confirm、/agents/input 接口能够找到
         stream_callback = context.get("stream_callback") if context else None
         pending_confirmations = context.get("pending_confirmations") if context else None
+        pending_user_inputs = context.get("pending_user_inputs") if context else None
         user_rejected_tools_in = context.get("user_rejected_tools") if context else None
 
         if stream_callback:
             logger.info(
                 f"{Fore.BLUE}[委派] 检测到父级 stream_callback，"
-                f"子 Agent {agent_id} 将共享 SSE 流和 pending_confirmations{Style.RESET_ALL}"
+                f"子 Agent {agent_id} 将共享 SSE 流、pending_confirmations 和 pending_user_inputs{Style.RESET_ALL}"
             )
         else:
             logger.info(
@@ -1336,10 +1616,11 @@ class ExecutionEngine:
 
         if spawn_tool and hasattr(spawn_tool, "update_context") and callable(spawn_tool.update_context):
             # ── 路径一（推荐）：通过 SpawnAgentTool 委派 ──────────────────────
-            # 先更新工具的运行时上下文（stream_callback / pending_confirmations）
+            # 先更新工具的运行时上下文（stream_callback / pending_confirmations / pending_user_inputs）
             spawn_tool.update_context(
                 stream_callback       = stream_callback,
                 pending_confirmations = pending_confirmations,
+                pending_user_inputs   = pending_user_inputs,
                 user_rejected_tools   = user_rejected_tools_in,
             )
             logger.info(
@@ -1392,11 +1673,12 @@ class ExecutionEngine:
         )
         try:
             result = await self.child_agent_manager.delegate_task(
-                parent_agent_id      = None,
+                parent_agent_id       = None,
                 child_agent_id       = agent_id,
                 task                 = task,
                 stream_callback      = stream_callback,
                 pending_confirmations = pending_confirmations,
+                pending_user_inputs   = pending_user_inputs,
                 user_rejected_tools  = user_rejected_tools_in,
             )
 

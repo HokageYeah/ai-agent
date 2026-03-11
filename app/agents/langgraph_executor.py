@@ -70,6 +70,10 @@ class AgentState(TypedDict):
     #       当执行引擎遇到需要用户确认的操作（如 file_write）时，
     #       创建 asyncio.Event 并将其存入此字典，后端确认接口确认后 set 唤醒执行。
     pending_confirmations: Dict[str, Any]
+    # NOTE: 等待用户输入的字典，key 为 input_request_id。
+    #       当工具执行需要额外信息时（如 python_executor 需要 SMTP 配置），
+    #       创建 asyncio.Event 并将其存入此字典，后端输入接口收到用户输入后 set 唤醒执行。
+    pending_user_inputs: Dict[str, Any]
     # NOTE: 用户「拒绝」过的工具名称集合（如 ["file_write"]）。
     #       在 _execute_node 中记录，在 _reflect_node 中从 available_tools
     #       里过滤掉这些工具，防止反思阶段 LLM 通过 tool_gateway 绕过用户确认直接调用。
@@ -140,6 +144,10 @@ class LangGraphAgentExecutor:
         # 后端 confirm 接口收到用户确认后，写入 action 并 set event，唤醒挂起的执行节点
         # HACK: 单进程开发环境适用；多实例部署时需改用 Redis 或其他分布式机制
         self._pending_confirmations: Dict[str, Dict[str, Any]] = {}
+
+        # NOTE: 进程内用户输入请求映射表，key=input_request_id，value={"event": asyncio.Event, "inputs": dict | None}
+        # 后端 input 接口收到用户输入后，写入 inputs 并 set event，唤醒挂起的执行节点
+        self._pending_user_inputs: Dict[str, Dict[str, Any]] = {}
 
         gateway_status = "已启用" if tool_gateway else "未配置"
         logger.info(
@@ -886,6 +894,8 @@ class LangGraphAgentExecutor:
                 "stream_callback": stream_callback,
                 # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表
                 "pending_confirmations": self._pending_confirmations,
+                # 透传父级 pending_user_inputs：子 Agent 把 input_request_id 注册到同一张表
+                "pending_user_inputs": self._pending_user_inputs,
                 # 透传用户拒绝的工具黑名单防止在子流程(如技能引擎/子Agent中)穿透
                 "user_rejected_tools": state.get("user_rejected_tools", []),
                 # 传入会话历史上下文消息：执行引擎在纯记忆问答场景（无工具调用）时使用，
@@ -1620,6 +1630,8 @@ class LangGraphAgentExecutor:
                 "reflection_history": [],
                 # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
                 "pending_confirmations": {},
+                # NOTE: 初始为空字典，等待用户输入时写入 asyncio.Event
+                "pending_user_inputs": {},
                 # NOTE: 初始为空列表，用户拒绝某工具后记录匹名称
                 "user_rejected_tools": [],
                 # NOTE: 初始化 AgentRunMemory 实例，挂载本次任务运行记忆仓库。
@@ -1756,6 +1768,9 @@ class LangGraphAgentExecutor:
                 # NOTE: 调用方会在外部把本 executor._pending_confirmations 替换为父级字典，
                 #       这里用 self._pending_confirmations 确保两者指向同一对象
                 "pending_confirmations": self._pending_confirmations,
+                # NOTE: 调用方会在外部把本 executor._pending_user_inputs 替换为父级字典，
+                #       这里用 self._pending_user_inputs 确保两者指向同一对象
+                "pending_user_inputs": self._pending_user_inputs,
                 # ── 新增: 初始化时继承父级传来的被拒绝工具黑名单
                 "user_rejected_tools": user_rejected_tools or [],
                 # NOTE: 子 Agent 独立的 AgentRunMemory 实例，与父 Agent 相互独立。
@@ -1967,6 +1982,8 @@ class LangGraphAgentExecutor:
             "reflection_history": [],
             # NOTE: 初始为空字典，等待用户确认时写入 asyncio.Event
             "pending_confirmations": {},
+            # NOTE: 初始为空字典，等待用户输入时写入 asyncio.Event
+            "pending_user_inputs": {},
             # NOTE: 初始为空列表，用户拒绝某工具后记录其名称
             #       _reflect_node 会从 available_tools 中过滤这些工具，
             #       防止反思阶段 LLM 通过 tool_gateway 绕过用户确认再次执行被拒绝操作

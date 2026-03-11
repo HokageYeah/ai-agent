@@ -32,7 +32,7 @@
           <ExecutionHeader :agent="selectedAgent" />
 
           <!-- 轨迹流看板 -->
-          <TrajectoryPanel 
+          <TrajectoryPanel
             v-if="executeResult || isStreaming || (streamEvents && streamEvents.length > 0)"
             :streamEvents="streamEvents"
             :selectedAgent="selectedAgent"
@@ -42,7 +42,10 @@
             :confirmLoading="confirmLoading"
             :confirmedIds="confirmedIds"
             :confirmActionMap="confirmActionMap as Record<string, string>"
+            :userInputLoading="userInputLoading"
+            :pendingInputRequest="pendingInputRequest"
             @confirm="handleConfirm"
+            @submitInput="handleUserInputSubmit"
           />
 
           <!-- 底部任务输入与控制 -->
@@ -99,10 +102,13 @@ const {
   confirmLoading,
   confirmedIds,
   confirmActionMap,
+  userInputLoading,
+  pendingInputRequest,
   currentPhase,
   progressPercent,
   handleExecute,
   handleConfirm,
+  handleUserInputSubmit,
   getStreamStatusText
 } = useAgentStream({
   selectedAgent,

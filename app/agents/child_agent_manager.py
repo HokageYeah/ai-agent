@@ -75,6 +75,7 @@ class ChildAgentManager:
         context: Optional[Dict[str, Any]] = None,
         stream_callback: Optional[Callable] = None,
         pending_confirmations: Optional[Dict[str, Any]] = None,
+        pending_user_inputs: Optional[Dict[str, Any]] = None,
         user_rejected_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
@@ -91,6 +92,9 @@ class ChildAgentManager:
             pending_confirmations: 父级挂起确认映射表（可选）。
                                    传入后子 Agent 注册的 confirm_id 与父级共用同一张表，
                                    使 /agents/confirm 接口能找到并唤醒子 Agent 执行。
+            pending_user_inputs: 父级挂起用户输入映射表（可选）。
+                                 传入后子 Agent 注册的 input_request_id 与父级共用同一张表，
+                                 使 /agents/input/{id} 接口能找到并唤醒子 Agent 执行。
             user_rejected_tools: 父级已拒绝的工具列表（可选）。
                                  传入后子 Agent 回避被拒绝工具，并在执行结束后聚合返回新的拒绝列表。
 
@@ -108,6 +112,7 @@ class ChildAgentManager:
         logger.info(
             f"{Fore.CYAN}[子Agent委派] stream_callback={'已传入' if has_stream else '未传入'}，"
             f"pending_confirmations={'已传入' if pending_confirmations is not None else '未传入'}，"
+            f"pending_user_inputs={'已传入' if pending_user_inputs is not None else '未传入'}，"
             f"user_rejected_tools_count={len(user_rejected_tools or [])}{Style.RESET_ALL}"
         )
 
@@ -161,6 +166,15 @@ class ChildAgentManager:
                 logger.info(
                     f"{Fore.GREEN}[子Agent委派] {child_agent_id} 已绑定父级 pending_confirmations "
                     f"(id={id(pending_confirmations)}){Style.RESET_ALL}"
+                )
+            # ── 关键：共享父级 pending_user_inputs 字典 ──────────────────────
+            # 子 Agent 注册 input_request_id 时写入父级的字典，
+            # 确保 /agents/input/{id} 接口（使用顶层 executor 的字典）能找到并唤醒挂起操作
+            if pending_user_inputs is not None:
+                executor._pending_user_inputs = pending_user_inputs
+                logger.info(
+                    f"{Fore.GREEN}[子Agent委派] {child_agent_id} 已绑定父级 pending_user_inputs "
+                    f"(id={id(pending_user_inputs)}){Style.RESET_ALL}"
                 )
             
             logger.info(
