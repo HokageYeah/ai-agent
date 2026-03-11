@@ -16,7 +16,7 @@
 
 import re
 import json as _json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable, Awaitable
 from typing import Dict as DictType
 from typing import List as ListType
 from loguru import logger
@@ -116,15 +116,22 @@ class ExecutionEngine:
         self,
         agent: Agent,
         plan: Plan,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        on_step_complete: Optional[Callable[[Dict[str, Any], int, int], Awaitable[None]]] = None
     ) -> ExecutionResult:
         """
         执行计划
-        
+
         Args:
             agent: Agent 实例
             plan: 执行计划
             context: 执行上下文
+            on_step_complete: 【新增】步骤完成实时回调，签名为 async (step_result, step_idx, step_total) -> None。
+                用于在每个步骤完成后立即推送 SSE 事件，解决以下问题：
+                - 若在 execute_plan 外部（如 _execute_node）遍历 step_results 后批量推送事件，
+                  会造成 sub_agent_start/end 事件（委派期间内部推送）早于 tool_complete 事件出现，
+                  导致前端看到「先委派后查询」的错误顺序。
+                - 通过在每步完成后立即回调，保证 tool_complete 紧跟在 sub_agent_start 之前推送。
             
         Returns:
             ExecutionResult: 执行结果
@@ -135,6 +142,7 @@ class ExecutionEngine:
         
         step_results = []
         final_result = None
+        step_total = len(plan.steps)
         # ── 新增: 初始化用户已拒绝工具黑名单 ──────────────────────────────
         # 继承父级传来的 user_rejected_tools，防止重复尝试已被拒绝的工具。
         user_rejected_tools = list(context.get("user_rejected_tools", [])) if context else []
@@ -142,7 +150,7 @@ class ExecutionEngine:
         try:
             for i, step in enumerate(plan.steps, 1):
                 logger.info(
-                    f"{Fore.CYAN}执行步骤 {i}/{len(plan.steps)}: "
+                    f"{Fore.CYAN}执行步骤 {i}/{step_total}: "
                     f"action={step.action}{Style.RESET_ALL}"
                 )
                 
@@ -165,6 +173,30 @@ class ExecutionEngine:
                             user_rejected_tools.append(t)
                             
                 step_results.append(step_result)
+
+                # ═══════════════════════════════════════════════════════════════
+                # 【实时 SSE 事件推送】步骤完成后立即回调，保证事件顺序正确。
+                #
+                # 设计动机：
+                #   子Agent委派（delegate）期间，child_agent_manager 内部会直接通过
+                #   stream_callback 推送 sub_agent_start/end 及子Agent全部内部事件。
+                #   若等到 execute_plan 返回后才在 _execute_node 中遍历批量推送
+                #   tool_complete/delegate_complete，则这些事件会晚于 sub_agent_end 到达，
+                #   造成前端看到「先委派后查询」的假象。
+                #
+                #   通过在此处调用 on_step_complete，保证：
+                #   Step1(tool)完成 → 立即推送 tool_complete
+                #   Step2(delegate)期间 → 推送 sub_agent_start/内部事件/sub_agent_end
+                #   Step2(delegate)完成 → 立即推送 delegate_complete
+                #   顺序完全还原为规划设计的真实执行顺序。
+                # ═══════════════════════════════════════════════════════════════
+                if on_step_complete and step.action != "final_answer":
+                    # final_answer 步骤的合成在下方进行，等合成完毕再回调
+                    logger.debug(
+                        f"{Fore.CYAN}[执行引擎] 步骤 {i}/{step_total} 完成，触发实时事件回调 "
+                        f"(action={step.action}){Style.RESET_ALL}"
+                    )
+                    await on_step_complete(step_result, i, step_total)
                 
                 # 如果是 final_answer，先合成再返回
                 if step.action == "final_answer":
@@ -250,6 +282,14 @@ class ExecutionEngine:
                     logger.info(
                         f"{Fore.GREEN}执行完成，获得最终答案{Style.RESET_ALL}"
                     )
+                    
+                    # final_answer 步骤也触发实时回调（合成完成后再推送，保证数据完整性）
+                    if on_step_complete:
+                        logger.debug(
+                            f"{Fore.CYAN}[执行引擎] final_answer 步骤合成完毕，触发实时事件回调 "
+                            f"(step={i}/{step_total}){Style.RESET_ALL}"
+                        )
+                        await on_step_complete(step_result, i, step_total)
                     break
                 
                 # 检查步骤是否成功

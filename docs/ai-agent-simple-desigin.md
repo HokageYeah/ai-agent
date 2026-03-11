@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.3
-- **最后更新**: 2026-03-04
+- **版本号**: v1.4
+- **最后更新**: 2026-03-10
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -711,13 +711,13 @@ class AgentConfig(BaseModel):
 ```
 Agent
 ├─ Planning Engine         # 规划引擎
-├─ Execution Engine        # 执行引擎
-├─ Reflection Engine       # 反思引擎
-├─ Tool Access            # 工具访问接口
+├─ Execution Engine        # 执行引擎（委派步骤经 Tool Hub 的 spawn_agent 执行）
+├─ Reflection Engine      # 反思引擎
+├─ Tool Access            # 工具访问接口（含 SpawnAgentTool）
 ├─ Skill Access           # 技能访问接口
 ├─ Memory Access          # 记忆访问接口
 ├─ LLM Hub Client         # LLM Hub 客户端
-└─ Child Agent Manager    # 子 Agent 管理器
+└─ Child Agent Manager    # 子 Agent 管理器（委派时由 SpawnAgentTool 内调，兜底直调）
 ```
 
 ### 8.3 规划引擎
@@ -853,7 +853,9 @@ class ReflectionEngine:
 ```
 
 
-### 8.6 子 Agent 管理器
+### 8.6 子 Agent 管理器与委派统一路径
+
+#### 8.6.1 ChildAgentManager
 
 ```python
 class ChildAgentManager:
@@ -864,29 +866,44 @@ class ChildAgentManager:
     
     async def delegate_task(
         self,
-        parent_agent: Agent,
+        parent_agent_id: str | None,
         child_agent_id: str,
-        task: str
+        task: str,
+        stream_callback=None,
+        pending_confirmations=None,
+        user_rejected_tools=None
     ) -> dict:
-        """委派任务给子 Agent"""
+        """委派任务给子 Agent，透传流式回调与确认状态"""
         
         child_agent = self.agent_registry.get_agent(child_agent_id)
         if not child_agent:
-            return {"error": f"Agent not found: {child_agent_id}"}
+            return {"success": False, "error": f"Agent not found: {child_agent_id}"}
         
-        executor = AgentExecutor(
-            llm_hub=self.llm_hub,
-            tool_hub=self.tool_hub,
-            skill_manager=self.skill_manager
-        )
-        
-        result = await executor.execute(
+        # 使用 execute_with_callback 执行子 Agent，保证 SSE 与确认透传
+        result = await self._executor.execute_with_callback(
             agent=child_agent,
-            task=task
+            task=task,
+            stream_callback=stream_callback,
+            pending_confirmations=pending_confirmations,
+            user_rejected_tools=user_rejected_tools
         )
-        
         return result
 ```
+
+#### 8.6.2 委派统一路径：SpawnAgentTool 优先
+
+委派有两种触发方式，但**执行时统一经由 SpawnAgentTool（工具层）**，保证上下文注入与行为一致：
+
+| 触发方式 | 说明 | 执行入口 |
+|----------|------|----------|
+| 规划步骤 `action: "delegate"` | LLM 直接产出委派步骤 | `ExecutionEngine._delegate_to_agent` → 优先调用 **SpawnAgentTool.execute()**，失败时兜底 `ChildAgentManager.delegate_task` |
+| 规划步骤 `action: "tool", tool_name: "spawn_agent"` | LLM 选择调用 spawn_agent 工具 | `ExecutionEngine._execute_tool` → 经工具网关执行 SpawnAgentTool |
+
+**设计要点**：
+
+- **SpawnAgentTool**（`app/tools/builtin/spawn.py`）：在 ToolHub 中注册为 `spawn_agent`，内部调用 `ChildAgentManager.delegate_task`。支持 **update_context(stream_callback, pending_confirmations, user_rejected_tools)**，在每次执行前由执行引擎注入当前运行时上下文，确保子 Agent 的 SSE 事件与用户确认行为与主 Agent 一致。
+- **执行引擎**：`_execute_tool` 对带有 `update_context` 方法的工具（如 SpawnAgentTool、MessageAgentTool）在调用前注入 `context` 中的 `stream_callback`、`pending_confirmations`、`user_rejected_tools`；`_delegate_to_agent` 从 ToolHub 获取 `spawn_agent` 并先对其执行 `update_context` 再调用 `execute()`，实现委派路径统一。
+- **兜底**：若 SpawnAgentTool 未注册或执行异常，`_delegate_to_agent` 会回退为直接调用 `ChildAgentManager.delegate_task`，仍能完成委派，但建议保持 SpawnAgentTool 可用以保证流式与确认透传。
 
 ### 8.7 主子 Agent 示例
 
@@ -1073,8 +1090,10 @@ tools = [
 
 子 Agent 委派时需透传流式回调和确认状态，保证轨迹与确认行为一致。
 
-- **透传**：主执行器将 `stream_callback`、`pending_confirmations` 传入执行引擎，委派时由 `ChildAgentManager.delegate_task` 传给子执行器；子执行器使用 `execute_with_callback`，与主 Agent 共用同一 `_pending_confirmations`。
+- **透传**：主执行器将 `stream_callback`、`pending_confirmations`、`user_rejected_tools` 传入执行引擎；委派时优先通过 **SpawnAgentTool**（执行前对其调用 `update_context` 注入上述上下文），再由其内部调用 `ChildAgentManager.delegate_task`；子执行器使用 `execute_with_callback`，与主 Agent 共用同一 `_pending_confirmations` 与流式通道。
+- **运行时上下文注入**：对需依赖运行时上下文的工具（如 `spawn_agent`、`send_message`），执行引擎在 `_execute_tool` 中检测工具的 `update_context` 方法，若存在则在执行前注入当前 `stream_callback`、`pending_confirmations`、`user_rejected_tools`，避免子 Agent 事件无法推流或确认弹窗不展示。
 - **事件**：委派前发送 `sub_agent_start`（含 `sub_agent_id`、`sub_agent_name`、`task`），委派后发送 `sub_agent_end`（含 `success`）；子 Agent 内部所有 SSE 事件在 payload 中附带 `is_sub_agent: true`、`sub_agent_id`、`sub_agent_name`，前端可据此做区块展示与配色区分。
+- **子 Agent 执行结果约定**：`execute_with_callback` 的返回结构与 `ExecutionResult.to_dict()` 一致，使用 **`success`（布尔）** 表示是否成功，**不要**使用 `status == "success"` 等字符串判断；错误信息放在 `error` 字段。委派步骤的 `step_result` 会携带 `success`、`result`、`error`，供错误收集与前端展示。
 - **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本），主 Agent 的 `step_complete` 事件中 `action=final_answer` 时携带 `answer` 字段，供前端在「合成最终答案」下展示具体答案。
 
 ---
@@ -1093,7 +1112,7 @@ class AgentState(TypedDict):
     current_plan: dict             # 当前计划
     tool_outputs: list[dict]       # 工具输出
     iterations: int                # 迭代次数
-    final_result: dict             # 最终结果
+    final_result: dict             # 最终结果，来自 ExecutionResult.to_dict()，含 success(bool)、result、step_results、error 等
     error_context: list[dict]      # 历史失败步骤（跨迭代累积）
     error_analysis: dict           # LLM 对错误的根因分析结果
     reflection_history: list[dict] # 历次反思结论（跨迭代），供下一轮规划使用
@@ -1543,6 +1562,7 @@ app/
   │  若有 error_context，携带历史错误与纠正建议一起生成计划
   ↓
 [执行节点] 执行引擎：按计划逐步执行
+  │  工具/技能步骤经 Tool Hub 执行；委派步骤经 SpawnAgentTool 注入上下文后执行
   │  ┌─ 步骤成功 → 收集结果，继续下一步
   │  └─ 步骤失败 → 生成 error_record 追加到 error_context
   │             → 调用 _analyze_errors（LLM 根因分析）
@@ -1581,13 +1601,13 @@ app/
   ↓
 分析任务，判断是否需要委派
   ↓
-不需要委派 → 自己执行
+不需要委派 → 自己执行（工具/技能）
   ↓
-委派给子 Agent
+需要委派 → 执行引擎经 SpawnAgentTool（Tool Hub）注入 stream_callback / 确认状态
   ↓
-子 Agent 执行任务
+SpawnAgentTool 调用 ChildAgentManager.delegate_task → 子 Agent 执行任务
   ↓
-主 Agent 整合结果
+子 Agent 结果回填（success/result/error），主 Agent 整合结果
 ```
 
 ---
@@ -1646,3 +1666,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.2）**：错误感知自我纠错机制 — 包括执行错误收集（`error_context`）、LLM 根因分析（`_analyze_errors` + `error_analysis`）、规划阶段工具 Schema 白名单过滤（防止 LLM 重复规划禁用工具）、以及前端 SSE 实时推送错误分析结果（`error_analysis_start` / `error_analysis` 事件）。
 
 > ✅ **已完成（v1.3）**：用户确认流程（敏感工具执行前需用户确认，`/agents/confirm`、`user_rejected_tools`）；子 Agent 流式与确认透传（`sub_agent_start`/`sub_agent_end`、`is_sub_agent`、合成答案 `answer`）；跨迭代规划上下文（`planning_context`、`reflection_history`）；迭代防循环熔断（无可执行动作、重复反思时结束）。
+
+> ✅ **已完成（v1.4）**：子 Agent 委派统一路径（`action: "delegate"` 与 `action: "tool", tool_name: "spawn_agent"` 均优先经 **SpawnAgentTool** 执行，并对其注入 `stream_callback`/`pending_confirmations`/`user_rejected_tools`）；执行引擎对支持 `update_context` 的工具做运行时上下文注入；子 Agent 执行结果统一使用 `ExecutionResult.to_dict()` 的 `success`（布尔）与 `error` 字段，`execute_with_callback` 据此返回，避免误报“Unknown error”；前端轨迹对事件重排序，使「工具/技能完成」在「委派子 Agent」之前展示，符合“先执行本层再委派”的阅读顺序。

@@ -193,12 +193,41 @@ class ChildAgentManager:
                 _sa_name = child_agent.name
 
                 async def _sub_agent_callback(event: Dict[str, Any]) -> None:
-                    """将子 Agent 事件注入 is_sub_agent 等元信息后转发给父级回调。"""
+                    """
+                    将子 Agent 事件注入 is_sub_agent 等元信息后转发给父级回调。
+
+                    【关键设计】嵌套子Agent的 sub_agent_id 保留逻辑：
+                    当 order_agent 内部又委派给 general_agent 时，general_agent 的事件
+                    （如 sub_agent_start、plan_start 等）已经由更内层的 _sub_agent_callback
+                    注入了 sub_agent_id=general_agent。若此处无条件覆写，则会错误地
+                    把所有嵌套事件标记为 order_agent，导致前端显示混乱。
+                    
+                    修复策略：只有当事件数据中「尚未设置 sub_agent_id」时，才注入当前层级的
+                    sub_agent_id；若已有值，说明是内层子Agent的事件，保持原样不覆写。
+                    """
                     e = dict(event)
                     e["data"] = dict(event.get("data") or {})
+                    # 无论层级，统一标记为子Agent事件
                     e["data"]["is_sub_agent"] = True
-                    e["data"]["sub_agent_id"] = _sa_id
-                    e["data"]["sub_agent_name"] = _sa_name
+                    
+                    # 【修复核心】仅在事件未携带 sub_agent_id 时才注入当前层的标识。
+                    # 若已有 sub_agent_id（来自内层嵌套子Agent的注入），不覆写，以保留正确来源。
+                    # 典型场景：cs_master → order_agent → general_agent 三层调用链中，
+                    # general_agent 的事件已被 _sub_agent_callback_general 标记了 sub_agent_id=general_agent，
+                    # order_agent 层的回调不应再覆写为 order_agent。
+                    if not e["data"].get("sub_agent_id"):
+                        e["data"]["sub_agent_id"] = _sa_id
+                        e["data"]["sub_agent_name"] = _sa_name
+                        logger.debug(
+                            f"{Fore.BLUE}[子Agent回调] 注入 sub_agent_id={_sa_id} "
+                            f"(事件类型: {e.get('event', 'unknown')}){Style.RESET_ALL}"
+                        )
+                    else:
+                        logger.debug(
+                            f"{Fore.CYAN}[子Agent回调] 事件已有 sub_agent_id={e['data']['sub_agent_id']}，"
+                            f"跳过覆写（当前层: {_sa_id}，事件: {e.get('event', 'unknown')}）{Style.RESET_ALL}"
+                        )
+                    
                     if asyncio.iscoroutinefunction(_orig_cb):
                         await _orig_cb(e)
                     else:

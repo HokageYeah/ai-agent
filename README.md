@@ -95,7 +95,7 @@ graph TD
         Planning["Planning Engine (规划编排)"]
         Execution["Execution Engine (动态决定调用动作库)"]
         Reflection["Reflection Engine (对结果进行检验拦截并驱动重试)"]
-        ChildMgr["Child Agent Manager (支持套娃式的 Agent 派发嵌套)"]
+        ChildMgr["Child Agent Manager + SpawnAgentTool (委派统一经工具层，透传流式与确认)"]
     end
     
     %% 技能库与工具库
@@ -184,12 +184,16 @@ interface AgentState {
   - 协作策略：遇到订单 / 配送 / 退款等问题时，必须委派给对应子 Agent（`order_agent`、`refund_agent`），自己只负责向用户说明与总结。
 
 - **订单子 Agent（`order_agent`，订单专员）**
-  - 职责：订单详情查询、订单状态、配送跟踪、商品明细等。
-  - 工具权限：授权 `database_query`、`http_request`、`datetime`，可以直接访问内存订单数据库。
+  - 职责：订单详情查询、订单状态、配送跟踪、商品明细等；若任务含“写入本地”等自身工具无法完成的部分，会通过 **spawn_agent** 委派给 `general_agent` 完成。
+  - 工具权限：授权 `database_query`、`http_request`、`datetime`、**spawn_agent**，可以直接访问内存订单数据库。
 
 - **退款子 Agent（`refund_agent`，退款专员）**
   - 职责：退款申请、退款审核、退款进度查询。
   - 工具权限：授权 `database_query`、`calculator`、`datetime`。
+
+- **通用助手（`general_agent`）**
+  - 职责：处理搜索、文件写入、代码执行、翻译等通用任务；常被 `order_agent` / `refund_agent` 委派完成“写入本地”“搜索参数”等衍生需求。
+  - 工具权限：授权 `search`、`http_request`、`python_executor`、`file_read`/`file_write`/`file_edit`、`list_dir`、`shell_exec`、`calculator`、`datetime`、`send_message` 等，无 `spawn_agent`。
 
 - **内存订单数据库 + `DatabaseQueryTool`**
   - 启动时自动构建 SQLite 内存库，包含 `customers / products / orders / order_items / refunds` 等表，并注入 1001–1010 号订单等测试数据。
@@ -197,18 +201,20 @@ interface AgentState {
   - 成功启动后日志中会看到类似：
     - `[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010`
 
+- **委派机制**：子 Agent 委派**统一经 SpawnAgentTool（`spawn_agent`）** 执行：规划中的 `action: "delegate"` 由执行引擎转为调用该工具，并注入 `stream_callback`、`pending_confirmations` 等，保证子 Agent 的 SSE 轨迹与用户确认行为与主 Agent 一致；失败时兜底为直接调用 ChildAgentManager。
+
 - **典型调用示例**
-  - 请求：`POST /api/v1/agents/cs_master/execute`
+  - 请求：`POST /api/v1/agents/cs_master/execute` 或 `POST /api/v1/agents/cs_master/execute/stream`
   - Body 示例：
     ```json
     {
-      "task": "帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。"
+      "task": "帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态，并写入本地文件。"
     }
     ```
   - 执行流程（简化）：
-    1. `cs_master` 识别为订单类问题 → 委派给 `order_agent`
-    2. `order_agent` 使用 `database_query` 查询订单 + 客户 + 商品明细
-    3. 执行引擎将查询结果传回，由 LLM 合成一段**带有真实字段值**的中文说明作为最终回复
+    1. `cs_master` 识别为订单类问题 → 通过 **spawn_agent** 委派给 `order_agent`（任务描述含“写入本地”）
+    2. `order_agent` 使用 `database_query` 查询订单 + 客户 + 商品明细，再通过 **spawn_agent** 委派给 `general_agent` 将结果写入本地文件
+    3. 执行引擎将各层结果传回，由 LLM 合成带真实字段值与文件路径的最终回复
 
 ## 🚀 外界真实系统调用全流程解密
 
@@ -396,7 +402,7 @@ sequenceDiagram
   - 🔴 错误分析阶段：当步骤失败时，实时展示 LLM 根因分析卡片（根因、建议、纠正方案）
   - 🔍 反思阶段：展示反思结论与是否重新规划的决策
   - ✅ 完成阶段：最终答案的 Markdown 渲染
-- **子 Agent 区块展示**：子 Agent 轨迹以区块标题区分，不同子 Agent 可配不同主题色；事件含 `sub_agent_start` / `sub_agent_end` 与 `is_sub_agent` 便于折叠/高亮
+- **子 Agent 区块展示**：子 Agent 轨迹以区块标题区分，不同子 Agent 可配不同主题色；事件含 `sub_agent_start` / `sub_agent_end` 与 `is_sub_agent` 便于折叠/高亮。展示顺序经前端重排序：**先展示当前 Agent 的工具/技能调用，再展示其委派的子 Agent**，符合“先执行本层再委派”的阅读顺序。
 - **轨迹区滚动**：用户上滑查看历史轨迹时不再强制自动滚到底部；右下角提供「回到底部」按钮，点击后滚至最新
 - **阶段进度指示条**：顶部动态展示当前所在阶段（规划 → 执行 → 反思 → 完成）
 - **Chat 对话**：普通多轮对话（含打字机流式效果）
@@ -412,7 +418,7 @@ sequenceDiagram
     participant API as FastAPI (execute/stream)
     participant Exec as LangGraphAgentExecutor
     participant LLM as LLM Hub
-    participant Tools as Tool/Skill/ChildAgent
+    participant Tools as Tool/Skill/SpawnAgent
 
     Web->>API: POST /agents/cs_master/execute/stream
     API->>Exec: execute_stream(agent, task)
@@ -425,9 +431,10 @@ sequenceDiagram
     Exec-->>Web: SSE: plan_complete (含步骤列表)
 
     Exec-->>Web: SSE: step_start (委派 order_agent)
-    Exec->>Tools: 委派 order_agent 执行订单查询
+    Note over Exec,Tools: 委派经 SpawnAgentTool，注入 stream_callback/确认状态
+    Exec->>Tools: spawn_agent(order_agent, task) → ChildAgentManager
     Tools->>LLM: order_agent 规划 + 执行
-    Tools-->>Exec: 子步骤结果 + 最终结果
+    Tools-->>Exec: 子步骤结果 + 最终结果 (success/result/error)
     Exec-->>Web: SSE: delegate_complete (含子步骤明细)
 
     Exec-->>Web: SSE: step_complete (步骤 1/2 完成)

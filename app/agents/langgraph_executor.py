@@ -743,6 +743,140 @@ class LangGraphAgentExecutor:
             else []
         )
         
+        # ═══════════════════════════════════════════════════════════════════════
+        # 【实时步骤事件推送回调】
+        #
+        # 设计动机（修复事件顺序错乱问题）：
+        #   原来的逻辑是：先 await execute_plan()，等所有步骤跑完，
+        #   再在 _execute_node 里遍历 step_results 批量发送 tool_complete/delegate_complete。
+        #   但委派子Agent时，child_agent_manager 会在 execute_plan 内部（执行期间）
+        #   直接通过 stream_callback 推送 sub_agent_start/end 及子Agent全部内部事件。
+        #   导致：
+        #     sub_agent_start(general_agent) → [general_agent所有事件] → sub_agent_end
+        #     （以上都在 execute_plan 内推送）
+        #   然后 execute_plan 返回，_execute_node 才推送：
+        #     tool_complete(database_query) ← ❌ 晚于 sub_agent_end 出现
+        #     delegate_complete(general_agent) ← ❌ 也在最后才到达
+        #
+        #   修复方案：通过 on_step_complete 回调，在 execute_plan 内部每步执行完就立刻发出
+        #   相应的 SSE 事件，保证 tool_complete 在 sub_agent_start 之前推送给前端。
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        # 捕获当前帧变量（避免闭包引用可能变化的外层变量）
+        _iter_ref = iteration
+        _step_total_ref = step_total
+        _cb_ref = stream_callback
+
+        async def _on_step_complete(step_result: Dict[str, Any], step_idx: int, total: int) -> None:
+            """
+            步骤完成实时回调：在 execute_plan 内每步结束后立即调用，
+            向前端推送对应的 SSE 事件（tool_complete / delegate_complete / skill_complete / step_complete）。
+            
+            这样可以保证事件顺序与实际执行顺序完全一致：
+              步骤1(database_query)完成 → tool_complete 立即推送
+              步骤2(delegate)开始 → sub_agent_start（由 child_agent_manager 推送）
+              ...general_agent 内部事件...
+              步骤2(delegate)完成 → delegate_complete 立即推送
+            """
+            if not _cb_ref:
+                return
+            
+            action = step_result.get("action", "unknown")
+            logger.debug(
+                f"{Fore.CYAN}[实时步骤回调] 推送步骤 {step_idx}/{total} 事件: "
+                f"action={action}{Style.RESET_ALL}"
+            )
+            
+            if action == "tool":
+                # 工具调用完成事件
+                await self._emit_stream_event(
+                    _cb_ref,
+                    event_type="tool_complete",
+                    iteration=_iter_ref,
+                    step_index=step_idx,
+                    step_total=total,
+                    data=step_result
+                )
+                logger.info(
+                    f"{Fore.GREEN}[实时步骤回调] 工具完成事件已推送: "
+                    f"tool={step_result.get('tool_name', 'unknown')}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            elif action == "delegate":
+                # 子 Agent 委派完成事件
+                await self._emit_stream_event(
+                    _cb_ref,
+                    event_type="delegate_complete",
+                    iteration=_iter_ref,
+                    step_index=step_idx,
+                    step_total=total,
+                    data=step_result
+                )
+                logger.info(
+                    f"{Fore.GREEN}[实时步骤回调] 委派完成事件已推送: "
+                    f"agent_id={step_result.get('agent_id', 'unknown')}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            elif action == "skill":
+                # 技能调用完成事件
+                await self._emit_stream_event(
+                    _cb_ref,
+                    event_type="skill_complete",
+                    iteration=_iter_ref,
+                    step_index=step_idx,
+                    step_total=total,
+                    data=step_result
+                )
+                logger.info(
+                    f"{Fore.GREEN}[实时步骤回调] 技能完成事件已推送: "
+                    f"skill_id={step_result.get('skill_id', 'unknown')}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            else:
+                # final_answer 或其他步骤：发送 step_complete 事件
+                step_action = step_result.get("action", "unknown")
+                if step_action == "tool":
+                    step_name = f"调用工具: {step_result.get('tool_name', 'unknown')}"
+                elif step_action == "skill":
+                    step_name = f"使用技能: {step_result.get('skill_id', 'unknown')}"
+                elif step_action == "delegate":
+                    step_name = f"委派子Agent: {step_result.get('agent_id', 'unknown')}"
+                elif step_action == "final_answer":
+                    step_name = "合成最终答案"
+                else:
+                    step_name = f"执行步骤: {step_action}"
+                
+                await self._emit_stream_event(
+                    _cb_ref,
+                    event_type="step_complete",
+                    iteration=_iter_ref,
+                    step_index=step_idx,
+                    step_total=total,
+                    data={
+                        **step_result,
+                        "step_name": step_name,
+                        "message": f"步骤 {step_idx}/{total} 完成: {step_name}"
+                    }
+                )
+                logger.info(
+                    f"{Fore.GREEN}[实时步骤回调] 步骤完成事件已推送: "
+                    f"{step_name}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            
+            # 若步骤失败，额外推送错误事件
+            if not step_result.get("success", True):
+                await self._emit_stream_event(
+                    _cb_ref,
+                    event_type="step_error",
+                    iteration=_iter_ref,
+                    step_index=step_idx,
+                    step_total=total,
+                    error=step_result.get("error", "Unknown error"),
+                    data=step_result
+                )
+                logger.warning(
+                    f"{Fore.YELLOW}[实时步骤回调] 步骤失败事件已推送: "
+                    f"step={step_idx}/{total}, error={step_result.get('error', '')[:80]}{Style.RESET_ALL}"
+                )
+
+        # 执行计划，并传入实时步骤回调（仅在有 stream_callback 时才传入，无需 SSE 时跳过）
         execution_result = await self.execution_engine.execute_plan(
             agent=agent,
             plan=plan,
@@ -758,7 +892,9 @@ class LangGraphAgentExecutor:
                 # 当 LLM 规划的 final_answer.content 仍是意图描述而非真实答案时，
                 # 兜底利用这些历史摘要触发 LLM 合成真正的回答。
                 "context_messages": _ctx_messages_for_exec,
-            }
+            },
+            # 实时步骤回调：每步完成后立即推送对应 SSE 事件，保证事件顺序
+            on_step_complete=_on_step_complete if stream_callback else None
         )
 
         
@@ -784,88 +920,13 @@ class LangGraphAgentExecutor:
                 current_rejected.append(t)
         state["user_rejected_tools"] = current_rejected
         
-        logger.info(f"{Fore.GREEN}[Execute Node] 计划执行完成{Style.RESET_ALL}")
+        logger.info(
+            f"{Fore.GREEN}[Execute Node] 计划执行完成，所有步骤事件已在执行过程中实时推送{Style.RESET_ALL}"
+        )
         
-        # 遍历步骤结果，逐个发送流式事件（每个步骤对应前端一个时间轴节点）
-        if execution_result.step_results:
-            for idx, step_result in enumerate(execution_result.step_results, 1):
-                action = step_result.get("action", "unknown")
-                
-                logger.debug(
-                    f"{Fore.CYAN}[Execute Node] 发送步骤事件 {idx}/{step_total}: "
-                    f"action={action}{Style.RESET_ALL}"
-                )
-                
-                # 根据步骤类型发送对应事件（await 必须加）
-                if action == "tool":
-                    # 工具调用完成事件
-                    await self._emit_stream_event(
-                        stream_callback,
-                        event_type="tool_complete",
-                        iteration=iteration,
-                        step_index=idx,
-                        step_total=step_total,
-                        data=step_result
-                    )
-                elif action == "delegate":
-                    # 子 Agent 委派完成事件
-                    await self._emit_stream_event(
-                        stream_callback,
-                        event_type="delegate_complete",
-                        iteration=iteration,
-                        step_index=idx,
-                        step_total=step_total,
-                        data=step_result
-                    )
-                elif action == "skill":
-                    # 技能调用完成事件（使用专用 skill_complete 事件类型）
-                    await self._emit_stream_event(
-                        stream_callback,
-                        event_type="skill_complete",
-                        iteration=iteration,
-                        step_index=idx,
-                        step_total=step_total,
-                        data=step_result
-                    )
-                else:
-                    # 其他步骤（如 final_answer 合成），添加步骤名称描述
-                    step_action = step_result.get("action", "unknown")
-                    step_name = ""
-                    if step_action == "tool":
-                        step_name = f"调用工具: {step_result.get('tool_name', 'unknown')}"
-                    elif step_action == "skill":
-                        step_name = f"使用技能: {step_result.get('skill_id', 'unknown')}"
-                    elif step_action == "delegate":
-                        step_name = f"委派子Agent: {step_result.get('agent_id', 'unknown')}"
-                    elif step_action == "final_answer":
-                        step_name = "合成最终答案"
-                    else:
-                        step_name = f"执行步骤: {step_action}"
-                    
-                    await self._emit_stream_event(
-                        stream_callback,
-                        event_type="step_complete",
-                        iteration=iteration,
-                        step_index=idx,
-                        step_total=step_total,
-                        data={
-                            **step_result,
-                            "step_name": step_name,
-                            "message": f"步骤 {idx}/{step_total} 完成: {step_name}"
-                        }
-                    )
-                
-                # 若步骤失败，额外发送错误事件
-                if not step_result.get("success", True):
-                    await self._emit_stream_event(
-                        stream_callback,
-                        event_type="step_error",
-                        iteration=iteration,
-                        step_index=idx,
-                        step_total=step_total,
-                        error=step_result.get("error", "Unknown error"),
-                        data=step_result
-                    )
+        # 【注意】步骤级别的 SSE 事件（tool_complete/delegate_complete/skill_complete/step_complete）
+        # 已通过 on_step_complete 回调在 execute_plan 执行期间实时推送，
+        # 此处不再重复遍历 step_results 批量发送，避免重复事件和顺序混乱。
         
         # 更新状态
         state["tool_outputs"].extend(execution_result.step_results)
