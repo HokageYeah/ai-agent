@@ -172,3 +172,211 @@ asyncio.exceptions.CancelledError
 2026-03-10 19:40:22 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
 2026-03-10 19:43:39 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
 2026-03-10 19:45:30 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:479 - [31m工具调用超时: search (>30.0s)[0m
+2026-03-10 23:46:58 | ERROR    | logging:callHandlers:1744 - sqlalchemy数据库连接失败: (mysql.connector.errors.ProgrammingError) 1049 (42000): Unknown database 'order_agent_dev'
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2026-03-10 23:46:58 | ERROR    | logging:callHandlers:1744 - Traceback (most recent call last):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 143, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 3309, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 447, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 1264, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 711, in checkout
+    rec = pool._do_get()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/impl.py", line 177, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/impl.py", line 175, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 388, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 673, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 899, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 895, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 661, in connect
+    return dialect.connect(*cargs, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/pooling.py", line 323, in connect
+    return MySQLConnection(*args, **kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 185, in __init__
+    self.connect(**kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/abstracts.py", line 1604, in connect
+    self._open_connection()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 411, in _open_connection
+    raise err
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 388, in _open_connection
+    self._do_auth(
+    ~~~~~~~~~~~~~^
+        self._user,
+        ^^^^^^^^^^^
+    ...<4 lines>...
+        self._conn_attrs,
+        ^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 320, in _do_auth
+    ok_pkt = self._authenticator.authenticate(
+        sock=self._socket,
+    ...<10 lines>...
+        conn_attrs=conn_attrs,
+    )
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/authentication.py", line 381, in authenticate
+    ok_pkt = self._handle_server_response(sock, pkt)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/authentication.py", line 287, in _handle_server_response
+    raise get_exception(pkt)
+mysql.connector.errors.ProgrammingError: 1049 (42000): Unknown database 'order_agent_dev'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 203, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/main.py", line 48, in lifespan
+    database.connect()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/db/sqlalchemy_db.py", line 42, in connect
+    session.execute(text("SELECT 1"))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2239, in _execute_internal
+    conn = self._connection_for_bind(bind)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2108, in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in _connection_for_bind
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/orm/state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 1187, in _connection_for_bind
+    conn = bind.connect()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 3285, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 145, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2448, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 143, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 3309, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 447, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 1264, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 711, in checkout
+    rec = pool._do_get()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/impl.py", line 177, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/impl.py", line 175, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 388, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 673, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 899, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 895, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 661, in connect
+    return dialect.connect(*cargs, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/pooling.py", line 323, in connect
+    return MySQLConnection(*args, **kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 185, in __init__
+    self.connect(**kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/abstracts.py", line 1604, in connect
+    self._open_connection()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 411, in _open_connection
+    raise err
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 388, in _open_connection
+    self._do_auth(
+    ~~~~~~~~~~~~~^
+        self._user,
+        ^^^^^^^^^^^
+    ...<4 lines>...
+        self._conn_attrs,
+        ^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/connection.py", line 320, in _do_auth
+    ok_pkt = self._authenticator.authenticate(
+        sock=self._socket,
+    ...<10 lines>...
+        conn_attrs=conn_attrs,
+    )
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/authentication.py", line 381, in authenticate
+    ok_pkt = self._handle_server_response(sock, pkt)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/mysql/connector/authentication.py", line 287, in _handle_server_response
+    raise get_exception(pkt)
+sqlalchemy.exc.ProgrammingError: (mysql.connector.errors.ProgrammingError) 1049 (42000): Unknown database 'order_agent_dev'
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-03-10 23:46:58 | ERROR    | logging:callHandlers:1744 - Application startup failed. Exiting.
+2026-03-10 23:55:12 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: AuthenticationError: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
+2026-03-10 23:55:12 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000001] 推理请求失败: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
+2026-03-10 23:55:12 | ERROR    | app.agents.planning:create_plan:242 - [31m创建计划失败: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
+2026-03-10 23:55:12 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: AuthenticationError: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
+2026-03-10 23:55:12 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
+2026-03-10 23:55:12 | ERROR    | app.agents.reflection:reflect:217 - [31m反思失败（LLM 调用异常）: Error code: 401 - {'error': {'message': 'Incorrect API key provided: your-ope************here. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}[0m
