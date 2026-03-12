@@ -117,6 +117,7 @@ class ExecutionEngine:
         agent: Agent,
         plan: Plan,
         context: Optional[Dict[str, Any]] = None,
+        on_step_start: Optional[Callable[["PlanStep", int, int], Awaitable[None]]] = None,
         on_step_complete: Optional[Callable[[Dict[str, Any], int, int], Awaitable[None]]] = None
     ) -> ExecutionResult:
         """
@@ -126,6 +127,8 @@ class ExecutionEngine:
             agent: Agent 实例
             plan: 执行计划
             context: 执行上下文
+            on_step_start: 【新增】步骤开始实时回调，签名为 async (step, step_idx, step_total) -> None。
+                用于在工具/委派执行**前**立即推送 tool_start 类似事件，解决需要前端交互输入的工具顺序错乱问题。
             on_step_complete: 【新增】步骤完成实时回调，签名为 async (step_result, step_idx, step_total) -> None。
                 用于在每个步骤完成后立即推送 SSE 事件，解决以下问题：
                 - 若在 execute_plan 外部（如 _execute_node）遍历 step_results 后批量推送事件，
@@ -161,8 +164,33 @@ class ExecutionEngine:
                 # ═══════════════════════════════════════════════════════════════
                 step = self._resolve_step_placeholders(step, step_results)
                 
+                # 【新增】执行步骤开始前触发实时事件回调，保障前端能先看到「正在调用工具」的UI状态，然后再出表单弹窗
+                if on_step_start and step.action != "final_answer":
+                    logger.debug(
+                        f"{Fore.CYAN}[执行引擎] 步骤 {i}/{step_total} 开始，触发实时事件回调 "
+                        f"(action={step.action}){Style.RESET_ALL}"
+                    )
+                    await on_step_start(step, i, step_total)
+                
                 # 执行步骤（把已完成步骤结果传入，供 skill 等使用）
                 step_result = await self._execute_step(agent, step, context, step_results)
+                
+                # NOTE: 防御性保护 ── _execute_step 理论上始终返回 dict，
+                #   但在极端情况（如工具内部未处理的异常）下可能返回 None，
+                #   直接访问 None['key'] 会引发 'NoneType' is not subscriptable 崩溃。
+                #   此处统一兜底，将 None 转为标准错误结构，保证主循环不中断。
+                if step_result is None:
+                    logger.error(
+                        f"{Fore.RED}[执行引擎] _execute_step 返回了 None（步骤 {i}/{step_total}: "
+                        f"action={step.action}），已升级为错误结构以防崩溃{Style.RESET_ALL}"
+                    )
+                    step_result = {
+                        "success": False,
+                        "action": step.action,
+                        "result": None,
+                        "error": "_execute_step 返回了 None（内部错误）",
+                        "user_rejected_tools": [],
+                    }
                 
                 # ── 新增: 合并子层级返回的 user_rejected_tools ────────────────
                 # 不论是本层直接调用工具被拒，还是嵌套的子 Agent 中工具被拒，

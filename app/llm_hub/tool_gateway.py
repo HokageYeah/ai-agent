@@ -158,7 +158,7 @@ class ToolCallingGateway:
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
         
         # 执行超时时间（秒）
-        self._default_timeout = 30.0
+        self._default_timeout = 300.0
         
         # 调用历史
         self._call_history: List[ToolCallResult] = []

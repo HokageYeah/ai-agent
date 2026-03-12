@@ -67,9 +67,26 @@ export function useAgentStream(options: {
   })
 
   // 处理单个流事件的核心分发
-  function handleStreamEvent(event: StreamEvent) {
+  function handleStreamEvent(rawEvent: StreamEvent) {
     if (options.onStreamEvent) {
-      options.onStreamEvent(event)
+      options.onStreamEvent(rawEvent)
+    }
+
+    // 规范化后端事件结构：将统一的 agent_message 解包回 UI 期待的核心动作事件
+    const event = { ...rawEvent }
+    if (event.event === 'agent_message' && event.data) {
+       const msgData = event.data
+       if (msgData.message_type === 'progress' && msgData.progress?.stage) {
+          event.event = msgData.progress.stage
+          event.iteration = msgData.progress.iteration ?? event.iteration
+          if (msgData.progress.total) event.step_total = msgData.progress.total
+       } else if (msgData.message_type === 'input') {
+          event.event = 'await_user_input'
+          event.iteration = msgData.progress?.iteration ?? event.iteration ?? 0
+       } else if (msgData.message_type === 'confirm') {
+          event.event = 'user_confirm_required'
+          event.iteration = msgData.progress?.iteration ?? event.iteration ?? 0
+       }
     }
 
     streamEvents.value.push(event)

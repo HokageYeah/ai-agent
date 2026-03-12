@@ -307,7 +307,7 @@ def get_agent_executor():
             f"支持多层 Agent 委派{Style.RESET_ALL}"
         )
 
-        # ── 注册 SpawnAgentTool 到 ToolHub ──────────────────────────────────────
+        # ── 注册 SpawnAgentTool 到 ToolHub 和 Gateway ───────────────────────────
         # NOTE: SpawnAgentTool 必须在 _child_agent_manager 创建后才能注册，
         #       因为它需要注入 ChildAgentManager 实例（运行时依赖）。
         # 注册后，cs_master 等主 Agent 可以在执行计划步骤中调用 spawn_agent 工具
@@ -322,19 +322,29 @@ def get_agent_executor():
             pending_confirmations=None  # 确认字典在执行时动态更新
         )
         tool_hub.register_tool(spawn_tool)
+        tool_calling_gateway.register_tool(
+            name=spawn_tool.name,
+            tool_instance=spawn_tool,
+            schema=spawn_tool.schema.parameters
+        )
         logger.info(
-            f"{Fore.GREEN}【依赖注入】SpawnAgentTool 已注册到 ToolHub "
+            f"{Fore.GREEN}【依赖注入】SpawnAgentTool 已注册到 ToolHub 和 Gateway "
             f"| tool_name={spawn_tool.name}{Style.RESET_ALL}"
         )
 
-        # ── 注册 MessageAgentTool 到 ToolHub ───────────────────────────────────
+        # ── 注册 MessageAgentTool 到 ToolHub 和 Gateway ─────────────────────────
         # NOTE: 允许 Agent 在执行过程中通过工具调用主动向用户发送实时进度消息。
         #       它的 stream_callback 同样在 execute_with_callback 时动态更新。
         from app.tools.builtin.message import MessageAgentTool
         message_tool = MessageAgentTool(stream_callback=None)
         tool_hub.register_tool(message_tool)
+        tool_calling_gateway.register_tool(
+            name=message_tool.name,
+            tool_instance=message_tool,
+            schema=message_tool.schema.parameters
+        )
         logger.info(
-            f"{Fore.GREEN}【依赖注入】MessageAgentTool 已注册到 ToolHub "
+            f"{Fore.GREEN}【依赖注入】MessageAgentTool 已注册到 ToolHub 和 Gateway "
             f"| tool_name={message_tool.name}{Style.RESET_ALL}"
         )
 

@@ -82,12 +82,12 @@ export function useTrajectory(options: {
         const ev = list[i]
         
         // 修正 Iteration 偏移
-        let actualIteration = ev.iteration
+        let actualIteration = ev.iteration ?? lastMasterIteration ?? 0
         if (ev.event === 'sub_agent_start' || ev.event === 'sub_agent_end' || ev.data?.is_sub_agent) {
           actualIteration = lastMasterIteration
         } else {
-          if (['final_answer', 'complete'].includes(ev.event) && ev.iteration > 0) {
-            actualIteration = ev.iteration - 1
+          if (['final_answer', 'complete'].includes(ev.event) && actualIteration > 0) {
+            actualIteration = actualIteration - 1
           } else {
             lastMasterIteration = actualIteration
           }

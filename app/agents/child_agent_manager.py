@@ -184,13 +184,22 @@ class ChildAgentManager:
 
             # ── 流式模式：包装 stream_callback 并推送子 Agent 生命周期事件 ─────────────
             if has_stream:
-                # 发送 sub_agent_start 事件（原始 callback，不带 is_sub_agent 标记）
+                # 发送 sub_agent_start 事件（封装为 agent_message）
                 # 前端用此事件作为子 Agent 轨迹区块的开始标志
+                import uuid
                 _sa_start: Dict[str, Any] = {
-                    "event": "sub_agent_start",
+                    "event": "agent_message",
                     "iteration": 0,
                     "timestamp": time.time() * 1000,
                     "data": {
+                        "message_id": str(uuid.uuid4()),
+                        "message_type": "progress",
+                        "content": f"子Agent开始: {child_agent.name}",
+                        "importance": "normal",
+                        "progress": {
+                            "stage": "sub_agent_start",
+                            "iteration": 0
+                        },
                         "sub_agent_id": child_agent_id,
                         "sub_agent_name": child_agent.name,
                         "task": task,
@@ -257,12 +266,20 @@ class ChildAgentManager:
                     user_rejected_tools=user_rejected_tools
                 )
 
-                # 发送 sub_agent_end 事件（原始 callback，标记子 Agent 区块结束）
+                # 发送 sub_agent_end 事件（封装为 agent_message）
                 _sa_end: Dict[str, Any] = {
-                    "event": "sub_agent_end",
+                    "event": "agent_message",
                     "iteration": 0,
                     "timestamp": time.time() * 1000,
                     "data": {
+                        "message_id": str(uuid.uuid4()),
+                        "message_type": "progress",
+                        "content": f"子Agent结束: {child_agent.name}",
+                        "importance": "normal",
+                        "progress": {
+                            "stage": "sub_agent_end",
+                            "iteration": 0
+                        },
                         "sub_agent_id": child_agent_id,
                         "sub_agent_name": child_agent.name,
                         "success": result.get("success", False),
