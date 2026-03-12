@@ -34,6 +34,8 @@ from app.memory.agent_run_memory import AgentRunMemory
 from app.memory.session_memory import get_session_memory, extract_summary_from_run_memory
 import asyncio
 
+from app.tools.builtin.message import send_agent_message
+
 
 class AgentState(TypedDict):
     """
@@ -165,10 +167,10 @@ class LangGraphAgentExecutor:
         error: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        创建流式事件数据
+        创建流式事件数据 (统一封装为 agent_message 格式)
         
         Args:
-            event_type: 事件类型
+            event_type: 事件类型，将作为 progress.stage
             iteration: 当前迭代次数
             step_index: 当前步骤索引
             step_total: 步骤总数
@@ -176,24 +178,37 @@ class LangGraphAgentExecutor:
             error: 错误信息
             
         Returns:
-            Dict[str, Any]: 事件数据字典
+            Dict[str, Any]: 统一的 agent_message 事件数据字典
         """
-        event = {
-            "event": event_type,
-            "iteration": iteration,
-            "timestamp": time.time() * 1000,  # 毫秒时间戳
+        import uuid
+        message_id = str(uuid.uuid4())
+        
+        message_data = {
+            "message_id": message_id,
+            "message_type": "progress",
+            "content": f"系统事件: {event_type}",
+            "importance": "normal",
+            "progress": {
+                "stage": event_type,
+                "iteration": iteration
+            }
         }
         
         if step_index is not None:
-            event["step_index"] = step_index
+            message_data["progress"]["step_index"] = step_index
         if step_total is not None:
-            event["step_total"] = step_total
+            message_data["progress"]["total"] = step_total
         if data is not None:
-            event["data"] = data
+            message_data.update(data)
         if error is not None:
-            event["error"] = error
+            message_data["error"] = error
             
-        return event
+        return {
+            "event": "agent_message",
+            "timestamp": time.time() * 1000,
+            "iteration": iteration,
+            "data": message_data
+        }
     
     async def _emit_stream_event(
         self,
@@ -380,12 +395,12 @@ class LangGraphAgentExecutor:
         iteration = state.get("iterations", 0)
         logger.info(f"{Fore.BLUE}[Plan Node] 开始规划 (迭代 {iteration}){Style.RESET_ALL}")
         
-        # 发送开始规划事件（await 必须加，否则 async 方法不执行）
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="plan_start",
-            iteration=iteration,
-            data={"message": "Agent 正在分析任务并制定执行计划..."}
+        # 发送开始规划事件
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="Agent 正在分析任务并制定执行计划...",
+            progress={"stage": "plan_start", "iteration": iteration}
         )
         
         agent = state["agent"]
@@ -499,11 +514,12 @@ class LangGraphAgentExecutor:
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
         
         # 发送规划完成事件（含推理过程和步骤列表）
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="plan_complete",
-            iteration=iteration,
-            data={
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="规划完成",
+            progress={"stage": "plan_complete", "iteration": iteration},
+            extra_data={
                 "reasoning": plan.reasoning,
                 "steps": [step.to_dict() for step in plan.steps]
             }
@@ -566,13 +582,11 @@ class LangGraphAgentExecutor:
         step_total = len(plan.steps) if plan and plan.steps else 0
         
         # 发送开始执行事件（通知前端执行阶段开始）
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="step_start",
-            iteration=iteration,
-            step_index=0,
-            step_total=step_total,
-            data={"message": f"开始执行 {step_total} 个计划步骤..."}
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content=f"开始执行 {step_total} 个计划步骤...",
+            progress={"stage": "step_start", "iteration": iteration, "current": 0, "total": step_total}
         )
         
         # NOTE: 在执行计划前，扫描步骤是否包含需要用户确认的操作（目前仅 file_write）。
@@ -609,26 +623,24 @@ class LangGraphAgentExecutor:
         if confirm_required_steps and stream_callback:
             import uuid
             for step in confirm_required_steps:
-                confirm_id = str(uuid.uuid4())
                 tool_name = _extract_tool_name_for_confirm(step) or step.params.get("tool_name", "file_write")
                 tool_params = {k: v for k, v in step.params.items() if k != "tool_name"}
+
+                import json
+                params_str = json.dumps(tool_params, ensure_ascii=False, indent=2)
+                
+                # 推送待确认事件到前端（采用统一 agent_message 格式）
+                confirm_id = await send_agent_message(
+                    stream_callback=stream_callback,
+                    message_type="confirm",
+                    content=f"Agent 计划执行危险操作 **{tool_name}**，即将传入的参数如下：\n```json\n{params_str}\n```\n请确认是否继续？",
+                    importance="high",
+                    confirm_action=f"执行 {tool_name}"
+                )
 
                 logger.info(
                     f"{Fore.YELLOW}[Execute Node] 检测到需要用户确认的操作: {tool_name}，"
                     f"confirm_id={confirm_id}{Style.RESET_ALL}"
-                )
-
-                # 推送待确认事件到前端（含操作描述和参数预览）
-                await self._emit_stream_event(
-                    stream_callback,
-                    event_type="user_confirm_required",
-                    iteration=iteration,
-                    data={
-                        "confirm_id": confirm_id,
-                        "tool_name": tool_name,
-                        "params": tool_params,
-                        "message": f"Agent 计划执行 [{tool_name}] 操作，请确认是否继续"
-                    }
                 )
 
                 # 创建 asyncio.Event，挂起等待用户确认（最多 300 秒超时）
@@ -650,11 +662,12 @@ class LangGraphAgentExecutor:
                     self._pending_confirmations.pop(confirm_id, None)
 
                 # 推送用户确认结果事件到前端
-                await self._emit_stream_event(
-                    stream_callback,
-                    event_type="user_confirm_result",
-                    iteration=iteration,
-                    data={
+                await send_agent_message(
+                    stream_callback=stream_callback,
+                    message_type="progress",
+                    content="用户已确认" if action == "confirm" else "用户已拒绝，跳过该操作",
+                    progress={"stage": "user_confirm_result", "iteration": iteration},
+                    extra_data={
                         "confirm_id": confirm_id,
                         "action": action,
                         "tool_name": tool_name,
@@ -775,6 +788,7 @@ class LangGraphAgentExecutor:
         _step_total_ref = step_total
         _cb_ref = stream_callback
 
+
         async def _on_step_complete(step_result: Dict[str, Any], step_idx: int, total: int) -> None:
             """
             步骤完成实时回调：在 execute_plan 内每步结束后立即调用，
@@ -797,13 +811,12 @@ class LangGraphAgentExecutor:
             
             if action == "tool":
                 # 工具调用完成事件
-                await self._emit_stream_event(
-                    _cb_ref,
-                    event_type="tool_complete",
-                    iteration=_iter_ref,
-                    step_index=step_idx,
-                    step_total=total,
-                    data=step_result
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"工具调用完成: {step_result.get('tool_name', 'unknown')}",
+                    progress={"stage": "tool_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data=step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 工具完成事件已推送: "
@@ -811,13 +824,12 @@ class LangGraphAgentExecutor:
                 )
             elif action == "delegate":
                 # 子 Agent 委派完成事件
-                await self._emit_stream_event(
-                    _cb_ref,
-                    event_type="delegate_complete",
-                    iteration=_iter_ref,
-                    step_index=step_idx,
-                    step_total=total,
-                    data=step_result
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"委派子Agent完成: {step_result.get('agent_id', 'unknown')}",
+                    progress={"stage": "delegate_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data=step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 委派完成事件已推送: "
@@ -825,13 +837,12 @@ class LangGraphAgentExecutor:
                 )
             elif action == "skill":
                 # 技能调用完成事件
-                await self._emit_stream_event(
-                    _cb_ref,
-                    event_type="skill_complete",
-                    iteration=_iter_ref,
-                    step_index=step_idx,
-                    step_total=total,
-                    data=step_result
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"技能使用完成: {step_result.get('skill_id', 'unknown')}",
+                    progress={"stage": "skill_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data=step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 技能完成事件已推送: "
@@ -851,13 +862,12 @@ class LangGraphAgentExecutor:
                 else:
                     step_name = f"执行步骤: {step_action}"
                 
-                await self._emit_stream_event(
-                    _cb_ref,
-                    event_type="step_complete",
-                    iteration=_iter_ref,
-                    step_index=step_idx,
-                    step_total=total,
-                    data={
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"步骤 {step_idx}/{total} 完成: {step_name}",
+                    progress={"stage": "step_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data={
                         **step_result,
                         "step_name": step_name,
                         "message": f"步骤 {step_idx}/{total} 完成: {step_name}"
@@ -870,14 +880,15 @@ class LangGraphAgentExecutor:
             
             # 若步骤失败，额外推送错误事件
             if not step_result.get("success", True):
-                await self._emit_stream_event(
-                    _cb_ref,
-                    event_type="step_error",
-                    iteration=_iter_ref,
-                    step_index=step_idx,
-                    step_total=total,
-                    error=step_result.get("error", "Unknown error"),
-                    data=step_result
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"步骤执行出错: {step_result.get('error', 'Unknown error')}",
+                    progress={"stage": "step_error", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data={
+                        "error": step_result.get("error", "Unknown error"),
+                        **step_result
+                    }
                 )
                 logger.warning(
                     f"{Fore.YELLOW}[实时步骤回调] 步骤失败事件已推送: "
@@ -1053,15 +1064,12 @@ class LangGraphAgentExecutor:
                 f"当前共有 {len(current_error_ctx)} 条错误记录{Style.RESET_ALL}"
             )
 
-            # 发送错误分析开始事件（通知前端即将进入错误分析阶段）
-            await self._emit_stream_event(
-                stream_callback,
-                event_type="error_analysis_start",
-                iteration=iteration,
-                data={
-                    "message": f"检测到 {len(failed_steps)} 个步骤失败，Agent 正在分析错误根因并制定修复方案...",
-                    "failed_count": len(failed_steps)
-                }
+            # 发送错误分析开始事件（采用统一格式）
+            await send_agent_message(
+                stream_callback=stream_callback,
+                message_type="progress",
+                content=f"检测到 {len(failed_steps)} 个步骤失败，Agent 正在分析错误根因并制定修复方案...",
+                progress={"stage": "error_analysis_start", "iteration": iteration, "failed_count": len(failed_steps)}
             )
 
             # 调用 LLM 分析错误并将结果通过流式事件推送
@@ -1100,13 +1108,12 @@ class LangGraphAgentExecutor:
         
         step_summary = "\n".join(step_summary_list) if step_summary_list else "无"
         
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="execute_complete",
-            iteration=iteration,
-            step_index=step_total,
-            step_total=step_total,
-            data={
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="所有步骤执行完毕，准备进入反思阶段",
+            progress={"stage": "execute_complete", "iteration": iteration, "current": step_total, "total": step_total},
+            extra_data={
                 "success": execution_result.success,
                 "message": "所有步骤执行完毕，准备进入反思阶段",
                 "step_summary": step_summary_list,
@@ -1137,11 +1144,11 @@ class LangGraphAgentExecutor:
         logger.info(f"{Fore.BLUE}[Reflect Node] 开始反思 (迭代 {iteration}){Style.RESET_ALL}")
         
         # 发送开始反思事件（通知前端进入自我反思阶段）
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="reflection_start",
-            iteration=iteration,
-            data={"message": "Agent 正在评估执行结果..."}
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="Agent 正在评估执行结果...",
+            progress={"stage": "reflection_start", "iteration": iteration}
         )
         
         agent = state["agent"]
@@ -1157,11 +1164,12 @@ class LangGraphAgentExecutor:
             })
             
             # 发送反思完成事件（无结果时跳过反思）
-            await self._emit_stream_event(
-                stream_callback,
-                event_type="reflection_complete",
-                iteration=iteration,
-                data={"skipped": True, "message": "无执行结果，跳过反思"}
+            await send_agent_message(
+                stream_callback=stream_callback,
+                message_type="progress",
+                content="无执行结果，跳过反思",
+                progress={"stage": "reflection_complete", "iteration": iteration},
+                extra_data={"skipped": True, "message": "无执行结果，跳过反思"}
             )
             return state
         
@@ -1229,11 +1237,12 @@ class LangGraphAgentExecutor:
         logger.info(f"{Fore.GREEN}[Reflect Node] 反思完成{Style.RESET_ALL}")
         
         # 发送反思完成事件（含反思结果：是否成功、是否需要重规划、反馈建议）
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="reflection_complete",
-            iteration=iteration,
-            data=reflection_result.to_dict()
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="反思完成",
+            progress={"stage": "reflection_complete", "iteration": iteration},
+            extra_data=reflection_result.to_dict()
         )
         
         # 更新状态
@@ -1410,11 +1419,12 @@ class LangGraphAgentExecutor:
             "failed_count": len(error_context)
         }
 
-        await self._emit_stream_event(
-            stream_callback,
-            event_type="error_analysis",
-            iteration=iteration,
-            data=event_data
+        await send_agent_message(
+            stream_callback=stream_callback,
+            message_type="progress",
+            content="错误分析完成",
+            progress={"stage": "error_analysis", "iteration": iteration},
+            extra_data=event_data
         )
 
         logger.info(
@@ -1923,8 +1933,8 @@ class LangGraphAgentExecutor:
             异步流式回调：将事件放入 asyncio.Queue
             
             被 _plan_node / _execute_node / _reflect_node 中的
-            await self._emit_stream_event(...) 间接调用。
-            由于是 async 函数，_emit_stream_event 内部会 await 它，
+            await send_agent_message(...) 间接调用。
+            由于是 async 函数，send_agent_message 内部会 await 它，
             从而保证事件在 yield 之前就被写入队列。
             """
             await event_queue.put(event)

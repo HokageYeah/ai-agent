@@ -265,23 +265,46 @@ class OpenAIProvider(LLMProvider):
                 if k not in ["model", "temperature", "stream"]
             }
             
-            # 发起流式请求
-            stream = await self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                stream=True,  # 启用流式模式
-                **filtered_config
-            )
-            
-            # 逐块返回响应
-            async for chunk in stream:
-                yield chunk.model_dump()
-            
-            logger.info(
-                f"{Fore.GREEN}OpenAI 流式对话完成{Style.RESET_ALL}"
-            )
-            
+            # NOTE: 针对 429 限流错误进行指数退避重试
+            wait_seconds = _INITIAL_WAIT_SECONDS
+            for attempt in range(1, _MAX_RETRY_TIMES + 2):
+                try:
+                    # 发起流式请求
+                    stream = await self.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        stream=True,  # 启用流式模式
+                        **filtered_config
+                    )
+                    
+                    # 逐块返回响应
+                    async for chunk in stream:
+                        yield chunk.model_dump()
+                    
+                    logger.info(
+                        f"{Fore.GREEN}OpenAI 流式对话完成{Style.RESET_ALL}"
+                    )
+                    break
+                    
+                except httpx.HTTPStatusError as e:
+                    # NOTE: 只对 429 限流错误进行重试，其他 HTTP 错误直接抛出
+                    if e.response.status_code == 429 and attempt <= _MAX_RETRY_TIMES:
+                        logger.warning(
+                            f"{Fore.YELLOW}[OpenAI] 流式请求触发限流 (429 Too Many Requests)，"
+                            f"第 {attempt}/{_MAX_RETRY_TIMES} 次重试，"
+                            f"等待 {wait_seconds} 秒后继续...{Style.RESET_ALL}"
+                        )
+                        await asyncio.sleep(wait_seconds)
+                        # 指数退避：等待时间翻倍
+                        wait_seconds *= 2
+                        continue
+                    # 非 429 错误或已超出最大重试次数，向上抛出
+                    logger.error(
+                        f"{Fore.RED}OpenAI 流式请求失败 (HTTP {e.response.status_code}): {e}{Style.RESET_ALL}"
+                    )
+                    raise
+                    
         except Exception as e:
             logger.error(
                 f"{Fore.RED}OpenAI 流式请求失败: {e}{Style.RESET_ALL}"
