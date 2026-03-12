@@ -60,7 +60,7 @@ class AgentState(TypedDict):
     # NOTE: 错误上下文列表，收集本轮所有执行步骤的失败信息
     #       将传入重规划和反思 Prompt，提升 LLM 修正决策质量
     error_context: List[Dict[str, Any]]
-    # NOTE: LLM 对本轮错误的分析结果（根因分析 + 修复建议）
+    # NOTE: LLM 对本轮错误的分析结果（根因分析 + 修复建议）1
     #       通过流式事件实时推送到前端展示
     error_analysis: Optional[Dict[str, Any]]
     # NOTE: 历次迭代的反思结论列表。
