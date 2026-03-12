@@ -788,6 +788,86 @@ class LangGraphAgentExecutor:
         _step_total_ref = step_total
         _cb_ref = stream_callback
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # 【步骤开始实时回调】
+        #
+        # 设计动机（修复 UI 顺序问题）：
+        #   当使用 send_message 工具（message_type='input' 或 'confirm'）等待用户输入时，
+        #   工具内部会阻塞并发送输入表单到前端。如果没有提前推送「工具开始」事件，
+        #   前端会先看到输入表单，然后才看到进度指示块，造成 UI 顺序错乱。
+        #
+        #   修复方案：通过 on_step_start 回调，在工具执行前就推送 tool_start 等事件，
+        #   确保前端先显示「正在调用工具」的进度块，再弹出输入表单。
+        # ═══════════════════════════════════════════════════════════════════════
+
+        async def _on_step_start(step, step_idx: int, total: int) -> None:
+            """
+            步骤开始实时回调：在 execute_plan 内每步开始前立即调用，
+            向前端推送对应的 SSE 事件（tool_start / delegate_start / skill_start）。
+
+            这样可以保证前端在工具实际执行前就能看到进度指示，
+            对于需要用户交互的工具（如 send_message），确保进度块先于输入表单出现。
+            """
+            if not _cb_ref:
+                return
+
+            action = step.action
+            logger.debug(
+                f"{Fore.CYAN}[实时步骤开始回调] 推送步骤 {step_idx}/{total} 开始事件: "
+                f"action={action}{Style.RESET_ALL}"
+            )
+
+            if action == "tool":
+                # 工具调用开始事件
+                tool_name = step.params.get("tool_name", "unknown") if step.params else "unknown"
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"正在调用工具: {tool_name}",
+                    progress={"stage": "tool_start", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data={
+                        "tool_name": tool_name,
+                        "params": step.params.get("params", {}) if step.params else {}
+                    }
+                )
+                logger.info(
+                    f"{Fore.CYAN}[实时步骤开始回调] 工具开始事件已推送: "
+                    f"tool={tool_name}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            elif action == "delegate":
+                # 子 Agent 委派开始事件
+                agent_id = step.params.get("agent_id", "unknown") if step.params else "unknown"
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"正在委派子Agent: {agent_id}",
+                    progress={"stage": "delegate_start", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data={
+                        "agent_id": agent_id,
+                        "task": step.params.get("task", "") if step.params else ""
+                    }
+                )
+                logger.info(
+                    f"{Fore.CYAN}[实时步骤开始回调] 委派开始事件已推送: "
+                    f"agent_id={agent_id}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
+            elif action == "skill":
+                # 技能调用开始事件
+                skill_id = step.params.get("skill_id", "unknown") if step.params else "unknown"
+                await send_agent_message(
+                    stream_callback=_cb_ref,
+                    message_type="progress",
+                    content=f"正在使用技能: {skill_id}",
+                    progress={"stage": "skill_start", "iteration": _iter_ref, "current": step_idx, "total": total},
+                    extra_data={
+                        "skill_id": skill_id,
+                        "params": step.params.get("params", {}) if step.params else {}
+                    }
+                )
+                logger.info(
+                    f"{Fore.CYAN}[实时步骤开始回调] 技能开始事件已推送: "
+                    f"skill_id={skill_id}, step={step_idx}/{total}{Style.RESET_ALL}"
+                )
 
         async def _on_step_complete(step_result: Dict[str, Any], step_idx: int, total: int) -> None:
             """
@@ -915,7 +995,9 @@ class LangGraphAgentExecutor:
                 "context_messages": _ctx_messages_for_exec,
             },
             # 实时步骤回调：每步完成后立即推送对应 SSE 事件，保证事件顺序
-            on_step_complete=_on_step_complete if stream_callback else None
+            on_step_complete=_on_step_complete if stream_callback else None,
+            # 【新增】步骤开始实时回调：在工具/委派/技能执行前立即推送开始事件，保证前端先看到「正在调用工具」UI 状态再弹出输入表单
+            on_step_start=_on_step_start if stream_callback else None
         )
 
         
