@@ -788,6 +788,7 @@ class LangGraphAgentExecutor:
         _step_total_ref = step_total
         _cb_ref = stream_callback
 
+
         async def _on_step_complete(step_result: Dict[str, Any], step_idx: int, total: int) -> None:
             """
             步骤完成实时回调：在 execute_plan 内每步结束后立即调用，
