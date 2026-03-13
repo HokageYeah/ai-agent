@@ -1,0 +1,9 @@
+请执行技能"{{ skill_name }}"的任务。
+
+任务描述:
+{{ skill_description }}
+
+输入参数:
+{{ prompt_params_str }}
+
+请直接输出执行结果。

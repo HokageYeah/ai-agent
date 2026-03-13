@@ -759,6 +759,11 @@ class PlanningEngine:
   ],
   "reasoning": "你的推理过程"
 }}
+```
+
+**规划修正规则 (Interactive Pause Logic)**:
+- **原则**: 除了交互场景外，最后一步必须是 `final_answer`。
+- **例外**: 若本轮计划的核心动作是调用 `send_message` 工具（`message_type='input'` 或 `'confirm'`）挂起并等待用户。此时**禁止**在计划中包含 `final_answer`。只需规划 `send_message` 即可，系统会在用户回复后自动触发下一轮迭代进行后续真实业务处理。
 """
         
         result = await self.llm_hub.infer(
@@ -781,13 +786,20 @@ class ExecutionEngine:
         plan: dict,
         tool_hub: ToolHub,
         skill_manager: SkillManager,
-        child_agent_manager
+        child_agent_manager,
+        on_step_start: Optional[Callable] = None,   # 新增：步骤开始回调
+        on_step_complete: Optional[Callable] = None # 步骤完成回调
     ) -> dict:
         """执行计划"""
         
         results = []
         
-        for step in plan.steps:
+        for step_idx, step in enumerate(plan.steps):
+            # 1. 触发步骤开始回调（推送 tool_start/delegate_start 等）
+            if on_step_start:
+                await on_step_start(step, step_idx, len(plan.steps))
+                
+            # 2. 执行具体步骤
             if step.action == "tool":
                 result = await self._execute_tool(
                     tool_hub, step.tool_name, step.params
@@ -1095,6 +1107,46 @@ tools = [
 - **事件**：委派前发送 `sub_agent_start`（含 `sub_agent_id`、`sub_agent_name`、`task`），委派后发送 `sub_agent_end`（含 `success`）；子 Agent 内部所有 SSE 事件在 payload 中附带 `is_sub_agent: true`、`sub_agent_id`、`sub_agent_name`，前端可据此做区块展示与配色区分。
 - **子 Agent 执行结果约定**：`execute_with_callback` 的返回结构与 `ExecutionResult.to_dict()` 一致，使用 **`success`（布尔）** 表示是否成功，**不要**使用 `status == "success"` 等字符串判断；错误信息放在 `error` 字段。委派步骤的 `step_result` 会携带 `success`、`result`、`error`，供错误收集与前端展示。
 - **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本），主 Agent 的 `step_complete` 事件中 `action=final_answer` 时携带 `answer` 字段，供前端在「合成最终答案」下展示具体答案。
+
+---
+
+### 8.12 交互式消息与行为透传设计
+
+为了实现 Agent 与用户的高效互动及执行过程的透明化，系统设计了统一的交互与反馈机制，核心通过 `send_message` 工具及与之配套的 SSE 事件流实现。
+
+#### 1. 核心交互工具：send_message
+`send_message` (定义于 `app/tools/builtin/message.py`) 是 Agent 与前端通信的枢纽，其设计涵盖了以下场景：
+
+- **收集必要输入**：当大模型判断完成当前任务（或后续工具调用/程序编写）必须依赖用户提供的特定参数（如邮箱地址、SMTP 配置等）时，通过 `message_type='input'` 主动下发输入表单。
+- **操作确认**：对于敏感或高成本操作，利用 `message_type='confirm'` 引导用户进行二次确认。
+- **用户选择**：通过预定义的选项（options）让用户在多个分支逻辑中做出选择。
+
+#### 2. 执行状态与进度反馈
+除直接交互外，Agent 的“思维流”也通过消息工具及运行时注入的流式回调实时同步至前端：
+
+- **中间状态汇报**：模型在执行思考（thinking）、规划（planning）、反思（reflection）及具体步骤执行（execution）时，会通过该机制推送中间进展、思考摘要或当前状态。
+- **非阻塞进度反馈**：在长耗时任务中，发送不带输入需求的进度通知，确保前端实时感知 Agent 存活及当前进度。
+
+#### 3. 行为透传与上下文注入
+为了保证主子 Agent 协作时交互的一致性，系统在执行引擎层实现了运行时上下文的自动注入。对于标记为交互类的工具（如 `send_message`），执行引擎会在执行前自动注入当前的 `stream_callback`、`pending_confirmations` 等核心对象，确保跨层级的消息都能准确触达前端并正确挂起/唤醒。
+
+---
+
+### 8.13 提示词模板架构（Prompt Template Architecture）
+
+为避免在 `planning.py`、`execution.py`、`reflection.py`、`langgraph_executor.py` 中维护大段内联字符串，系统将核心提示词升级为「外置模板 + 统一渲染管理」：
+
+- **模板目录分层**：`app/prompt/plan`、`app/prompt/reflection`、`app/prompt/langgraph`、`app/prompt/execution`
+- **统一渲染入口**：`app/utils/prompt_manager.py`
+  - 使用 Jinja2 模板渲染
+  - 内置缓存，减少重复 IO 与重复编译
+  - 启用 `StrictUndefined`，变量缺失时快速失败，避免静默错误
+- **统一路径解析**：`app/utils/resource_path.py`，确保在不同启动目录下都能稳定定位资源文件
+- **可靠性策略**：
+  - 引擎初始化阶段尝试预加载关键模板，尽早暴露资源配置问题
+  - 关键执行链路保留「模板渲染失败 -> 内置提示词回退」兜底，保障主流程可用性
+
+该设计将 Prompt 从“实现细节”提升为“可管理资产”，便于版本化、审阅与后续灰度演进。
 
 ---
 
@@ -1467,6 +1519,7 @@ app/
 │   ├── planning.py      # 规划引擎
 │   ├── execution.py     # 执行引擎
 │   ├── reflection.py     # 反思引擎
+│   ├── langgraph_executor.py # LangGraph 调度与错误分析
 │   └── library/          # Agent 库
 │       ├── __init__.py
 │       ├── customer_service.py
@@ -1524,6 +1577,17 @@ app/
 │   ├── chat_service.py     # 对话服务
 │   └── automation_service.py # 自动化服务
 │
+├── utils/
+│   ├── __init__.py
+│   ├── prompt_manager.py  # 提示词加载/缓存/Jinja2 渲染
+│   └── resource_path.py   # 资源路径解析
+│
+├── prompt/
+│   ├── plan/              # 规划提示词模板
+│   ├── reflection/        # 反思提示词模板
+│   ├── langgraph/         # 错误分析提示词模板
+│   └── execution/         # 执行阶段合成提示词模板
+│
 ├── core/
 │   ├── __init__.py
 │   └── config.py          # 配置
@@ -1563,7 +1627,13 @@ app/
   ↓
 [执行节点] 执行引擎：按计划逐步执行
   │  工具/技能步骤经 Tool Hub 执行；委派步骤经 SpawnAgentTool 注入上下文后执行
-  │  ┌─ 步骤成功 → 收集结果，继续下一步
+  │
+  │  [步骤开始] 触发 on_step_start 回调
+  │       ↓ 推送 tool_start / delegate_start / skill_start SSE 事件
+  │       ↓ (确保前端进度条先于 send_message 输入框出现)
+  │
+  │  [步骤执行]
+  │  ┌─ 步骤成功 → 收集结果，触发 on_step_complete 推送完成事件，继续下一步
   │  └─ 步骤失败 → 生成 error_record 追加到 error_context
   │             → 调用 _analyze_errors（LLM 根因分析）
   │             → 推送 error_analysis 事件到前端

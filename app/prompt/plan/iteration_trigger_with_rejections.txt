@@ -1,0 +1,14 @@
+请基于以上历史记录（包含之前各轮的执行结果、工具调用结果和反思结论），制定本轮的执行计划。
+{% if rejected_tools_text %}
+
+【强约束】用户已拒绝以下工具，本轮计划中严禁再次规划这些工具: {{ rejected_tools_text }}。
+若原任务必须依赖这些工具才能完成，请在 final_answer 中如实告知用户并解释原因。
+{% endif %}
+{% if file_write_rejected %}
+
+【降级方案】若任务需要将内容保存到文件，且 file_write 已被禁用：
+若有 python_executor 可用，请生成一段用户可在本机运行的 Python 写文件脚本交付；
+否则直接在最终答案中返回完整内容。
+{% endif %}
+
+请只返回 JSON，不要包含其他文本。

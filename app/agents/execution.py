@@ -26,6 +26,7 @@ from app.agents.base import Agent
 from app.agents.planning import Plan, PlanStep
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
+from app.utils.prompt_manager import PromptManager
 
 
 class ExecutionResult:
@@ -100,6 +101,19 @@ class ExecutionEngine:
         self.child_agent_manager = child_agent_manager
         # ToolCallingGateway 实例：路由所有工具调用，实现统一管控
         self.tool_gateway = tool_gateway
+
+        # 提示词管理器（execution 专用）
+        self.prompt_manager = None
+        try:
+            self.prompt_manager = PromptManager(prompt_dir="app/prompt/execution")
+            self.prompt_manager.load_prompt("answer_synthesis_with_results")
+            self.prompt_manager.load_prompt("context_fallback_synthesis")
+            self.prompt_manager.load_prompt("generic_skill_fallback")
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 初始化/预加载 execution 提示词失败（{exc}），"
+                f"运行时将回退内置提示词{Style.RESET_ALL}"
+            )
         
         if tool_gateway:
             logger.info(
@@ -112,6 +126,110 @@ class ExecutionEngine:
                 f"[工具网关: 未配置，使用直接调用模式]{Style.RESET_ALL}"
             )
     
+    def _build_answer_synthesis_prompt(self, agent: Agent, task: str, results_text: str) -> str:
+        """构建基于工具结果的最终答案合成提示词。"""
+        try:
+            if self.prompt_manager is None:
+                raise RuntimeError("prompt_manager 不可用")
+            return self.prompt_manager.render_prompt(
+                "answer_synthesis_with_results",
+                agent_name=agent.name,
+                agent_description=agent.description,
+                task=task,
+                results_text=results_text,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 渲染 answer_synthesis_with_results 失败（{exc}），"
+                f"回退内置提示词{Style.RESET_ALL}"
+            )
+            return f"""你是 {agent.name}，{agent.description}
+
+用户任务：{task}
+
+以下是执行过程中获取到的数据：
+
+{results_text}
+
+请根据以上数据，用清晰、友好的自然语言回答用户的任务需求。
+要求：
+1. 直接给出具体数据，不要使用 [xxx] 这样的占位符
+2. 信息完整，涵盖用户关心的所有字段
+3. 格式清晰，必要时使用列表或分段展示
+4. 如果数据中有错误或空值，如实告知
+5. 【重要防幻觉】如果任务包含“写入本地文件/保存到文件”等需求，你必须**严格检查上方数据中是否有 `file_write` 工具的执行成功结果**。
+   - 如果**有** `file_write` 工具且执行成功：说明写入成功、写入路径与写入内容来源。
+   - 如果**没有** `file_write` 工具的结果：你**绝对不能**说"已入写本地文件"或"已保存到文件"。对于只有 `text_writing` 技能的结果，请只返回生成的文本内容，不要编造任何本地文件路径。
+6. **若执行结果来自 python_executor 且为“替用户生成写文件的脚本”**（例如因用户拒绝了 file_write）：若工具返回中有 output 且为一段 Python 代码/脚本，最终回答必须**完整贴出**该 output 的全文（即可运行的脚本），并说明「因您拒绝了由系统直接写入文件，已为您生成以下可本地运行的 Python 脚本。请将下方代码保存为 .py 文件（如 save_content.py）后在本地执行，即可在当前目录生成文件。」禁止只做概括或省略脚本内容。
+
+请直接输出最终回答，不要包含任何前缀说明。"""
+
+    def _build_context_fallback_prompt(self, agent: Agent, task: str, context_text: str) -> str:
+        """构建基于会话上下文的兜底答案合成提示词。"""
+        try:
+            if self.prompt_manager is None:
+                raise RuntimeError("prompt_manager 不可用")
+            return self.prompt_manager.render_prompt(
+                "context_fallback_synthesis",
+                agent_name=agent.name,
+                agent_description=agent.description,
+                task=task,
+                context_text=context_text,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 渲染 context_fallback_synthesis 失败（{exc}），"
+                f"回退内置提示词{Style.RESET_ALL}"
+            )
+            return f"""你是 {agent.name}，{agent.description}
+
+用户当前的问题（任务）：{task}
+
+以下是本次会话的历史上下文信息（包含之前各轮任务的摘要）：
+
+{context_text}
+
+请根据以上历史上下文，直接、准确地回答用户的问题。
+要求：
+1. 基于历史信息给出具体、完整的回答，不要模糊或含糊其辞
+2. 如果历史上下文中有明确的信息，直接陈述（如"您第一次的提问是'xxx'，任务是yyy"）
+3. 语言简洁友好，格式清晰
+4. 如果历史记录中确实没有相关信息，如实告知
+
+请直接输出最终回答，不要包含任何前缀说明。"""
+
+    def _build_generic_skill_fallback_prompt(
+        self,
+        skill_name: str,
+        skill_description: str,
+        prompt_params_str: str,
+    ) -> str:
+        """构建技能通用兜底提示词。"""
+        try:
+            if self.prompt_manager is None:
+                raise RuntimeError("prompt_manager 不可用")
+            return self.prompt_manager.render_prompt(
+                "generic_skill_fallback",
+                skill_name=skill_name,
+                skill_description=skill_description,
+                prompt_params_str=prompt_params_str,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 渲染 generic_skill_fallback 失败（{exc}），"
+                f"回退内置提示词{Style.RESET_ALL}"
+            )
+            return f"""请执行技能"{skill_name}"的任务。
+                
+任务描述:
+{skill_description}
+
+输入参数:
+{prompt_params_str}
+
+请直接输出执行结果。
+"""
+
     async def execute_plan(
         self,
         agent: Agent,
@@ -411,26 +529,11 @@ class ExecutionEngine:
 
         results_text = "\n\n".join(result_parts)
 
-        synthesis_prompt = f"""你是 {agent.name}，{agent.description}
-
-用户任务：{task}
-
-以下是执行过程中获取到的数据：
-
-{results_text}
-
-请根据以上数据，用清晰、友好的自然语言回答用户的任务需求。
-要求：
-1. 直接给出具体数据，不要使用 [xxx] 这样的占位符
-2. 信息完整，涵盖用户关心的所有字段
-3. 格式清晰，必要时使用列表或分段展示
-4. 如果数据中有错误或空值，如实告知
-5. 【重要防幻觉】如果任务包含“写入本地文件/保存到文件”等需求，你必须**严格检查上方数据中是否有 `file_write` 工具的执行成功结果**。
-   - 如果**有** `file_write` 工具且执行成功：说明写入成功、写入路径与写入内容来源。
-   - 如果**没有** `file_write` 工具的结果：你**绝对不能**说"已入写本地文件"或"已保存到文件"。对于只有 `text_writing` 技能的结果，请只返回生成的文本内容，不要编造任何本地文件路径。
-6. **若执行结果来自 python_executor 且为“替用户生成写文件的脚本”**（例如因用户拒绝了 file_write）：若工具返回中有 output 且为一段 Python 代码/脚本，最终回答必须**完整贴出**该 output 的全文（即可运行的脚本），并说明「因您拒绝了由系统直接写入文件，已为您生成以下可本地运行的 Python 脚本。请将下方代码保存为 .py 文件（如 save_content.py）后在本地执行，即可在当前目录生成文件。」禁止只做概括或省略脚本内容。
-
-请直接输出最终回答，不要包含任何前缀说明。"""
+        synthesis_prompt = self._build_answer_synthesis_prompt(
+            agent=agent,
+            task=task,
+            results_text=results_text,
+        )
 
         try:
             from app.llm_hub.inference import InferenceConfig
@@ -520,22 +623,11 @@ class ExecutionEngine:
 
         context_text = "\n\n---\n\n".join(context_text_parts) if context_text_parts else "（无可用上下文）"
 
-        synthesis_prompt = f"""你是 {agent.name}，{agent.description}
-
-用户当前的问题（任务）：{task}
-
-以下是本次会话的历史上下文信息（包含之前各轮任务的摘要）：
-
-{context_text}
-
-请根据以上历史上下文，直接、准确地回答用户的问题。
-要求：
-1. 基于历史信息给出具体、完整的回答，不要模糊或含糊其辞
-2. 如果历史上下文中有明确的信息，直接陈述（如"您第一次的提问是'xxx'，任务是yyy"）
-3. 语言简洁友好，格式清晰
-4. 如果历史记录中确实没有相关信息，如实告知
-
-请直接输出最终回答，不要包含任何前缀说明。"""
+        synthesis_prompt = self._build_context_fallback_prompt(
+            agent=agent,
+            task=task,
+            context_text=context_text,
+        )
 
         try:
             from app.llm_hub.inference import InferenceConfig
@@ -1374,16 +1466,11 @@ class ExecutionEngine:
                 )
                 # 兜底 Prompt
                 prompt_params_str = "\n".join([f"{k}: {v}" for k, v in params.items()])
-                prompt = f"""请执行技能"{skill.name}"的任务。
-                
-任务描述:
-{skill.description}
-
-输入参数:
-{prompt_params_str}
-
-请直接输出执行结果。
-"""
+                prompt = self._build_generic_skill_fallback_prompt(
+                    skill_name=skill.name,
+                    skill_description=skill.description,
+                    prompt_params_str=prompt_params_str,
+                )
             
             from app.llm_hub.inference import InferenceConfig
             

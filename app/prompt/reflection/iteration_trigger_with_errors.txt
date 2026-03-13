@@ -1,0 +1,14 @@
+当前轮执行状态: {{ execution_status }}
+整体结果: {{ overall_result }}
+{% if has_errors %}
+
+本轮执行中发现 {{ error_count }} 个错误：
+{{ error_details }}
+{% endif %}
+{% if user_rejected %}
+
+【降级方案评估】若本轮已使用 python_executor 成功生成了用户可本地运行的脚本，success=true；
+若尚未完成递交，可建议下一轮用 python_executor 生成脚本。
+{% endif %}
+
+请基于以上执行过程和状态，对任务完成情况进行反思评估。请只返回 JSON，不要包含其他文本。

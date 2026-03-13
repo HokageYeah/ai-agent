@@ -31,6 +31,7 @@
 │   ├── agents/           # 包含由多大模型驱动的引擎模块
 │   │   ├── library/     # 预置的专家类型代理配置实例代码区
 │   │   ├── planning.py, execution.py, reflection.py #核心步骤流引擎
+│   │   └── langgraph_executor.py # 图驱动调度与错误分析
 │   ├── channels/         # 可扩展的多终端渠道适配接入模块层 
 │   ├── config/           # 配置模块
 │   ├── core/             # 系统核心设置与日志引擎 (Loguru) 初始化
@@ -50,7 +51,8 @@
 │   │   └── skills_md/   # 具有大模型特色的由 Prompt 定义的纯文档型技能包 (Markdown格式)
 │   ├── tools/            # Python 硬编码底层能力库封装框架
 │   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
-│   ├── utils/            # 通用工具与辅助函数库
+│   ├── utils/            # 通用工具与辅助函数库（含提示词管理与路径解析）
+│   ├── prompt/           # 外置提示词模板（按模块拆分：plan/reflection/langgraph/execution）
 │   ├── workflows/        # 写死了拓扑链路和节点跳转条件的工作流集合
 │   │   ├── templates/   # 存放在系统中供任意提取的通用工作流程拓扑结构图
 │   └── main.py           # FastAPI 服务器核心入口
@@ -173,6 +175,29 @@ interface AgentState {
 | `step_error`           | 单步骤失败        | 🔴 红色错误卡片                                     |
 | `error_analysis_start` | 开始 LLM 根因分析 | 🟠 分析中通知                                       |
 | `error_analysis`       | 分析完成          | 🔴 详细根因分析卡片（含步骤、根因、建议、纠正方案） |
+
+## 🧩 提示词架构（外置模板）
+
+为降低 Prompt 维护成本并避免超长字符串散落在业务代码中，项目已将核心 Agent 提示词抽离为外置模板，并采用 Jinja2 渲染：
+
+- **模板目录**：`app/prompt/plan`、`app/prompt/reflection`、`app/prompt/langgraph`、`app/prompt/execution`
+- **管理器**：`app/utils/prompt_manager.py`（统一加载、缓存、渲染，`StrictUndefined` 防止变量漏传）
+- **路径解析**：`app/utils/resource_path.py`（统一从项目根解析资源路径）
+- **稳定性策略**：
+  - 关键模板在引擎初始化时尝试预加载，尽早暴露配置问题
+  - 执行链路保留“模板渲染失败 -> 内置提示词回退”兜底，避免主流程中断
+
+## 💬 交互式消息与行为反馈设计
+
+本项目采用统一的交互与反馈机制，确保 Agent 的思考过程透明且能与用户实时互动：
+
+- **主动收集输入**：当大模型判断需用户提供必选参数（如邮箱、配置等）方可执行后续工具或代码时，通过 `send_message` (message_type='input') 唤起前端表单。
+- **操作安全确认**：高危或敏感操作前，通过 `send_message` (message_type='confirm') 等待用户授权，结合 `confirm_id` 实现执行流的精准挂起与唤醒。
+- **状态与进度透传**：
+  - **中间状态**：Agent 的思考 (Thinking)、反思 (Reflection)、计划 (Planning) 及执行 (Execution) 均会通过消息通道推送摘要。
+  - **反馈进度**：即使无需用户输入，Agent 也会定期发送中间进度或执行轨迹。
+- **用户决策选择**：支持下发选项 (Options)，由用户决定后续的业务分支逻辑。
+- **上下文自动注入**：执行引擎在调用交互工具前，会自动完成流式回调与确认状态的注入，保证跨 Agents 委派时交互行为的一致性。
 
 ## 🧪 内置客服 + 订单查询 Demo
 
@@ -321,7 +346,7 @@ sequenceDiagram
      
      data: {"event": "complete", ...}
      ```
-   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `user_confirm_required` / `user_confirm_result` / `sub_agent_start` / `sub_agent_end` / `final_answer` / `complete`。其中 `step_complete` 在步骤为合成最终答案时可带 `data.answer` 供前端展示具体答案；子 Agent 相关事件带 `is_sub_agent`、`sub_agent_id`、`sub_agent_name` 便于区块展示。
+   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_start` / `delegate_start` / `skill_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `user_confirm_required` / `user_confirm_result` / `sub_agent_start` / `sub_agent_end` / `final_answer` / `complete`。其中 `step_complete` 在步骤为合成最终答案时可带 `data.answer` 供前端展示具体答案；子 Agent 相关事件带 `is_sub_agent`、`sub_agent_id`、`sub_agent_name` 便于区块展示。
 
 6. **用户确认敏感操作（流式执行中需确认时调用）**
    - **请求端点**: `POST /api/v1/agents/confirm/{confirm_id}`

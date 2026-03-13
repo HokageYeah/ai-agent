@@ -23,6 +23,7 @@ from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.execution import ExecutionResult
+from app.utils.prompt_manager import PromptManager
 
 # NOTE: 使用 TYPE_CHECKING 避免循环导入
 if TYPE_CHECKING:
@@ -86,6 +87,11 @@ class ReflectionEngine:
         """
         self.llm_hub = llm_hub
         self.tool_hub = tool_hub
+        self.prompt_manager = PromptManager(prompt_dir="app/prompt/reflection")
+        # NOTE: 启动时预加载关键模板，尽早暴露模板缺失/语法问题，避免运行期静默降级。
+        self.prompt_manager.load_prompt("system_eval_rules")
+        self.prompt_manager.load_prompt("iteration_trigger_with_errors")
+        self.prompt_manager.load_prompt("legacy_reflection_with_task")
         logger.info(f"{Fore.GREEN}反思引擎初始化完成{Style.RESET_ALL}")
     
     async def reflect(
@@ -232,22 +238,7 @@ class ReflectionEngine:
         包含反思角色定义和输出格式要求。
         历史执行数据通过 AgentRunMemory.build_messages_for_reflection() 注入。
         """
-        return """你是一个 AI Agent 的反思评估模块。你的职责是审查上方展示的执行过程，
-并对任务完成情况做出客观判断。请以 JSON 格式返回评估结果：
-{{
-  "success": true/false,
-  "needs_replanning": true/false,
-  "should_continue": true/false,
-  "feedback": "改进建议",
-  "summary": "结果总结"
-}}
-
-【重要判断标准】：
-- 如果 Agent 返回"无法完成"、"没有权限"、"无法访问"、"超出能力范围"等，说明任务真实因为环境或能力限制被中断。
-- 如果历史消息中包含 "[用户操作通知]用户拒绝了" 这类消息，success 必须为 false。
-- 对于其他情况，如果问题没有被真正解决，即使执行不报错，success 也应为 false。
-- should_continue 由你根据任务完成情况、Agent 能力边界及可用工具综合判断：还有希望完成即给出 true，确实无法完成即给出 false。
-请只返回 JSON，不要包含其他文本。"""
+        return self.prompt_manager.render_prompt("system_eval_rules")
 
     def _build_reflection_trigger(
         self,
@@ -256,17 +247,12 @@ class ReflectionEngine:
     ) -> str:
         """
         构建反思的触发指令（最后一条 user 消息）
-        
+
         当使用 run_memory messages 模式时，工具调用结果已在 messages 中呈现，
         这里只需补充说明整体执行状态和要求进行反思。
         """
-        lines = [
-            f"当前轮执行状态: {'\u6210\u529f' if execution_result.success else '\u5931\u8d25'}",
-            f"整体结果: {str(execution_result.result)[:300]}"
-        ]
-
+        error_lines: List[str] = []
         if error_context:
-            error_lines = []
             for idx, err in enumerate(error_context, 1):
                 step_desc = err.get("step_desc", "未知步骤")
                 error_msg = err.get("error_msg", "")
@@ -276,17 +262,16 @@ class ReflectionEngine:
                 if suggestion:
                     line += f" (建议: {suggestion})"
                 error_lines.append(line)
-            lines.append(f"\n本轮执行中发现 {len(error_context)} 个错误\uff1a\n" + "\n".join(error_lines))
 
-        # 用户拒绝评估约束
-        if execution_result.error and "[UserRejected]" in execution_result.error:
-            lines.append(
-                "\n【降级方案评估】若本轮已使用 python_executor 成功生成了用户可本地运行的脚本，success=true；"
-                "若尚未完成递交，可建议下一轮用 python_executor 生成脚本。"
-            )
-
-        lines.append("\n请基于以上执行过程和状态，对任务完成情况进行反思评估。请只返回 JSON，不要包含其他文本。")
-        return "\n".join(lines)
+        return self.prompt_manager.render_prompt(
+            "iteration_trigger_with_errors",
+            execution_status="成功" if execution_result.success else "失败",
+            overall_result=str(execution_result.result)[:300],
+            has_errors=bool(error_context),
+            error_count=len(error_context) if error_context else 0,
+            error_details="\n".join(error_lines),
+            user_rejected=bool(execution_result.error and "[UserRejected]" in execution_result.error),
+        )
 
     def _build_reflection_prompt(
         self,
@@ -296,35 +281,18 @@ class ReflectionEngine:
     ) -> str:
         """
         构建反思 Prompt
-        
+
         Args:
             task: 原始任务
             execution_result: 执行结果
-            
+
         Returns:
             str: Prompt 文本
         """
         logger.debug(f"{Fore.CYAN}构建反思 Prompt{Style.RESET_ALL}")
-        
-        # 格式化执行结果
-        result_text = f"""
-执行状态: {'成功' if execution_result.success else '失败'}
-最终结果: {execution_result.result}
-步骤结果数量: {len(execution_result.step_results)}
-错误信息: {execution_result.error if execution_result.error else '无'}
-"""
-        
-        prompt = f"""请评估以下任务的执行结果：
 
-任务: {task}
-
-执行结果:
-{result_text}
-"""
-
-        # NOTE: 若携带错误上下文，将具体失败步骤注入 Prompt，让 LLM 知情所有错误
+        error_lines: List[str] = []
         if error_context:
-            error_lines = []
             for idx, err in enumerate(error_context, 1):
                 step_desc = err.get("step_desc", "未知步骤")
                 error_msg = err.get("error_msg", "")
@@ -334,61 +302,23 @@ class ReflectionEngine:
                 if suggestion:
                     line += f" (建议: {suggestion})"
                 error_lines.append(line)
-            error_summary = "\n".join(error_lines)
-            prompt += f"""
-执行过程中发现以下{len(error_context)}个错误：
-{error_summary}
-"""
             logger.info(
                 f"{Fore.YELLOW}[反思引擎] 已将 {len(error_context)} 条错误信息注入反思 Prompt{Style.RESET_ALL}"
             )
 
-        prompt += """
-请回答以下问题：
-1. 用户任务是否真正完成？（注意：执行不报错≠任务完成，要看用户问题是否得到解决）
-2. 结果质量如何？
-3. 是否需要改进？
-4. 下一步应该做什么？
+        return self.prompt_manager.render_prompt(
+            "legacy_reflection_with_task",
+            task=task,
+            execution_status="成功" if execution_result.success else "失败",
+            final_result=execution_result.result,
+            step_count=len(execution_result.step_results),
+            error_message=execution_result.error if execution_result.error else "无",
+            has_errors=bool(error_context),
+            error_count=len(error_context) if error_context else 0,
+            error_summary="\n".join(error_lines),
+            user_rejected=bool(execution_result.error and "[UserRejected]" in execution_result.error),
+        )
 
-请以 JSON 格式返回评估结果：
-{{
-  "success": true/false,
-  "needs_replanning": true/false,
-  "should_continue": true/false,
-  "feedback": "改进建议",
-  "summary": "结果总结"
-}}
-
-【重要判断标准】：
-- 如果 Agent 返回"无法完成"、"没有权限"、"无法访问"、"超出能力范围"等，说明任务真实因为环境或能力限制被中断。
-- 如果错误上下文中包含 [UserRejected] 类型错误，说明任务的某个特定操作已被用户明确拒绝/取消，此时 success 必须为 false。
-- 对于其他情况，如果问题没有被真正解决，即使执行不报错，success 也应为 false
-- should_continue 由你根据任务完成情况、Agent 能力边界及可用工具（排除已拒绝工具后）综合判断：如果还有希望完成即给出 true，如果确实无法完成即给出 false。
-"""
-
-        # 动态注入替代方案评估规则：仅当执行结果的错误信息中包含明确的拒绝记录时，才要求评估替代方案
-        if execution_result.error and "[UserRejected]" in execution_result.error:
-            prompt += """
-【降级方案评估约束】
-- 本次执行中包含了被用户拒绝的操作。**替代方案是否已落实**：若本轮已使用 python_executor 成功**生成了用户可本地运行的脚本**（工具返回 success 且有 output，且 output 为可写入文件的 Python 代码）或生成了本应写入的完整内容，且最终回答中已完整交付该脚本/内容并说明用户如何运行或保存，则视为**在用户拒绝写文件的前提下已用代码生成能力帮助完成意图**，success=true，needs_replanning=false。不要建议“用 http_request 等其他工具直接保存文件”（无此能力）。
-- 若本轮尚未用 python_executor 生成可运行脚本或未在最终回答中完整交付，则可建议下一轮「用 python_executor 生成一段用户可本机运行的写文件脚本并交付」。若确实无可行方案则 should_continue=false。
-"""
-
-        prompt += """
-请只返回 JSON，不要包含其他文本。
-"""
-        
-        # todo 一会解开注释
-        # logger.info(f"{Fore.CYAN}反思 Prompt: {prompt}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}执行结果: {result_text}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}执行状态: {'成功' if execution_result.success else '失败'}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}错误信息: {execution_result.error if execution_result.error else '无'}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}步骤结果数量: {len(execution_result.step_results)}{Style.RESET_ALL}")
-        # logger.info(f"{Fore.CYAN}最终结果: {execution_result.result}{Style.RESET_ALL}")
-        
-        return prompt
-    
     def _parse_reflection(self, llm_output: str, execution_result=None) -> ReflectionResult:
         """
         解析 LLM 返回的反思结果
