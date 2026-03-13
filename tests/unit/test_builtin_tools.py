@@ -258,6 +258,71 @@ class TestPythonExecutorTool:
         from app.tools.builtin.executor import quick_execute
         assert callable(quick_execute)
 
+    def test_smtp_precheck_should_ignore_non_smtp_example_domain(self, executor_tool):
+        """测试 SMTP 预检查不会被业务字段中的 example.com 误判"""
+        code = """
+import smtplib
+
+order_data = {
+    "customer_email": "lina@example.com"
+}
+
+smtp_server = "smtp.qq.com"
+smtp_port = 465
+sender_email = "2410292164@qq.com"
+sender_password = "acfmhesqnkyzdjcc"
+result = {"ok": True}
+"""
+        precheck = executor_tool._analyze_code_for_required_info(code)
+        assert precheck is None
+
+    def test_smtp_precheck_should_require_input_for_placeholder(self, executor_tool):
+        """测试 SMTP 配置仍为占位符时应请求用户输入"""
+        code = """
+import smtplib
+smtp_server = "your_smtp_server"
+smtp_port = 465
+sender_email = "your_email@qq.com"
+sender_password = "your_password"
+result = {"ok": True}
+"""
+        precheck = executor_tool._analyze_code_for_required_info(code)
+        assert isinstance(precheck, dict)
+        assert "required_fields" in precheck
+        assert len(precheck["required_fields"]) >= 4
+
+    @pytest.mark.asyncio
+    async def test_smtp_cache_injection_skips_repeated_input_request(self, executor_tool):
+        """测试命中 SMTP 缓存后，python_executor 不再返回 needs_user_input"""
+        executor_tool.update_context(
+            user_inputs_cache={
+                "smtp_config": {
+                    "smtp_server": "smtp.qq.com",
+                    "smtp_port": "465",
+                    "sender_email": "cached_sender@qq.com",
+                    "sender_password": "cached_auth_code"
+                }
+            }
+        )
+
+        code = """
+import smtplib
+smtp_server = "your_smtp_server"
+smtp_port = 465
+sender_email = "your_email@qq.com"
+sender_password = "your_password"
+result = {
+    "smtp_server": smtp_server,
+    "sender_email": sender_email,
+    "sender_password": sender_password
+}
+"""
+        result = await executor_tool.execute({"code": code})
+        assert result["success"] is True
+        assert result.get("needs_user_input") is not True
+        assert result["result"]["smtp_server"] == "smtp.qq.com"
+        assert result["result"]["sender_email"] == "cached_sender@qq.com"
+
 
 class TestFileReadTool:
     """FileReadTool 测试类"""

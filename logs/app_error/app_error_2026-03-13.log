@@ -123,3 +123,27 @@ Traceback (most recent call last):
 
 FileNotFoundError: 提示词文件不存在: /Users/yuye/YeahWork/AIAgent项目/ai-agent/prompt/reflection/system_eval_rules.txt
 2026-03-13 15:55:42 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): 提示词文件不存在: /Users/yuye/YeahWork/AIAgent项目/ai-agent/prompt/reflection/system_eval_rules.txt[0m
+2026-03-13 17:24:53 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:494 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-13 17:30:12 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:494 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-13 17:33:31 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:33:31 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000003] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:33:31 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:34:41 | ERROR    | app.tools.builtin.http:execute:580 - [31m[HTTPRequestTool] 连接失败: https://api.email-service.com/send — [0m
+2026-03-13 17:38:06 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:06 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000021] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:06 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000022] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000023] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000024] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000025] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000026] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m

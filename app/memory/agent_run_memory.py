@@ -121,6 +121,64 @@ class AgentRunMemory:
     # 按时序追加的记忆消息列表（含 meta，不直接传给 LLM）
     _messages: list[AgentMemoryMessage] = field(default_factory=list)
 
+    # NOTE: 任务内用户输入缓存（user_inputs_cache）
+    # 用于在同一任务的不同 iteration 之间保持用户输入（如 SMTP 配置），
+    # 防止 python_executor / send_message 反复向用户询问同一配置。
+    # 结构：{ "smtp_config": {"smtp_server": ..., "sender_email": ...}, ... }
+    # 生命周期：与 AgentRunMemory 同步，任务结束后自动消失，不跨任务保留。
+    user_inputs_cache: dict = field(default_factory=dict)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 用户输入缓存读写接口（防止工具反复询问同一配置）
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def write_user_inputs_cache(self, key_group: str, inputs: dict) -> None:
+        """
+        将用户输入写入任务内缓存
+
+        用于在工具（如 send_message / python_executor）收到用户提供的配置后，
+        将其持久化到当前任务的内存缓存，确保同一任务内后续工具调用可直接复用，
+        无需再次向用户重复询问。
+
+        Args:
+            key_group: 配置分组名称，如 "smtp_config"、"db_config"、"api_config"
+            inputs:    用户提供的配置字典，如 {"smtp_server": "smtp.qq.com", ...}
+        """
+        if not isinstance(inputs, dict) or not inputs:
+            logger.debug(f"[用户输入缓存] 写入跳过（inputs 为空）: key_group={key_group}")
+            return
+        # 合并而非直接覆盖，防止漏掉之前已缓存的同组其他字段
+        existing = self.user_inputs_cache.get(key_group, {})
+        merged = {**existing, **inputs}
+        self.user_inputs_cache[key_group] = merged
+        logger.info(
+            f"{Fore.GREEN}[用户输入缓存] ✅ 写入 '{key_group}': "
+            f"字段={list(inputs.keys())}{Style.RESET_ALL}"
+        )
+
+    def read_user_inputs_cache(self, key_group: str) -> Optional[dict]:
+        """
+        从任务内缓存读取用户输入
+
+        在工具需要某类配置（如 SMTP）时，先通过此方法查询缓存，
+        有则直接使用，避免再次弹出用户输入弹窗造成循环。
+
+        Args:
+            key_group: 配置分组名称，如 "smtp_config"、"db_config"
+
+        Returns:
+            若缓存存在则返回配置字典；否则返回 None
+        """
+        cached = self.user_inputs_cache.get(key_group)
+        if cached:
+            logger.info(
+                f"{Fore.CYAN}[用户输入缓存] 🎯 命中 '{key_group}': "
+                f"字段={list(cached.keys())}{Style.RESET_ALL}"
+            )
+        else:
+            logger.debug(f"[用户输入缓存] 未命中: key_group={key_group}")
+        return cached if cached else None
+
     # ─────────────────────────────────────────────────────────────────────────
     # 写入接口（由 langgraph_executor 各节点在完成操作后调用）
     # ─────────────────────────────────────────────────────────────────────────

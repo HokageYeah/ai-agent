@@ -2,7 +2,7 @@
 
 ## 文档版本
 - **版本号**: v1.4
-- **最后更新**: 2026-03-10
+- **最后更新**: 2026-03-13
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -1102,8 +1102,8 @@ tools = [
 
 子 Agent 委派时需透传流式回调和确认状态，保证轨迹与确认行为一致。
 
-- **透传**：主执行器将 `stream_callback`、`pending_confirmations`、`user_rejected_tools` 传入执行引擎；委派时优先通过 **SpawnAgentTool**（执行前对其调用 `update_context` 注入上述上下文），再由其内部调用 `ChildAgentManager.delegate_task`；子执行器使用 `execute_with_callback`，与主 Agent 共用同一 `_pending_confirmations` 与流式通道。
-- **运行时上下文注入**：对需依赖运行时上下文的工具（如 `spawn_agent`、`send_message`），执行引擎在 `_execute_tool` 中检测工具的 `update_context` 方法，若存在则在执行前注入当前 `stream_callback`、`pending_confirmations`、`user_rejected_tools`，避免子 Agent 事件无法推流或确认弹窗不展示。
+- **透传**：主执行器将 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`user_rejected_tools`、`run_memory`（含 `user_inputs_cache`）以及 `iteration` 传入执行引擎；委派时优先通过 **SpawnAgentTool**（执行前对其调用 `update_context` 注入上述上下文），再由其内部调用 `ChildAgentManager.delegate_task`；子执行器使用 `execute_with_callback`，与主 Agent 共用同一挂起字典与流式通道。
+- **运行时上下文注入**：对需依赖运行时上下文的工具（如 `spawn_agent`、`send_message`、`python_executor`），执行引擎在 `_execute_tool` 中检测工具的 `update_context` 方法，若存在则在执行前注入当前 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`user_rejected_tools`、`user_inputs_cache`，避免子 Agent 事件无法推流、输入弹窗无法唤醒或同一配置被重复询问。
 - **事件**：委派前发送 `sub_agent_start`（含 `sub_agent_id`、`sub_agent_name`、`task`），委派后发送 `sub_agent_end`（含 `success`）；子 Agent 内部所有 SSE 事件在 payload 中附带 `is_sub_agent: true`、`sub_agent_id`、`sub_agent_name`，前端可据此做区块展示与配色区分。
 - **子 Agent 执行结果约定**：`execute_with_callback` 的返回结构与 `ExecutionResult.to_dict()` 一致，使用 **`success`（布尔）** 表示是否成功，**不要**使用 `status == "success"` 等字符串判断；错误信息放在 `error` 字段。委派步骤的 `step_result` 会携带 `success`、`result`、`error`，供错误收集与前端展示。
 - **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本），主 Agent 的 `step_complete` 事件中 `action=final_answer` 时携带 `answer` 字段，供前端在「合成最终答案」下展示具体答案。
@@ -1128,7 +1128,17 @@ tools = [
 - **非阻塞进度反馈**：在长耗时任务中，发送不带输入需求的进度通知，确保前端实时感知 Agent 存活及当前进度。
 
 #### 3. 行为透传与上下文注入
-为了保证主子 Agent 协作时交互的一致性，系统在执行引擎层实现了运行时上下文的自动注入。对于标记为交互类的工具（如 `send_message`），执行引擎会在执行前自动注入当前的 `stream_callback`、`pending_confirmations` 等核心对象，确保跨层级的消息都能准确触达前端并正确挂起/唤醒。
+为了保证主子 Agent 协作时交互的一致性，系统在执行引擎层实现了运行时上下文的自动注入。对于标记为交互类的工具（如 `send_message`、`python_executor`），执行引擎会在执行前自动注入当前的 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`run_memory.user_inputs_cache` 等核心对象，确保跨层级的消息都能准确触达前端并正确挂起/唤醒。
+
+#### 4. 用户输入缓存与防重复询问（user_inputs_cache）
+为避免同一任务内反复弹出相同输入表单（如 SMTP 配置），系统增加任务级缓存并接入执行链路：
+
+- **缓存载体**：`AgentRunMemory.user_inputs_cache`，生命周期与单次任务一致，不跨任务共享。
+- **写入时机**：
+  - `send_message(message_type='input')` 收到用户反馈后，按字段分组写入（如 `smtp_config`、`db_config`）。
+  - `await_user_input` 流程收到用户输入后，同步写入缓存。
+- **读取时机**：`python_executor` 执行前若检测到 SMTP 场景，优先读取 `smtp_config`，命中即注入代码并跳过再次询问。
+- **预检查规则**：SMTP 预检查只判断 SMTP 相关字段/调用是否为占位符，不再因业务数据中的 `example.com`（如客户邮箱）误判为“缺少 SMTP 配置”。
 
 ---
 
@@ -1169,7 +1179,9 @@ class AgentState(TypedDict):
     error_analysis: dict           # LLM 对错误的根因分析结果
     reflection_history: list[dict] # 历次反思结论（跨迭代），供下一轮规划使用
     pending_confirmations: dict    # 待用户确认操作，key=confirm_id，value=Event 等
+    pending_user_inputs: dict      # 待用户输入操作，key=input_request_id，value=Event 等
     user_rejected_tools: list[str] # 用户拒绝过的工具名，规划/反思时从可用工具中排除
+    run_memory: AgentRunMemory     # 任务内运行记忆（含 user_inputs_cache）
 
 class LangGraphAgentExecutor:
     """基于 LangGraph 的 Agent 执行器"""

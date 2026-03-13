@@ -165,6 +165,10 @@ interface AgentState {
     suggestions: string[];
     corrective_plan: string;
   } | null;
+  pending_user_inputs: Record<string, unknown>; // 待用户输入映射（key=input_request_id）
+  run_memory: {
+    user_inputs_cache: Record<string, Record<string, string>>;
+  } | null; // 任务级运行记忆（含用户输入缓存）
 }
 ```
 
@@ -197,7 +201,8 @@ interface AgentState {
   - **中间状态**：Agent 的思考 (Thinking)、反思 (Reflection)、计划 (Planning) 及执行 (Execution) 均会通过消息通道推送摘要。
   - **反馈进度**：即使无需用户输入，Agent 也会定期发送中间进度或执行轨迹。
 - **用户决策选择**：支持下发选项 (Options)，由用户决定后续的业务分支逻辑。
-- **上下文自动注入**：执行引擎在调用交互工具前，会自动完成流式回调与确认状态的注入，保证跨 Agents 委派时交互行为的一致性。
+- **上下文自动注入**：执行引擎在调用交互工具前，会自动注入 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`run_memory.user_inputs_cache` 与 `iteration`，保证跨 Agents 委派时交互行为一致，且输入事件可正确挂起/唤醒并标记到对应迭代。
+- **防重复询问机制**：当用户已经提供 SMTP/数据库等配置后，会写入 `run_memory.user_inputs_cache`；后续 `python_executor` 优先命中缓存并跳过重复弹窗。SMTP 预检查仅校验 SMTP 相关字段，避免被业务数据（如 `customer_email=xxx@example.com`）误判。
 
 ## 🧪 内置客服 + 订单查询 Demo
 
@@ -226,7 +231,7 @@ interface AgentState {
   - 成功启动后日志中会看到类似：
     - `[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010`
 
-- **委派机制**：子 Agent 委派**统一经 SpawnAgentTool（`spawn_agent`）** 执行：规划中的 `action: "delegate"` 由执行引擎转为调用该工具，并注入 `stream_callback`、`pending_confirmations` 等，保证子 Agent 的 SSE 轨迹与用户确认行为与主 Agent 一致；失败时兜底为直接调用 ChildAgentManager。
+- **委派机制**：子 Agent 委派**统一经 SpawnAgentTool（`spawn_agent`）** 执行：规划中的 `action: "delegate"` 由执行引擎转为调用该工具，并注入 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`run_memory`（含 `user_inputs_cache`）等，保证子 Agent 的 SSE 轨迹、用户确认与用户输入行为与主 Agent 一致；失败时兜底为直接调用 ChildAgentManager。
 
 - **典型调用示例**
   - 请求：`POST /api/v1/agents/cs_master/execute` 或 `POST /api/v1/agents/cs_master/execute/stream`

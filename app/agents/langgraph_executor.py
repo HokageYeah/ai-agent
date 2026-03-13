@@ -991,6 +991,9 @@ class LangGraphAgentExecutor:
             plan=plan,
             context={
                 "task": state.get("task", ""),
+                # 透传当前迭代号：供执行引擎在 await_user_input / user_input_received
+                # 事件中打上正确 iteration，避免前端把跨轮事件混在一起。
+                "iteration": state.get("iterations", 0),
                 # 透传父级 stream_callback：子 Agent 用它推送 user_confirm_required 等事件
                 "stream_callback": stream_callback,
                 # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表
@@ -999,6 +1002,9 @@ class LangGraphAgentExecutor:
                 "pending_user_inputs": self._pending_user_inputs,
                 # 透传用户拒绝的工具黑名单防止在子流程(如技能引擎/子Agent中)穿透
                 "user_rejected_tools": state.get("user_rejected_tools", []),
+                # 透传 run_memory：让执行引擎可把 user_inputs_cache 注入给 send_message/python_executor，
+                # 从而在同一任务内命中缓存并跳过重复输入弹窗。
+                "run_memory": state.get("run_memory"),
                 # 传入会话历史上下文消息：执行引擎在纯记忆问答场景（无工具调用）时使用，
                 # 当 LLM 规划的 final_answer.content 仍是意图描述而非真实答案时，
                 # 兜底利用这些历史摘要触发 LLM 合成真正的回答。

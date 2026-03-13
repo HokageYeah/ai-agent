@@ -955,17 +955,24 @@ class ExecutionEngine:
             _pending_confs  = context.get("pending_confirmations")
             _pending_inputs = context.get("pending_user_inputs")
             _rejected_tools = context.get("user_rejected_tools")
+            # NOTE: 注入任务内用户输入缓存引用，供工具实现独立的缓存读写，
+            # 防止同一任务内反复向用户询问 SMTP 等配置。
+            # 从 run_memory 获取 user_inputs_cache 引用（共享内存，不复制）
+            _run_memory = context.get("run_memory")
+            _user_inputs_cache = _run_memory.user_inputs_cache if _run_memory is not None else None
             tool.update_context(
                 stream_callback       = _stream_cb,
                 pending_confirmations = _pending_confs,
                 pending_user_inputs   = _pending_inputs,
                 user_rejected_tools   = _rejected_tools,
+                user_inputs_cache     = _user_inputs_cache,
             )
             logger.info(
                 f"{Fore.GREEN}[执行工具] 已为工具 '{tool_name}' 注入运行时上下文 "
                 f"| stream_callback={'✅ 已注入' if _stream_cb else '❌ 未传入，子Agent事件将无法推流'} "
                 f"| pending_confirmations={'✅ 已注入' if _pending_confs is not None else '⚠️ 未传入'} "
-                f"| pending_user_inputs={'✅ 已注入' if _pending_inputs is not None else '⚠️ 未传入'}{Style.RESET_ALL}"
+                f"| pending_user_inputs={'✅ 已注入' if _pending_inputs is not None else '⚠️ 未传入'} "
+                f"| user_inputs_cache={'✅ 已注入' if _user_inputs_cache is not None else '⚠️ 未传入'}{Style.RESET_ALL}"
             )
         elif tool_name in ("spawn_agent", "send_message") and not context:
             # 对已知需要上下文的工具，发出明确警告
@@ -1294,6 +1301,38 @@ class ExecutionEngine:
         finally:
             # 清理挂起的输入请求
             actual_pending_user_inputs.pop(input_request_id, None)
+
+        # NOTE: 关键逻辑：将用户输入写入任务内缓存
+        # 当用户通过 await_user_input 弹窗提交 SMTP/DB 配置后，
+        # 这里负责将配置写入 AgentRunMemory.user_inputs_cache，
+        # 同一任务内后续的 python_executor 调用可直接从缓存读取配置，不再弹窗。
+        if user_inputs and isinstance(user_inputs, dict) and context:
+            run_memory = context.get("run_memory")
+            if run_memory is not None and hasattr(run_memory, "write_user_inputs_cache"):
+                # 识别 SMTP 相关字段
+                smtp_fields = {
+                    k: v for k, v in user_inputs.items()
+                    if k in ("smtp_server", "smtp_port", "sender_email", "sender_password")
+                    and v is not None and str(v).strip()
+                }
+                if smtp_fields:
+                    run_memory.write_user_inputs_cache("smtp_config", smtp_fields)
+                    logger.info(
+                        f"{Fore.GREEN}[待用户输入] ✅ 已将 SMTP 配置写入任务内缓存，"
+                        f"字段={list(smtp_fields.keys())}{Style.RESET_ALL}"
+                    )
+                # 识别数据库相关字段
+                db_fields = {
+                    k: v for k, v in user_inputs.items()
+                    if k in ("db_host", "db_port", "db_name", "db_user", "db_password")
+                    and v is not None and str(v).strip()
+                }
+                if db_fields:
+                    run_memory.write_user_inputs_cache("db_config", db_fields)
+                    logger.info(
+                        f"{Fore.GREEN}[待用户输入] ✅ 已将 DB 配置写入任务内缓存，"
+                        f"字段={list(db_fields.keys())}{Style.RESET_ALL}"
+                    )
         
         # 推送用户输入已接收事件
         await self._emit_stream_event(
