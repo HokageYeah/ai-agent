@@ -444,7 +444,11 @@ function formatExecutionTime(data: any): string {
     data?.result?.elapsed_ms
   const value = Number(raw)
   if (Number.isFinite(value) && value >= 0) {
-    return `耗时 ${value.toFixed(2)}ms`
+    const seconds = value / 1000
+    if (seconds < 1) {
+      return `耗时 ${value.toFixed(0)}ms`
+    }
+    return `耗时 ${seconds.toFixed(2)}s`
   }
   return '执行完成'
 }
