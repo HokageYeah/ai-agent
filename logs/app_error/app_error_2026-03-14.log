@@ -1,1 +1,3 @@
 2026-03-14 13:10:03 | ERROR    | app.tools.builtin.http:execute:556 - [31m[HTTPRequestTool] 请求超时（>30.0s）: http://wttr.in/郑州?format=%l:+%c+%t+%h+%w[0m
+2026-03-14 13:13:47 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000002] 推理请求失败: Object of type datetime is not JSON serializable[0m
+2026-03-14 13:13:47 | ERROR    | app.agents.execution:_execute_skill:1717 - [31m技能 weather 执行失败: Object of type datetime is not JSON serializable[0m
