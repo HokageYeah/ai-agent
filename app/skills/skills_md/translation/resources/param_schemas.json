@@ -1,0 +1,25 @@
+{
+  "text": {
+    "label": "待翻译文本",
+    "description": "需要翻译的原始文本，支持段落、句子或技术术语",
+    "examples": [
+      "Artificial intelligence is transforming the way we work and live.",
+      "The quick brown fox jumps over the lazy dog.",
+      "请将这段产品说明书翻译成英文，保持专业性和准确性。"
+    ],
+    "required": true
+  },
+  "target_language": {
+    "label": "目标语言",
+    "description": "翻译输出的目标语言",
+    "examples": [
+      "中文",
+      "英文",
+      "日文",
+      "韩文",
+      "法文",
+      "德文"
+    ],
+    "required": true
+  }
+}

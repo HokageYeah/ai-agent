@@ -17,6 +17,7 @@ LangGraph Agent Executor (基于 LangGraph 的 Agent 执行器)
 """
 
 import json
+import re
 import time
 from typing import TypedDict, Dict, List, Any, Optional, Annotated, AsyncIterator, Callable
 from typing_extensions import TypedDict as TypedDictExt
@@ -165,6 +166,169 @@ class LangGraphAgentExecutor:
         logger.info(
             f"{Fore.GREEN}LangGraph Agent 执行器初始化完成 "
             f"[工具网关: {gateway_status}]{Style.RESET_ALL}"
+        )
+
+    def _extract_task_keywords(self, text: str) -> List[str]:
+        """
+        从任务文本中提取关键词，用于技能路由打分。
+
+        说明：
+        - 同时兼容中文和英文 token
+        - 仅保留长度 >= 2 的词，降低噪声
+        """
+        if not text:
+            return []
+        text_l = text.lower()
+        tokens: List[str] = []
+
+        # 英文词
+        tokens.extend(re.findall(r"[a-z0-9_]{2,}", text_l))
+
+        # 中文连续片段 -> 增加 2~4 字 n-gram，提升中文匹配能力
+        for seq in re.findall(r"[\u4e00-\u9fff]{2,}", text_l):
+            tokens.append(seq)
+            n = len(seq)
+            for size in (2, 3, 4):
+                if n >= size:
+                    for i in range(0, n - size + 1):
+                        tokens.append(seq[i : i + size])
+
+        # 去重保序
+        seen = set()
+        result: List[str] = []
+        for t in tokens:
+            if t not in seen:
+                seen.add(t)
+                result.append(t)
+        # 防止 token 过多导致打分开销过大
+        return result[:120]
+
+    def _route_skills_by_metadata(
+        self,
+        *,
+        task: str,
+        agent: Agent,
+        all_skills: List[Any],
+        top_k: int = 5,
+    ) -> List[Any]:
+        """
+        基于技能元数据进行动态技能路由（Claude Code 风格轻量筛选）。
+
+        设计目标：
+        - 决策阶段只看 metadata，不加载具体技能正文
+        - 按任务语义为规划阶段提供 Top-K 候选技能，减少无关技能干扰
+        """
+        try:
+            meta_list = self.skill_manager.list_skill_metadata()
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[技能路由] 读取技能元数据失败，回退全部技能: {exc}{Style.RESET_ALL}"
+            )
+            return all_skills
+
+        meta_by_id: Dict[str, Dict[str, Any]] = {
+            str(m.get("skill_id")): m for m in meta_list if m.get("skill_id")
+        }
+        keywords = self._extract_task_keywords(task)
+
+        scored: List[tuple[float, Any, List[str]]] = []
+        for skill in all_skills:
+            meta = meta_by_id.get(skill.skill_id, {})
+            candidate_text_parts = [
+                skill.skill_id,
+                getattr(skill, "name", ""),
+                getattr(skill, "description", ""),
+                " ".join(meta.get("when_to_use", []) or []),
+                " ".join(meta.get("inputs", []) or []),
+                " ".join((meta.get("input_descriptions", {}) or {}).values()),
+                " ".join(meta.get("tags", []) or []),
+            ]
+            candidate_text = " ".join([str(x).lower() for x in candidate_text_parts if x])
+
+            score = 0.0
+            reasons: List[str] = []
+
+            # 直接提到技能 ID，强加权
+            if skill.skill_id.lower() in task.lower():
+                score += 8.0
+                reasons.append("任务文本直接提到技能ID")
+
+            # 技能专属关键词规则加权（提升中文任务命中准确率）
+            joined = " ".join(keywords)
+            skill_boost_rules = {
+                "translation": ["翻译", "译成", "译为", "中英", "英文", "中文", "日文", "韩文", "translation"],
+                "code_generation": ["代码", "函数", "脚本", "算法", "python", "typescript", "java", "go", "rust", "编程"],
+                "data_analysis": ["分析", "数据", "统计", "趋势", "异常", "报表", "图表", "洞察"],
+                "text_writing": ["写作", "文章", "文案", "演讲稿", "邮件", "报告", "润色", "改写"],
+            }
+            for rule_kw in skill_boost_rules.get(skill.skill_id, []):
+                if rule_kw in joined:
+                    score += 3.0
+                    reasons.append(f"命中技能关键词:{rule_kw}")
+                    break
+
+            # 任务关键词命中技能描述/场景
+            for kw in keywords:
+                if kw and kw in candidate_text:
+                    score += 2.0
+
+            # 若技能声明了 when_to_use，且任务中出现其关键短语，额外加权
+            for hint in meta.get("when_to_use", []) or []:
+                hint_l = str(hint).lower()
+                if hint_l and any(tok in hint_l for tok in keywords):
+                    score += 1.5
+                    reasons.append("匹配when_to_use场景")
+                    break
+
+            scored.append((score, skill, reasons))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        # 只保留正分技能，避免无关技能污染规划
+        positives = [item for item in scored if item[0] > 0]
+        if not positives:
+            logger.info(
+                f"{Fore.YELLOW}[技能路由] 任务未匹配到明显技能，回退为全部技能{Style.RESET_ALL}"
+            )
+            return all_skills
+
+        selected = [item[1] for item in positives[: max(1, min(top_k, len(positives)))]]
+        logger.info(
+            f"{Fore.BLUE}[技能路由] 动态筛选完成 | task='{task[:50]}' | "
+            f"候选={len(all_skills)} -> 入选={len(selected)} | "
+            f"skills={[s.skill_id for s in selected]}{Style.RESET_ALL}"
+        )
+        return selected
+
+    def _resolve_available_skills(self, agent: Agent, task: str) -> List[Any]:
+        """
+        解析 Agent 当前任务可用技能列表。
+
+        规则：
+        1. 如果 Agent 显式配置了 available_skills（手动白名单），优先使用白名单
+        2. 否则走动态技能路由（metadata Top-K）
+        """
+        if not self.skill_manager:
+            return []
+
+        all_skills = self.skill_manager.list_skills()
+        if not all_skills:
+            return []
+
+        manual_ids = [x for x in (agent.available_skills or []) if isinstance(x, str) and x.strip()]
+        if manual_ids:
+            selected = [s for s in all_skills if s.skill_id in manual_ids]
+            logger.info(
+                f"{Fore.BLUE}[技能路由] Agent '{agent.name}' 使用手动技能白名单: "
+                f"{[s.skill_id for s in selected]}{Style.RESET_ALL}"
+            )
+            return selected
+
+        # 默认动态模式
+        return self._route_skills_by_metadata(
+            task=task,
+            agent=agent,
+            all_skills=all_skills,
+            top_k=3,
         )
     
     def _create_stream_event(
@@ -444,14 +608,7 @@ class LangGraphAgentExecutor:
                 f"可用工具 {before_count}->{len(available_tools)}{Style.RESET_ALL}"
             )
 
-        if self.skill_manager:
-            all_skills = self.skill_manager.list_skills()
-            if agent.available_skills:
-                available_skills = [s for s in all_skills if s.skill_id in agent.available_skills]
-            else:
-                available_skills = all_skills
-        else:
-            available_skills = []
+        available_skills = self._resolve_available_skills(agent=agent, task=task)
 
         logger.info(
             f"{Fore.BLUE}[Plan Node] Agent '{agent.name}' "

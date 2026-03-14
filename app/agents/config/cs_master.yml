@@ -30,8 +30,6 @@ available_tools:
 - datetime
 - spawn_agent
 - send_message
-available_skills:
-- text_writing
 child_agents:
 - order_agent
 - refund_agent

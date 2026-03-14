@@ -162,9 +162,6 @@ async def execute_skill(
         logger.info(f"{Fore.CYAN}技能执行 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
 
         # logger.info(f"{Fore.CYAN}技能执行 - 工具定义: {tools}{Style.RESET_ALL}")
-        # 构建 Prompt
-        prompt = skill.prompt_template.format(**request.parameters)
-        
         # 执行推理
         from app.llm_hub.inference import InferenceConfig
         config = InferenceConfig(**request.config) if request.config else InferenceConfig()
@@ -172,8 +169,16 @@ async def execute_skill(
         # 将工具定义传入配置
         config.tools = tools
         
-        result = await inference_engine.infer(
-            messages=[{"role": "user", "content": prompt}],
+        # 通过 SkillManager 运行时执行入口调用技能（动态加载 + Prompt 组装）
+        user_request = request.parameters.get(
+            "task",
+            f"请根据以下参数执行技能：{request.parameters}"
+        )
+        result = await skill_manager.execute_skill_runtime(
+            skill_name=skill_id,
+            user_request=user_request,
+            inputs=request.parameters,
+            llm_hub=inference_engine,
             config=config
         )
         

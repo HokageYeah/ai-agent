@@ -104,7 +104,6 @@ def get_automation_service():
         from app.skills.manager import SkillManager
         from app.services.automation_service import AutomationService
         from app.tools.builtin import register_all_builtin_tools
-        from app.skills.library import register_all_builtin_skills
 
         # 创建 LLM 供应商（使用 OpenAI 兼容接口）
         provider = OpenAIProvider(
@@ -118,14 +117,13 @@ def get_automation_service():
         
         # 初始化工具和技能管理器（先创建，以便同步工具到网关）
         tool_hub = ToolHub()
-        skill_manager = SkillManager()
+        skill_manager = SkillManager(auto_discover=True)
 
-        # 注册所有内置工具和技能
+        # 注册所有内置工具；技能改为动态扫描发现
         register_all_builtin_tools(tool_hub)
-        register_all_builtin_skills(skill_manager)
         logger.debug(
             f"{Fore.CYAN}【依赖注入】已注册 {len(tool_hub.list_tools())} 个内置工具，"
-            f"{len(skill_manager.list_skills())} 个内置技能{Style.RESET_ALL}"
+            f"{len(skill_manager.list_skills())} 个动态技能{Style.RESET_ALL}"
         )
         
         # ── 获取工具调用网关 ──────────────────────────────────────────────
@@ -241,7 +239,6 @@ def get_agent_executor():
         from app.agents.langgraph_executor import LangGraphAgentExecutor
         from app.agents.child_agent_manager import ChildAgentManager
         from app.tools.builtin import register_all_builtin_tools
-        from app.skills.library import register_all_builtin_skills
         
         # 创建默认 LLM Provider（使用 OpenAI 兼容接口）
         provider = OpenAIProvider(
@@ -256,14 +253,13 @@ def get_agent_executor():
         
         # 初始化工具和技能管理器（先创建，让工具注册完成后再同步到网关）
         tool_hub = ToolHub()
-        skill_manager = SkillManager()
+        skill_manager = SkillManager(auto_discover=True)
         
-        # 注册所有内置工具和技能
+        # 注册所有内置工具；技能改为动态扫描发现
         register_all_builtin_tools(tool_hub)
-        register_all_builtin_skills(skill_manager)
         logger.debug(
             f"{Fore.CYAN}【依赖注入】已注册 {len(tool_hub.list_tools())} 个内置工具，"
-            f"{len(skill_manager.list_skills())} 个内置技能{Style.RESET_ALL}"
+            f"{len(skill_manager.list_skills())} 个动态技能{Style.RESET_ALL}"
         )
         
         # ── 获取工具调用网关 ──────────────────────────────────────────────
@@ -463,12 +459,7 @@ def get_skill_manager():
     if _skill_manager is None:
         logger.info(f"{Fore.BLUE}【依赖注入】初始化 SkillManager...{Style.RESET_ALL}")
         from app.skills.manager import SkillManager
-        from app.skills.library import register_all_builtin_skills
-        
-        _skill_manager = SkillManager()
-        
-        # 注册所有内置技能
-        register_all_builtin_skills(_skill_manager)
+        _skill_manager = SkillManager(auto_discover=True)
         
         logger.info(f"{Fore.GREEN}【依赖注入】SkillManager 初始化完成{Style.RESET_ALL}")
     

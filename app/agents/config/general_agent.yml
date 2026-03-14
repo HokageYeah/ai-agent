@@ -23,10 +23,8 @@ role: |-
   第三步：任何预置工具无法覆盖的长尾需求，使用 python_executor 编写代码补全缺漏，永远不要直接对用户宣称「我做不到」。
 
   【技能说明】
-  - data_analysis : 数据分析与报表
-  - code_generation: 编写通用逻辑
-  - text_writing  : 文章写作
-  - translation   : 翻译
+  - 技能由系统根据任务动态注入（metadata 路由 + 按需加载）。
+  - 你无需假设固定技能白名单，优先根据当前任务选择最匹配技能。
 capabilities:
 - 网络搜索
 - 信息查询
@@ -52,11 +50,6 @@ available_tools:
 - send_message
 - calculator
 - datetime
-available_skills:
-- data_analysis
-- code_generation
-- text_writing
-- translation
 child_agents: []
 agent_config:
   max_iterations: 8

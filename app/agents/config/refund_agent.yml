@@ -37,8 +37,6 @@ available_tools:
 - datetime
 - spawn_agent
 - send_message
-available_skills:
-- data_analysis
 child_agents:
 - general_agent
 agent_config:

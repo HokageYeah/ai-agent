@@ -47,7 +47,10 @@ class Agent(BaseModel):
     
     # 资源依赖
     available_tools: List[str] = Field(default_factory=list, description="可用工具 ID 列表")
-    available_skills: List[str] = Field(default_factory=list, description="可用技能 ID 列表")
+    available_skills: List[str] = Field(
+        default_factory=list,
+        description="可用技能白名单（可选）。为空时由系统基于任务动态路由技能"
+    )
     child_agents: List[str] = Field(default_factory=list, description="子 Agent ID 列表")
     
     # 配置

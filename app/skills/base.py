@@ -54,6 +54,14 @@ class Skill(BaseModel):
         default_factory=dict,
         description="参数元数据字典，key 为参数名，value 为参数描述与示例"
     )
+    # NOTE: 以下字段用于“技能包动态加载”模式，兼容旧版硬编码技能模型。
+    # source_path: 记录技能来源文件路径，便于排障和前端展示。
+    source_path: Optional[str] = Field(None, description="技能来源 SKILL.md 路径")
+    # instruction_markdown: 保留技能完整说明正文，供运行时拼装 Prompt 使用。
+    instruction_markdown: str = Field("", description="技能完整说明 Markdown 正文")
+    # scripts/resources: 技能包中声明的脚本与资源路径（相对技能目录）
+    scripts: List[str] = Field(default_factory=list, description="技能脚本路径列表")
+    resources: List[str] = Field(default_factory=list, description="技能资源路径列表")
     
     model_config = ConfigDict(
         json_schema_extra={
@@ -62,7 +70,36 @@ class Skill(BaseModel):
                 "name": "Data Analysis",
                 "description": "Analyze datasets and provide insights.",
                 "prompt_template": "Analyze the following data: {data}",
-                "required_tools": ["python_executor"]
+                "required_tools": ["python_executor"],
+                "source_path": "app/skills/skills_md/data_analysis/SKILL.md",
+                "scripts": [],
+                "resources": ["resources/param_schemas.json"]
             }
         }
     )
+
+
+class SkillMetadata(BaseModel):
+    """
+    技能轻量元数据
+
+    该模型用于“发现阶段”，仅承载路由所需的低成本信息，
+    避免在启动时加载完整技能正文与资源文件。
+    """
+
+    skill_id: str = Field(..., description="技能唯一标识")
+    name: str = Field(..., description="技能显示名称")
+    description: str = Field(..., description="技能描述")
+    source_path: str = Field(..., description="SKILL.md 文件路径")
+    when_to_use: List[str] = Field(default_factory=list, description="使用场景列表")
+    inputs: List[str] = Field(default_factory=list, description="输入参数名列表")
+    input_descriptions: Dict[str, str] = Field(
+        default_factory=dict,
+        description="输入参数说明，key=参数名，value=说明"
+    )
+    required_tools: List[str] = Field(default_factory=list, description="必需工具")
+    optional_tools: List[str] = Field(default_factory=list, description="可选工具")
+    tags: List[str] = Field(default_factory=list, description="技能标签")
+    memory_include_short_term: bool = Field(True, description="是否包含短期记忆")
+    scripts: List[str] = Field(default_factory=list, description="脚本路径列表")
+    resources: List[str] = Field(default_factory=list, description="资源路径列表")

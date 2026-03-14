@@ -1,0 +1,36 @@
+{
+  "requirements": {
+    "label": "需求描述",
+    "description": "详细描述要实现的功能需求",
+    "examples": [
+      "实现一个用户登录接口，包含手机号+密码验证，返回 JWT Token",
+      "写一个爬取豆瓣电影 Top250 的爬虫，保存为 CSV 文件",
+      "实现二叉树的前序、中序、后序遍历，要求递归和迭代两种方式"
+    ],
+    "required": true
+  },
+  "language": {
+    "label": "编程语言",
+    "description": "目标编程语言",
+    "examples": [
+      "Python",
+      "TypeScript",
+      "Go",
+      "Java",
+      "Rust"
+    ],
+    "required": true
+  },
+  "framework": {
+    "label": "框架/库",
+    "description": "使用的框架或第三方库，无特定要求可填无或标准库",
+    "examples": [
+      "FastAPI",
+      "Vue 3 + TypeScript",
+      "React + Hooks",
+      "无，使用标准库",
+      "Spring Boot"
+    ],
+    "required": true
+  }
+}

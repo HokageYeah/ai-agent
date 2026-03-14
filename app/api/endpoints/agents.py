@@ -30,6 +30,8 @@ from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.agents.registry import AgentRegistry
 from app.agents.langgraph_executor import LangGraphAgentExecutor
 from app.utils.dependencies import get_agent_registry, get_agent_executor
+from app.utils.dependencies import get_skill_manager
+from app.skills.manager import SkillManager
 from typing import Dict, Any
 
 # 创建路由器
@@ -308,7 +310,8 @@ async def execute_agent_stream(
 
 @router.get("/agents")
 async def list_agents(
-    agent_registry: AgentRegistry = Depends(get_agent_registry)
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+    skill_manager: SkillManager = Depends(get_skill_manager),
 ) -> ApiResponseData:
     """
     列出所有 Agent
@@ -325,6 +328,13 @@ async def list_agents(
         # 获取所有 Agent
         agents = agent_registry.list_agents()
         
+        # 动态技能目录（仅可用技能）
+        dynamic_skill_ids = [
+            item.get("skill_id")
+            for item in skill_manager.list_skill_metadata()
+            if item.get("skill_id")
+        ]
+
         # 构建响应
         agents_info = [
             AgentInfo(
@@ -333,7 +343,8 @@ async def list_agents(
                 description=agent.description,
                 capabilities=agent.capabilities,
                 available_tools=agent.available_tools,
-                available_skills=agent.available_skills,
+                # 若 agent 未手工声明技能白名单，则返回动态技能目录
+                available_skills=agent.available_skills or dynamic_skill_ids,
                 child_agents=agent.child_agents,
                 examples=[ex.model_dump() for ex in agent.examples]
             )
@@ -358,7 +369,8 @@ async def list_agents(
 @router.get("/agents/{agent_id}")
 async def get_agent(
     agent_id: str,
-    agent_registry: AgentRegistry = Depends(get_agent_registry)
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+    skill_manager: SkillManager = Depends(get_skill_manager),
 ) -> ApiResponseData:
     """
     获取 Agent 详情
@@ -379,6 +391,12 @@ async def get_agent(
             logger.error(f"{Fore.RED}Agent 不存在: {agent_id}{Style.RESET_ALL}")
             raise HTTPException(status_code=404, detail=f"Agent 不存在: {agent_id}")
         
+        dynamic_skill_ids = [
+            item.get("skill_id")
+            for item in skill_manager.list_skill_metadata()
+            if item.get("skill_id")
+        ]
+
         # 构建响应
         detail = AgentDetail(
             agent_id=agent.agent_id,
@@ -387,7 +405,7 @@ async def get_agent(
             role=agent.role,
             capabilities=agent.capabilities,
             available_tools=agent.available_tools,
-            available_skills=agent.available_skills,
+            available_skills=agent.available_skills or dynamic_skill_ids,
             child_agents=agent.child_agents,
             agent_config=agent.agent_config.model_dump()
         )
@@ -552,5 +570,4 @@ async def submit_user_input(
         ret=["success"],
         v=1
     )
-
 

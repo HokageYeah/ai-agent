@@ -1,0 +1,112 @@
+import json
+
+import pytest
+
+from app.skills.manager import SkillManager
+
+
+def _write_demo_skill(tmp_path):
+    skill_dir = tmp_path / "demo_skill"
+    resource_dir = skill_dir / "resources"
+    resource_dir.mkdir(parents=True, exist_ok=True)
+
+    (resource_dir / "param_schemas.json").write_text(
+        json.dumps(
+            {
+                "input_text": {
+                    "label": "输入文本",
+                    "description": "用于演示的输入文本",
+                    "examples": ["你好，世界"],
+                    "required": True,
+                }
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: demo_skill
+description: 用于测试动态加载能力。
+---
+# 何时使用 (When to use)
+- 当需要验证技能发现和懒加载时
+
+# 输入参数 (Inputs)
+- input_text: 用于演示的输入文本
+
+# 执行指令 (Instructions)
+请处理以下输入文本：
+{input_text}
+
+# 脚本 (Scripts)
+- 无
+
+# 资源 (Resources)
+- resources/param_schemas.json
+""",
+        encoding="utf-8",
+    )
+
+
+def test_discover_and_lazy_load_skill(tmp_path):
+    _write_demo_skill(tmp_path)
+
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+
+    metadata = manager.list_skill_metadata()
+    assert len(metadata) == 1
+    assert metadata[0]["skill_id"] == "demo_skill"
+    assert metadata[0]["name"] == "demo_skill"
+    assert metadata[0]["inputs"] == ["input_text"]
+    assert metadata[0]["input_descriptions"]["input_text"] == "用于演示的输入文本"
+
+    # discover 之后尚未触发完整加载
+    assert "demo_skill" not in manager._loaded_skills
+
+    skill = manager.get_skill("demo_skill")
+    assert skill is not None
+    assert skill.skill_id == "demo_skill"
+    assert "{input_text}" in skill.prompt_template
+    assert "input_text" in skill.param_schemas
+    assert skill.param_schemas["input_text"].label == "输入文本"
+
+
+@pytest.mark.asyncio
+async def test_execute_skill_runtime(tmp_path):
+    _write_demo_skill(tmp_path)
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+
+    class FakeResponse:
+        def __init__(self):
+            self.content = "执行成功"
+            self.usage = {"total_tokens": 1}
+
+    class FakeLLM:
+        def __init__(self):
+            self.last_messages = None
+            self.last_config = None
+
+        async def infer(self, messages, config):
+            self.last_messages = messages
+            self.last_config = config
+            return FakeResponse()
+
+    class DummyConfig:
+        tools = []
+
+    llm = FakeLLM()
+    result = await manager.execute_skill_runtime(
+        skill_name="demo_skill",
+        user_request="请处理一段测试文本",
+        inputs={"input_text": "hello"},
+        llm_hub=llm,
+        config=DummyConfig(),
+    )
+
+    assert result.content == "执行成功"
+    assert llm.last_messages is not None
+    assert "你正在执行技能：demo_skill" in llm.last_messages[0]["content"]
+    assert "hello" in llm.last_messages[0]["content"]

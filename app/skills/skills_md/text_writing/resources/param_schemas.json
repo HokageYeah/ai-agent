@@ -1,0 +1,46 @@
+{
+  "topic": {
+    "label": "写作主题",
+    "description": "文章的核心主题或标题",
+    "examples": [
+      "人工智能对职场未来的影响",
+      "如何培养高效的时间管理习惯",
+      "新能源汽车行业的发展现状与趋势"
+    ],
+    "required": true
+  },
+  "content_type": {
+    "label": "文本类型",
+    "description": "要写作的文本类型，决定整体结构和格式",
+    "examples": [
+      "博客文章",
+      "产品介绍",
+      "工作报告",
+      "商业邮件",
+      "学术论文摘要"
+    ],
+    "required": true
+  },
+  "style": {
+    "label": "写作风格",
+    "description": "文章语气和风格",
+    "examples": [
+      "正式专业",
+      "轻松易懂",
+      "学术严谨",
+      "幽默风趣"
+    ],
+    "required": true
+  },
+  "word_count": {
+    "label": "字数要求",
+    "description": "目标字数或字数范围",
+    "examples": [
+      "500字以内",
+      "800-1200字",
+      "2000字左右",
+      "不限字数，内容完整即可"
+    ],
+    "required": true
+  }
+}
