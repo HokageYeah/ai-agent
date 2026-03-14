@@ -1,335 +1,190 @@
 """
-客服系统 Agent 库
+客服系统 Agent 库（YAML 配置驱动）
 ================================
 
-本模块定义了客服系统相关的 Agent，包括：
-1. CustomerServiceMaster - 客服主 Agent（协调分发）
-2. OrderAgent            - 订单处理子 Agent
-3. RefundAgent           - 退款处理子 Agent
-4. GeneralAssistantAgent - 通用助手子 Agent（处理非订单/退款类问题）
+设计说明：
+1. Agent 的定义全部放在 `app/agents/config/{agent_id}.yml` 中。
+2. 本模块只负责“加载 + 校验 + 注册”，不再硬编码具体 Agent 内容。
+3. 保留旧常量导出（CUSTOMER_SERVICE_MASTER 等），保证历史代码兼容。
 
 作者: AI Agent Team
 创建时间: 2026-02-15
 """
 
-from loguru import logger
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Dict, List
+
+import yaml
 from colorama import Fore, Style
-from app.agents.base import Agent, AgentConfig, AgentExample
+from loguru import logger
+from pydantic import ValidationError
+
+from app.agents.base import Agent
+
+# Agent 配置目录：app/agents/config/
+AGENT_CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+
+# 历史内置 Agent（用于兼容旧常量导出）
+_CORE_AGENT_IDS = ["cs_master", "order_agent", "refund_agent", "general_agent"]
 
 
-# =============================================================================
-# 客服主 Agent
-# NOTE: 主 Agent 负责意图识别与委派，自身不直接处理业务，避免职责混乱
-# =============================================================================
-
-CUSTOMER_SERVICE_MASTER = Agent(
-    agent_id="cs_master",
-    name="客服总监",
-    description="负责客户服务的总协调，识别用户意图并委派给专业子 Agent 处理",
-    role=(
-        "你是一个专业的客服总监，负责协调处理各类客户问题。\n"
-        "【重要】你只有基础工具，主要通过 spawn_agent 委派任务给子 Agent。\n"
-        "\n"
-        "【交互与确认规范（重要）】\n"
-        "- 当用户意图不明，或处理任务缺失必须由用户手动提供的关键信息时，必须调用 send_message 工具（message_type='input'）向用户询问获取。\n"
-        "- 当需要用户二次确认某些核心指令时，必须调用 send_message 工具（message_type='confirm'）请求用户授权操作。\n"
-        "\n"
-        "【spawn_agent 委派规范】\n"
-        "- 订单查询、订单状态、商品明细等订单相关问题 → spawn_agent(agent_id='order_agent')\n"
-        "- 退款申请、审核、进度等退款相关问题 → spawn_agent(agent_id='refund_agent')\n"
-        "- 搜索、写代码、邮件/文档处理、翻译、分析等通用任务 → spawn_agent(agent_id='general_agent')\n"
-        "\n"
-        "【⚠️ 关键规范：委派任务必须完整，禁止省略环节】\n"
-        "委派给子 Agent 的 task 字段必须包含用户原始需求的**所有内容**，包括附加操作（如'写入本地'、'发邮件'等）。\n"
-        "禁止在委派描述中省略任何用户需求，否则下游 Agent 将丢失上下文。\n"
-        "举例：'查询订单 1002 并以邮件发送'，委派的 task 必须是：'查询订单 1002 的详细情况，查完后发送邮件。'\n"
-        "（专业子 Agent 遇到无法处理的邮件发送操作会自动转交通用助手，但前提是你给的任务描述必须完整包含该诉求。）\n"
-        "\n"
-        "你的职责是：理解问题 → 判断是否需要补充信息或授权(send_message) → 调用 spawn_agent 委派（携带完整需求）→ 整合结果回复用户。"
-    ),
-    capabilities=["问题分类", "任务委派", "结果整合", "客户沟通"],
-    available_tools=["datetime", "spawn_agent", "send_message"],
-    available_skills=["text_writing"],
-    # NOTE: 更新 child_agents，纳入新增的通用助手 Agent
-    child_agents=["order_agent", "refund_agent", "general_agent"],
-    agent_config=AgentConfig(
-        max_iterations=5,
-        timeout_seconds=120
-    ),
-    # NOTE: 示例任务配置，前端从 API 获取后动态渲染
-    examples=[
-        AgentExample(
-            label="示例1：简单查询",
-            content="帮我查询订单号 1002 的详细情况，包括商品、客户和配送状态。"
-        ),
-        AgentExample(
-            label="示例2：复杂查询",
-            content="帮我查询客户\"李娜\"的所有订单，并汇总她的总消费金额。"
-        ),
-        AgentExample(
-            label="示例3：子Agent委派",
-            content="查询订单号 1002 的详细情况，找到订单的总金额，写入本地",
-            style="delegate"
-        ),
-    ]
-)
-
-
-# =============================================================================
-# 订单处理子 Agent
-# =============================================================================
-
-ORDER_AGENT = Agent(
-    agent_id="order_agent",
-    name="订单专员",
-    description="专业处理订单相关问题，包括订单查询、订单状态更新、配送跟踪等",
-    role=(
-        "你是一个专业的订单处理专员，负责处理所有订单相关的问题。\n"
-        "【工具说明】\n"
-        "- database_query: 执行预置的标准订单查询（按订单号、客户ID等）\n"
-        "- http_request: 调用外部物流/支付 API\n"
-        "- send_message: 向用户请求交互反馈\n"
-        "- spawn_agent: 将无法处理的任务及上下文转交给 general_agent\n"
-        "\n"
-        "【交互与确认规范（重要）】\n"
-        "- 当查询或执行订单指令时，若缺失必须由用户手动填写的关键信息参数，必须调用 send_message 工具（message_type='input'）请求用户补充输入。\n"
-        "- 在执行如取消订单、修改发货地址等涉及账号权益的重要/不可逆操作前，必须调用 send_message 工具（message_type='confirm'）取得用户明确确认许可。\n"
-        "\n"
-        "【工作流程】\n"
-        "第一步：使用专业工具处理订单任务。如需用户补充参数或确认风险操作，立刻调用 send_message 工具交互。\n"
-        "第二步：任务执行完自身逻辑后，检查用户完整需求。如果有自己工具无法满足的操作（如发送邮件、写入本地文件等），必须通过 spawn_agent 将任务连同已查到的订单数据作为上下文证据，一并转交给 general_agent 处理。\n"
-        "\n"
-        "【⚠️ 必须转交 general_agent 的典型场景（禁止自行宣告无法处理或宣告全部完成）】\n"
-        "- 写入/生成本地文件/发邮件/生成报表\n"
-        "- 预置 SQL 接口无法支持的复杂聚合分析\n"
-        "- 搜索网络、执行任何脚本代码 (Python/Shell)\n"
-        "- 任何超出你专业范围的操作\n"
-        "\n"
-        "【spawn_agent 移交规范】\n"
-        "  - agent_id: 'general_agent'\n"
-        "  - task: 包含完整原始需求，并附上已查到的订单数据，让对方能无缝接手处理。"
-    ),
-    capabilities=["订单查询", "订单更新", "配送跟踪", "订单分析"],
-    available_tools=["database_query", "http_request", "datetime", "spawn_agent", "send_message"],
-    available_skills=["data_analysis"],
-    # NOTE: 订单专员可向 general_agent 移交无法处理的任务
-    child_agents=["general_agent"],
-    agent_config=AgentConfig(
-        max_iterations=5,
-        timeout_seconds=60
-    ),
-    # NOTE: 示例任务配置
-    examples=[
-        AgentExample(
-            label="示例1：订单详情",
-            content="查询订单号 1002 的详细信息：买了什么商品、支付了多少、现在的配送状态是什么，物流单号是多少？"
-        ),
-        AgentExample(
-            label="示例2：客户订单统计",
-            content="查询客户ID为2的所有订单，统计她的订单总数、总金额。"
-        ),
-        AgentExample(
-            label="示例3：订单分析",
-            content="分析已发货但未签收的订单，列出订单号、客户。",
-            style="delegate"
-        ),
-    ]
-)
-
-
-# =============================================================================
-# 退款处理子 Agent
-# =============================================================================
-
-REFUND_AGENT = Agent(
-    agent_id="refund_agent",
-    name="退款专员",
-    description="专业处理退款相关问题，包括退款申请、退款审核、退款进度查询等",
-    role=(
-        "你是一个专业的退款处理专员，负责处理所有退款相关的问题。\n"
-        "【工具说明】\n"
-        "- database_query: 执行预置的标准退款查询\n"
-        "- calculator: 汇总和退款财务数值计算\n"
-        "- send_message: 向用户请求交互反馈\n"
-        "- spawn_agent: 将无法处理的任务转交给 general_agent\n"
-        "\n"
-        "【交互与确认规范（重要）】\n"
-        "- 在进入办理退款审核、修改退款金额等敏感财务业务流程前，必须事先调用 send_message 工具（message_type='confirm'）请求用户二次授权确认。\n"
-        "- 当执行逻辑缺少例如退款流水必须的账户凭证、银行理由等要求用户手动输入的信息时，必须调用 send_message 工具（message_type='input'）向用户获取。\n"
-        "\n"
-        "【工作流程】\n"
-        "第一步：使用专业工具处理退款任务。适当时机调用 send_message 进行用户意图保护和信息获取确认。\n"
-        "第二步：查阅用户全部指令。如果有自身涵盖以外的需求，必须通过 spawn_agent 将已查到的退款上下文转交给 general_agent 继续处理。\n"
-        "\n"
-        "【⚠️ 必须转交 general_agent 的典型场景（禁止自行宣告无法处理）】\n"
-        "- 写入/产生本地文件或统计报表\n"
-        "- 执行批量审核逻辑的 Python 代码\n"
-        "- 预置 SQL 不支持的复杂联表条件\n"
-        "- 搜索网络及其他你无法完成的操作\n"
-        "\n"
-        "【spawn_agent 移交规范】\n"
-        "  - agent_id: 'general_agent'\n"
-        "  - task: 包含完整原始需求，并附上已查到的退款数据作为上下文，无缝移接。"
-    ),
-    capabilities=["退款申请", "退款审核", "退款查询", "退款分析"],
-    available_tools=["database_query", "calculator", "datetime", "spawn_agent", "send_message"],
-    available_skills=["data_analysis"],
-    # NOTE: 退款专员可向 general_agent 移交无法处理的任务
-    child_agents=["general_agent"],
-    agent_config=AgentConfig(
-        max_iterations=5,
-        timeout_seconds=60
-    ),
-    # NOTE: 示例任务配置
-    examples=[
-        AgentExample(
-            label="示例1：退款进度",
-            content="查询订单号 1003 的退款进度，请告知当前处理状态和退款金额。"
-        ),
-        AgentExample(
-            label="示例2：待审核退款",
-            content="查询所有待审核的退款申请（status=pending），列出申请人。"
-        ),
-        AgentExample(
-            label="示例3：退款统计",
-            content="统计所有退款记录的总退款金额，按退款状态分组。",
-            style="delegate"
-        ),
-    ]
-)
-
-
-# =============================================================================
-# 通用助手子 Agent
-# NOTE: 双重入口——
-#   1. cs_master 直接委派（搜索/翻译/写作/计算等通用任务）
-#   2. order_agent / refund_agent 上游移交（专业工具解决不了的复杂需求）
-# 处理优先级：预置通用工具 → python_executor 写代码兜底
-# =============================================================================
-
-GENERAL_AGENT = Agent(
-    agent_id="general_agent",
-    name="通用助手",
-    description=(
-        "处理通用请求，以及接收 order_agent / refund_agent 无法完成的任务。"
-        "拥有搜索、HTTP、代码执行、文件操作等全量通用工具，"
-        "并以 python_executor 作为万能兜底适配器。"
-    ),
-    role=(
-        "你是一个能力全面的通用 AI 助手，负责以下两类任务：\n"
-        "  A. cs_master 委派的通用请求（搜索、发邮件、数据分析、编程及系统操作等）\n"
-        "  B. order_agent / refund_agent 因为能力不足而移交的未竟任务（例如拿到订单数据后要发邮件或存本地）\n"
-        "\n"
-        "【核心工具说明】\n"
-        "- search / http_request: 网络数据采集与 API 调用\n"
-        "- file_read / file_write / file_edit / list_dir: 本地文件及系统操作\n"
-        "- shell_exec: 后台命令执行（含安全隔离）\n"
-        "- send_message: 向用户实时反馈消息、请求输入补充信息，或者取得高风险操作确认授权\n"
-        "- python_executor: 终极兜底能力，任何现有工具不会的，必须尝试写 Python 脚本解决\n"
-        "\n"
-        "【交互与确认规范（重要）】\n"
-        "- 当你要执行譬如「发送邮件」、「连接特定数据库」等操作时，若发现缺少必备配置（如 SMTP 授权码、外部账密、发件人等必须由用户手动填写的信息要素），必须立即调用 send_message 工具（限定 message_type='input'），挂起并请求用户手动填写。\n"
-        "- 当你准备开展「执行高危脚本 Shell 命令」、「修改重要文件/代码」、「向外网正式发送敏感 API 请求（引起账户状态和资金变动等）」操作时，为了确保安全，必须立刻调用 send_message 工具（限定 message_type='confirm'）向用户全透明请求操作批准确认。\n"
-        "\n"
-        "【工作流程】\n"
-        "第一步：预判是否缺少关键前提信息或触发敏感边界，若符合则优先调用 send_message 工具。\n"
-        "第二步：检查特定预置工具并组合使用来完成主体业务。\n"
-        "第三步：任何预置工具无法覆盖的长尾需求，使用 python_executor 编写代码补全缺漏，永远不要直接对用户宣称「我做不到」。\n"
-        "\n"
-        "【技能说明】\n"
-        "- data_analysis : 数据分析与报表\n"
-        "- code_generation: 编写通用逻辑\n"
-        "- text_writing  : 文章写作\n"
-        "- translation   : 翻译"
-    ),
-    capabilities=[
-        "网络搜索", "信息查询", "代码生成", "文本翻译",
-        "数据分析", "文本写作", "HTTP 请求", "文件读写",
-        "文件精准编辑", "目录浏览", "Shell 命令执行", "数学计算"
-    ],
-    # NOTE: 囊括除 database_query 之外的所有内置工具
-    available_tools=[
-        "search",
-        "http_request",
-        "python_executor",
-        "file_read",
-        "file_write",
-        "file_edit",    # 精准文本替换，避免全量覆写
-        "list_dir",     # 目录浏览，了解文件结构
-        "shell_exec",   # Shell 命令执行，含内置安全防护
-        "send_message", # 实时消息反馈
-        "calculator",
-        "datetime",
-    ],
-    # NOTE: 挂载全部四个内置技能
-    available_skills=[
-        "data_analysis",
-        "code_generation",
-        "text_writing",
-        "translation",
-    ],
-    child_agents=[],  # 通用助手是叶子节点，不再向下委派
-    agent_config=AgentConfig(
-        # NOTE: 通用任务可能涉及多步骤推理（如搜索+分析+写作），给予更多迭代次数
-        max_iterations=8,
-        timeout_seconds=180
-    ),
-    # NOTE: 示例任务配置
-    examples=[
-        AgentExample(
-            label="示例1：中英翻译",
-            content="请把这句话翻译成英文：\"人工智能在改变我们的生活。\""
-        ),
-        AgentExample(
-            label="示例2：网络查询",
-            content="搜一下什么是 MCP，通俗地解释一下。"
-        ),
-        AgentExample(
-            label="示例3：代码生成",
-            content="用 Python 写一个快速排序算法。",
-            style="delegate"
-        ),
-    ]
-)
-
-logger.info(
-    f"{Fore.GREEN}[客服 Agent 库] 已定义 4 个 Agent："
-    f"cs_master / order_agent / refund_agent / general_agent{Style.RESET_ALL}"
-)
-
-
-# =============================================================================
-# 辅助函数
-# =============================================================================
-
-def get_all_customer_service_agents():
+def _iter_agent_config_files() -> List[Path]:
     """
-    获取所有客服系统 Agent
+    获取配置目录中的所有 Agent YAML 文件。
+
+    说明：
+    - 支持 `.yml` / `.yaml`
+    - 统一排序，保证加载顺序稳定，便于排障和结果可复现
+    """
+    yml_files = sorted(AGENT_CONFIG_DIR.glob("*.yml"))
+    yaml_files = sorted(AGENT_CONFIG_DIR.glob("*.yaml"))
+    all_files = sorted({*yml_files, *yaml_files})
+    logger.debug(
+        f"{Fore.BLUE}[客服 Agent 配置加载] 发现配置文件 {len(all_files)} 个："
+        f"{[p.name for p in all_files]}{Style.RESET_ALL}"
+    )
+    return all_files
+
+
+def _parse_single_agent_config(config_path: Path) -> Agent:
+    """
+    解析单个 Agent 配置文件并构建 Agent 对象。
+
+    校验规则：
+    1. 文件不能为空
+    2. YAML 顶层必须是对象（dict）
+    3. `agent_id` 必须与文件名一致（防止拷贝文件后忘记修改 id）
+    """
+    logger.debug(f"{Fore.BLUE}[客服 Agent 配置加载] 开始读取: {config_path}{Style.RESET_ALL}")
+
+    raw_text = config_path.read_text(encoding="utf-8")
+    if not raw_text.strip():
+        raise ValueError(f"配置文件为空: {config_path.name}")
+
+    parsed = yaml.safe_load(raw_text)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"配置文件格式错误（顶层必须是对象）: {config_path.name}")
+
+    file_agent_id = config_path.stem
+    config_agent_id = parsed.get("agent_id")
+
+    # 若省略 agent_id，则自动回填为文件名，简化自动生成配置文件场景
+    if not config_agent_id:
+        parsed["agent_id"] = file_agent_id
+        logger.warning(
+            f"{Fore.YELLOW}[客服 Agent 配置加载] {config_path.name} 未声明 agent_id，"
+            f"已自动使用文件名: {file_agent_id}{Style.RESET_ALL}"
+        )
+    elif config_agent_id != file_agent_id:
+        raise ValueError(
+            f"agent_id 与文件名不一致: file={file_agent_id}, agent_id={config_agent_id}"
+        )
+
+    try:
+        # 这里直接复用 Pydantic 的强校验，保证配置结构与代码模型一致
+        agent = Agent(**parsed)
+    except ValidationError as exc:
+        raise ValueError(f"Agent 配置校验失败: {config_path.name}, 详情: {exc}") from exc
+
+    logger.info(
+        f"{Fore.CYAN}[客服 Agent 配置加载] 解析成功: {agent.agent_id} ({agent.name}){Style.RESET_ALL}"
+    )
+    return agent
+
+
+def load_customer_service_agents() -> Dict[str, Agent]:
+    """
+    从配置目录加载全部客服 Agent。
 
     Returns:
-        list[Agent]: Agent 列表，顺序为：主 Agent → 各子 Agent
+        Dict[str, Agent]: key=agent_id, value=Agent 实例
     """
-    return [
-        CUSTOMER_SERVICE_MASTER,
-        ORDER_AGENT,
-        REFUND_AGENT,
-        GENERAL_AGENT,
-    ]
+    if not AGENT_CONFIG_DIR.exists():
+        raise FileNotFoundError(f"Agent 配置目录不存在: {AGENT_CONFIG_DIR}")
+
+    config_files = _iter_agent_config_files()
+    if not config_files:
+        raise RuntimeError(f"未找到任何 Agent 配置文件: {AGENT_CONFIG_DIR}")
+
+    agent_map: Dict[str, Agent] = {}
+    for config_path in config_files:
+        try:
+            agent = _parse_single_agent_config(config_path)
+        except Exception as exc:
+            logger.error(
+                f"{Fore.RED}[客服 Agent 配置加载] 解析失败: {config_path.name}, 错误: {exc}{Style.RESET_ALL}"
+            )
+            raise
+
+        if agent.agent_id in agent_map:
+            raise ValueError(f"发现重复 agent_id: {agent.agent_id}（文件: {config_path.name}）")
+
+        agent_map[agent.agent_id] = agent
+
+    missing_core_agents = [agent_id for agent_id in _CORE_AGENT_IDS if agent_id not in agent_map]
+    if missing_core_agents:
+        raise RuntimeError(
+            f"缺失核心 Agent 配置: {missing_core_agents}。"
+            f"请检查目录: {AGENT_CONFIG_DIR}"
+        )
+
+    logger.info(
+        f"{Fore.GREEN}[客服 Agent 配置加载] 加载完成，共 {len(agent_map)} 个 Agent："
+        f"{list(agent_map.keys())}{Style.RESET_ALL}"
+    )
+    return agent_map
 
 
-def register_customer_service_agents(agent_registry):
+# 在模块导入时加载一次：
+# 1. 启动即校验配置，尽早暴露错误；
+# 2. 保持与旧实现一致（模块级常量）
+_AGENT_MAP = load_customer_service_agents()
+
+# -----------------------------------------------------------------------------
+# 兼容旧接口：保留四个历史常量，避免影响既有 import 代码
+# -----------------------------------------------------------------------------
+CUSTOMER_SERVICE_MASTER = _AGENT_MAP["cs_master"]
+ORDER_AGENT = _AGENT_MAP["order_agent"]
+REFUND_AGENT = _AGENT_MAP["refund_agent"]
+GENERAL_AGENT = _AGENT_MAP["general_agent"]
+
+
+def get_all_customer_service_agents() -> List[Agent]:
     """
-    将所有客服系统 Agent 注册到 Agent 注册表
+    获取所有客服系统 Agent。
+
+    返回顺序策略：
+    1. 核心 Agent 优先按既有顺序（cs_master → order_agent → refund_agent → general_agent）
+    2. 其他新增 Agent 再按 agent_id 字典序追加
+    """
+    order_priority = {agent_id: idx for idx, agent_id in enumerate(_CORE_AGENT_IDS)}
+    sorted_agents = sorted(
+        _AGENT_MAP.values(),
+        key=lambda a: (order_priority.get(a.agent_id, 999), a.agent_id),
+    )
+    return sorted_agents
+
+
+def register_customer_service_agents(agent_registry) -> None:
+    """
+    将所有客服系统 Agent 注册到 Agent 注册表。
 
     Args:
         agent_registry: Agent 注册表实例
     """
     agents = get_all_customer_service_agents()
+    logger.info(
+        f"{Fore.BLUE}[客服 Agent 库] 开始注册 Agent，共 {len(agents)} 个{Style.RESET_ALL}"
+    )
+
     for agent in agents:
         agent_registry.register_agent(agent)
         logger.debug(
             f"{Fore.CYAN}[客服 Agent 库] 已注册 Agent: {agent.agent_id} ({agent.name}){Style.RESET_ALL}"
         )
+
     logger.info(
         f"{Fore.GREEN}[客服 Agent 库] 所有 Agent 注册完成，共 {len(agents)} 个{Style.RESET_ALL}"
     )

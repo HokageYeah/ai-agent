@@ -165,26 +165,30 @@ async def test_phase4_agent_system(result: TestResult, use_real_api: bool = Fals
         
         # 验证注册
         all_agents = agent_registry.list_agents()
-        assert len(all_agents) == 3, f"应该有3个Agent，实际有{len(all_agents)}个"
-        
+        assert len(all_agents) >= 4, f"应该至少有4个Agent，实际有{len(all_agents)}个"
+
         # 验证可以获取每个 Agent
         cs_master = agent_registry.get_agent("cs_master")
         order_agent = agent_registry.get_agent("order_agent")
         refund_agent = agent_registry.get_agent("refund_agent")
-        
+        general_agent = agent_registry.get_agent("general_agent")
+
         assert cs_master is not None
         assert order_agent is not None
         assert refund_agent is not None
-        
-        result.add_pass("Agent Registry 基本功能", "成功注册和查询3个Agent")
+        assert general_agent is not None
+
+        result.add_pass("Agent Registry 基本功能", "成功注册和查询至少4个Agent")
         
         # 验证层次结构
         assert "order_agent" in cs_master.child_agents
         assert "refund_agent" in cs_master.child_agents
-        assert len(order_agent.child_agents) == 0
-        assert len(refund_agent.child_agents) == 0
-        
-        result.add_pass("Agent 层次结构验证", "主Agent正确配置了2个子Agent")
+        assert "general_agent" in cs_master.child_agents
+        assert "general_agent" in order_agent.child_agents
+        assert "general_agent" in refund_agent.child_agents
+        assert len(general_agent.child_agents) == 0
+
+        result.add_pass("Agent 层次结构验证", "主Agent及子Agent层级关系正确")
         
     except Exception as e:
         result.add_fail("Agent Registry 测试", str(e))
