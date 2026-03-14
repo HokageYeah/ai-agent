@@ -1,0 +1,1 @@
+2026-03-14 13:10:03 | ERROR    | app.tools.builtin.http:execute:556 - [31m[HTTPRequestTool] 请求超时（>30.0s）: http://wttr.in/郑州?format=%l:+%c+%t+%h+%w[0m

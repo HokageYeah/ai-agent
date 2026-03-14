@@ -230,6 +230,113 @@ class ExecutionEngine:
 请直接输出执行结果。
 """
 
+    def _safe_format_skill_prompt(
+        self,
+        *,
+        template: str,
+        values: Dict[str, Any],
+        skill_id: str
+    ) -> str:
+        """
+        安全渲染技能 Prompt：
+        - 已提供的变量正常替换
+        - 未提供的变量保持 {var} 原样，不抛异常
+        - 避免因示例中的占位符（如 {lat}/{lon}）导致整个技能退化到通用 Prompt
+        """
+
+        class _SafeDict(dict):
+            def __missing__(self, key: str) -> str:
+                return "{" + key + "}"
+
+        try:
+            rendered = template.format_map(_SafeDict(values))
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 技能 Prompt 安全格式化异常，保留原模板继续执行 | "
+                f"skill={skill_id} | error={exc}{Style.RESET_ALL}"
+            )
+            return template
+
+        # 记录未替换占位符，方便排查技能参数定义是否缺失
+        unresolved = sorted(
+            set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", rendered))
+        )
+        if unresolved:
+            logger.debug(
+                f"{Fore.CYAN}[执行引擎] 技能 Prompt 存在未替换占位符（将保留原样） | "
+                f"skill={skill_id} | placeholders={unresolved}{Style.RESET_ALL}"
+            )
+
+        return rendered
+
+    def _extract_tool_name_from_schema(self, schema: Dict[str, Any]) -> Optional[str]:
+        """
+        从工具 Schema 中提取工具名。
+
+        兼容两类结构：
+        1) {"name": "tool_name", ...}
+        2) {"type": "function", "function": {"name": "tool_name", ...}}
+        """
+        if not isinstance(schema, dict):
+            return None
+
+        direct_name = schema.get("name")
+        if isinstance(direct_name, str) and direct_name.strip():
+            return direct_name.strip()
+
+        fn = schema.get("function")
+        if isinstance(fn, dict):
+            fn_name = fn.get("name")
+            if isinstance(fn_name, str) and fn_name.strip():
+                return fn_name.strip()
+
+        return None
+
+    def _validate_skill_output(
+        self,
+        *,
+        skill_id: str,
+        output_text: str,
+        params: Dict[str, Any]
+    ) -> tuple[bool, str]:
+        """
+        对技能输出做轻量质量校验，避免“空泛话术”被误判为执行成功。
+        """
+        if skill_id != "weather":
+            return True, ""
+
+        text = (output_text or "").strip()
+        if not text:
+            return False, "weather 技能返回空内容"
+
+        # 天气结果至少应包含若干核心要素之一
+        weather_markers = [
+            "°C", "温度", "湿度", "风速", "天气", "体感", "降水", "能见度", "air quality", "humidity"
+        ]
+        has_weather_fact = any(marker in text for marker in weather_markers)
+        if not has_weather_fact:
+            return False, "weather 技能未返回可识别的天气事实字段"
+
+        # 命中典型“引导话术”时判定为未真正执行查询
+        guidance_markers = [
+            "请告诉我您要查询的城市",
+            "您可以直接说例如",
+            "我将作为天气查询助手",
+            "我会：",
+        ]
+        if any(marker in text for marker in guidance_markers):
+            return False, "weather 技能返回引导话术，未直接给出查询结果"
+
+        # location 已给定时，鼓励输出中携带地点信息（不做硬失败，只做日志提示）
+        location = str(params.get("location", "")).strip()
+        if location and location not in text:
+            logger.debug(
+                f"{Fore.CYAN}[执行引擎] weather 输出未显式包含 location 文本 | "
+                f"location={location}{Style.RESET_ALL}"
+            )
+
+        return True, ""
+
     async def execute_plan(
         self,
         agent: Agent,
@@ -1496,20 +1603,37 @@ class ExecutionEngine:
                 if "word_count" not in safe_params:
                     safe_params["word_count"] = "适中"
 
-            # 2. 构建 Prompt
-            try:
-                prompt = skill.prompt_template.format(**safe_params)
-            except KeyError as e:
+            # 2. 构建 Prompt（安全格式化：缺失变量不再导致整段技能降级）
+            prompt = self._safe_format_skill_prompt(
+                template=skill.prompt_template,
+                values=safe_params,
+                skill_id=skill_id,
+            )
+
+            # 空模板兜底：仍走通用 Prompt，防止向 LLM 发送空内容
+            if not prompt.strip():
                 logger.warning(
-                    f"{Fore.YELLOW}技能 Prompt 格式化缺少参数: {e}，使用通用 Prompt{Style.RESET_ALL}"
+                    f"{Fore.YELLOW}技能 Prompt 为空，使用通用 Prompt 兜底 | skill={skill_id}{Style.RESET_ALL}"
                 )
-                # 兜底 Prompt
                 prompt_params_str = "\n".join([f"{k}: {v}" for k, v in params.items()])
                 prompt = self._build_generic_skill_fallback_prompt(
                     skill_name=skill.name,
                     skill_description=skill.description,
                     prompt_params_str=prompt_params_str,
                 )
+
+            # 对技能执行统一注入“当前任务 + 参数 + 执行约束”，减少模型反问和跑题
+            current_task = context.get("task", "") if context else ""
+            params_json = _json.dumps(safe_params, ensure_ascii=False, indent=2, default=str)
+            prompt = (
+                f"【当前用户任务】\n{current_task or '（未提供）'}\n\n"
+                f"【技能参数（JSON）】\n{params_json}\n\n"
+                "【执行硬约束】\n"
+                "1. 若技能参数已包含完成任务所需信息（例如 location），必须直接执行，不要向用户重复询问同一参数。\n"
+                "2. 优先使用可用工具获取真实结果，再给出结论。\n"
+                "3. 若工具调用失败，明确说明失败原因与下一步建议，不要编造结果。\n\n"
+                f"{prompt}"
+            )
             
             from app.llm_hub.inference import InferenceConfig
             
@@ -1528,7 +1652,12 @@ class ExecutionEngine:
             # 过滤：只允许被授权的工具，排除敏感工具，并且排除用户已拒绝的工具
             user_rejected = context.get("user_rejected_tools", []) if context else []
             for t_schema in all_tools_schemas:
-                t_name = t_schema.get("name")
+                t_name = self._extract_tool_name_from_schema(t_schema)
+                if not t_name:
+                    logger.debug(
+                        f"{Fore.YELLOW}[执行引擎] 跳过无法识别名称的工具 Schema: {t_schema}{Style.RESET_ALL}"
+                    )
+                    continue
                 if agent and agent.available_tools and t_name not in agent.available_tools:
                     continue
                 if t_name in SENSITIVE_TOOLS:
@@ -1536,10 +1665,14 @@ class ExecutionEngine:
                 if t_name in user_rejected:
                     continue
                 tools.append(t_schema)
-                
+            
+            tool_names_for_skill = [
+                self._extract_tool_name_from_schema(s) for s in tools
+            ]
             logger.debug(
                 f"{Fore.CYAN}[执行引擎] 技能执行 - 过滤后提供 {len(tools)} 个工具定义"
-                f"（排除拒绝工具: {user_rejected}，排除敏感工具: {SENSITIVE_TOOLS}）{Style.RESET_ALL}"
+                f"（排除拒绝工具: {user_rejected}，排除敏感工具: {SENSITIVE_TOOLS}）"
+                f" | tools={tool_names_for_skill}{Style.RESET_ALL}"
             )
             
             config = InferenceConfig(
@@ -1552,7 +1685,24 @@ class ExecutionEngine:
                 messages=[{"role": "user", "content": prompt}],
                 config=config
             )
-            
+
+            # 技能输出质量校验（避免无效话术污染后续 file_write / final_answer）
+            is_valid, invalid_reason = self._validate_skill_output(
+                skill_id=skill_id,
+                output_text=response.content or "",
+                params=safe_params,
+            )
+            if not is_valid:
+                logger.warning(
+                    f"{Fore.YELLOW}技能 {skill_id} 输出校验未通过: {invalid_reason}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": f"技能 {skill_id} 输出无效: {invalid_reason}",
+                    "action": "skill",
+                    "skill_id": skill_id
+                }
+
             logger.info(f"{Fore.GREEN}技能 {skill_id} 执行成功{Style.RESET_ALL}")
             
             return {
