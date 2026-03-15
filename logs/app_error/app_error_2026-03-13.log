@@ -1,0 +1,149 @@
+2026-03-13 12:22:05 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:09 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:12 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:14 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:17 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:49 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:52 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:55 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:22:58 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:23:01 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: expected token ':', got '}'[0m
+2026-03-13 12:28:54 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733761330541663e0e4d', 'requestId': '0f81183884a507f2a7206c8a9f9ab856'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e402618f-b694-4c29-8408-0b1937ee6cb5'}[0m
+2026-03-13 12:28:54 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000015] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733761330541663e0e4d', 'requestId': '0f81183884a507f2a7206c8a9f9ab856'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e402618f-b694-4c29-8408-0b1937ee6cb5'}[0m
+2026-03-13 12:28:54 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733761330541663e0e4d', 'requestId': '0f81183884a507f2a7206c8a9f9ab856'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e402618f-b694-4c29-8408-0b1937ee6cb5'}[0m
+2026-03-13 15:54:38 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): 提示词文件不存在: /Users/yuye/YeahWork/AIAgent项目/ai-agent/prompt/reflection/system_eval_rules.txt[0m
+2026-03-13 15:54:54 | ERROR    | logging:callHandlers:1736 - Exception in ASGI application
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+> File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/applications.py", line 1138, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/middleware/response_validator.py", line 144, in dispatch
+    return await call_next(request)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/cors.py", line 95, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/cors.py", line 153, in simple_response
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 121, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 107, in app
+    response = await f(request)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/routing.py", line 416, in app
+    solved_result = await solve_dependencies(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/fastapi/dependencies/utils.py", line 650, in solve_dependencies
+    solved = await run_in_threadpool(call, **solved_result.values)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/utils/dependencies.py", line 355, in get_agent_executor
+    _agent_executor = LangGraphAgentExecutor(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 141, in __init__
+    self.reflection_engine = ReflectionEngine(llm_hub=llm_hub, tool_hub=tool_hub)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/reflection.py", line 92, in __init__
+    self.prompt_manager.load_prompt("system_eval_rules")
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/utils/prompt_manager.py", line 82, in load_prompt
+    raise FileNotFoundError(f"提示词文件不存在: {file_path}")
+
+FileNotFoundError: 提示词文件不存在: /Users/yuye/YeahWork/AIAgent项目/ai-agent/prompt/reflection/system_eval_rules.txt
+2026-03-13 15:55:42 | ERROR    | app.main:lifespan:89 - [31m[启动] 核心服务预热/注入失败 (不阻断启动): 提示词文件不存在: /Users/yuye/YeahWork/AIAgent项目/ai-agent/prompt/reflection/system_eval_rules.txt[0m
+2026-03-13 17:24:53 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:494 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-13 17:30:12 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:494 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-13 17:33:31 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:33:31 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000003] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:33:31 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '212b9fc917733944092041240e0d45', 'requestId': '28e44bcc3e0e71b627ec37a2d9ac47c5'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 1c697ca9-bcfe-4a87-bd20-0bab9fed8ccc'}[0m
+2026-03-13 17:34:41 | ERROR    | app.tools.builtin.http:execute:580 - [31m[HTTPRequestTool] 连接失败: https://api.email-service.com/send — [0m
+2026-03-13 17:38:06 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:06 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000021] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:06 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000022] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:07 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000023] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:25 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000024] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:26 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000025] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:57 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: APIConnectionError: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000026] 推理请求失败: Connection error.[0m
+2026-03-13 17:38:58 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Connection error.[0m

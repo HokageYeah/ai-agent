@@ -132,8 +132,12 @@
                   <span class="mono-tag user-input-tag">{{ node.event?.data?.tool_name || '工具' }}</span>
                 </div>
                 <p class="user-input-desc">{{ (pendingInputRequest || node.event?.data)?.message || '请提供以下信息' }}</p>
+                <div v-if="!isActiveInputNode(node)" class="input-waiting-tip">
+                  <el-icon><Check /></el-icon>
+                  <span>该输入请求已处理，等待后续执行结果</span>
+                </div>
                 <!-- 邮件服务专用输入布局（SMTP 配置） -->
-                <div v-if="isMailInputNode(node)" class="inline-input-form mail-input-form">
+                <div v-else-if="isMailInputNode(node)" class="inline-input-form mail-input-form">
                   <el-form label-position="top" size="small" class="inline-form">
                     <el-row :gutter="8">
                       <el-col :span="14">
@@ -240,7 +244,7 @@
                     <el-icon class="action-icon success"><CopyDocument /></el-icon>
                     <span>调用 <span class="mono-tag" style="background:#f3f4f6">{{ node.event?.data?.tool_name || node.event?.data?.skill_id }}</span></span>
                     <span v-if="node.event?.data?.result" class="result-preview" :title="formatResult(node.event?.data?.result)">
-                        耗时 0.0ms 
+                        {{ formatExecutionTime(node.event?.data) }}
                     </span>
                  </template>
                  <!-- 最终答案 -->
@@ -407,6 +411,20 @@ function isLastNode(node: TrajectoryNode): boolean {
   return visibleNodes.value[visibleNodes.value.length - 1].id === node.id
 }
 
+function getInputRequestId(node: TrajectoryNode): string {
+  return (
+    node.event?.data?.input_request_id ||
+    node.event?.data?.message_id ||
+    ''
+  )
+}
+
+function isActiveInputNode(node: TrajectoryNode): boolean {
+  if (!props.pendingInputRequest) return false
+  const nodeInputRequestId = getInputRequestId(node)
+  return !!nodeInputRequestId && nodeInputRequestId === props.pendingInputRequest.input_request_id
+}
+
 function formatResult(res: any): string {
   if (res === null || res === undefined) return ''
   if (typeof res === 'object') {
@@ -417,6 +435,22 @@ function formatResult(res: any): string {
     }
   }
   return String(res)
+}
+
+function formatExecutionTime(data: any): string {
+  const raw =
+    data?.execution_time_ms ??
+    data?.result?.execution_time_ms ??
+    data?.result?.elapsed_ms
+  const value = Number(raw)
+  if (Number.isFinite(value) && value >= 0) {
+    const seconds = value / 1000
+    if (seconds < 1) {
+      return `耗时 ${value.toFixed(0)}ms`
+    }
+    return `耗时 ${seconds.toFixed(2)}s`
+  }
+  return '执行完成'
 }
 
 function copyText(text: string) {

@@ -45,7 +45,11 @@ export function useAgentStream(options: {
     const event = currentStreamEvent.value.event
     if (event === 'complete') return 'completed'
     if (['plan_start', 'plan_complete'].includes(event)) return 'planning'
-    if (['step_start', 'tool_complete', 'skill_complete', 'delegate_complete', 'step_complete', 'execute_complete'].includes(event)) return 'executing'
+    if ([
+      'step_start', 'tool_complete', 'skill_complete', 'delegate_complete', 'step_complete', 'execute_complete',
+      // 交互等待阶段本质仍属于执行阶段
+      'user_confirm_required', 'user_confirm_result', 'await_user_input', 'user_input_received'
+    ].includes(event)) return 'executing'
     if (['reflection_start', 'reflection_complete'].includes(event)) return 'reflecting'
     return 'planning'
   })
@@ -82,10 +86,12 @@ export function useAgentStream(options: {
           if (msgData.progress.total) event.step_total = msgData.progress.total
        } else if (msgData.message_type === 'input') {
           event.event = 'await_user_input'
-          event.iteration = msgData.progress?.iteration ?? event.iteration ?? 0
+          // input 消息通常没有 progress.iteration，回退到当前流上下文迭代，避免错误归到 iteration=0
+          event.iteration = msgData.progress?.iteration ?? event.iteration ?? currentStreamEvent.value?.iteration ?? 0
        } else if (msgData.message_type === 'confirm') {
           event.event = 'user_confirm_required'
-          event.iteration = msgData.progress?.iteration ?? event.iteration ?? 0
+          // confirm 消息通常没有 progress.iteration，回退到当前流上下文迭代
+          event.iteration = msgData.progress?.iteration ?? event.iteration ?? currentStreamEvent.value?.iteration ?? 0
        }
     }
 

@@ -1,0 +1,8 @@
+2026-03-13 00:06:22 | INFO     | app.api.endpoints.agents:list_agents:322 - [36m列出所有 Agent[0m
+2026-03-13 00:06:22 | DEBUG    | app.agents.registry:list_agents:78 - [34m列出所有 Agent，共 4 个[0m
+2026-03-13 00:06:22 | INFO     | app.api.endpoints.agents:list_agents:343 - [32m成功列出 4 个 Agent[0m
+2026-03-13 00:06:22 | INFO     | logging:callHandlers:1744 - 127.0.0.1:61004 - "GET /api/v1/agents HTTP/1.1" 200
+2026-03-13 00:07:32 | INFO     | app.api.endpoints.agents:list_agents:322 - [36m列出所有 Agent[0m
+2026-03-13 00:07:32 | DEBUG    | app.agents.registry:list_agents:78 - [34m列出所有 Agent，共 4 个[0m
+2026-03-13 00:07:32 | INFO     | app.api.endpoints.agents:list_agents:343 - [32m成功列出 4 个 Agent[0m
+2026-03-13 00:07:32 | INFO     | logging:callHandlers:1744 - 127.0.0.1:61532 - "GET /api/v1/agents HTTP/1.1" 200

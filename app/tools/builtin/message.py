@@ -140,6 +140,9 @@ class MessageAgentTool(Tool):
         # 这些字典由执行引擎在运行时注入
         self._pending_confirmations: Optional[Dict[str, Any]] = None
         self._pending_user_inputs: Optional[Dict[str, Any]] = None
+        # NOTE: 任务内用户输入缓存引用（注入自 AgentRunMemory.user_inputs_cache）
+        # 用于将用户出的 SMTP/DB 配置写入缓存，后续工具调用可直接读取，防止反复询问。
+        self._user_inputs_cache: Optional[Dict[str, Any]] = None
 
         logger.info(
             f"{Fore.CYAN}[MessageAgentTool] 初始化完成 "
@@ -150,6 +153,7 @@ class MessageAgentTool(Tool):
                        stream_callback: Optional[Callable] = None,
                        pending_confirmations: Optional[Dict[str, Any]] = None,
                        pending_user_inputs: Optional[Dict[str, Any]] = None,
+                       user_inputs_cache: Optional[Dict[str, Any]] = None,
                        **kwargs) -> None:
         """
         更新运行时上下文
@@ -160,6 +164,8 @@ class MessageAgentTool(Tool):
             stream_callback: 当前任务的 SSE 流式回调函数
             pending_confirmations: 等待用户确认的操作字典映射
             pending_user_inputs: 等待用户输入的字典映射
+            user_inputs_cache: 任务内用户输入缓存（AgentRunMemory.user_inputs_cache 引用）
+                               用于将用户提交的 SMTP/DB 配置写入缓存，防止反复询问
         """
         if stream_callback is not None:
             self._stream_callback = stream_callback
@@ -167,6 +173,8 @@ class MessageAgentTool(Tool):
             self._pending_confirmations = pending_confirmations
         if pending_user_inputs is not None:
             self._pending_user_inputs = pending_user_inputs
+        if user_inputs_cache is not None:
+            self._user_inputs_cache = user_inputs_cache
             
         logger.debug(f"{Fore.BLUE}[MessageAgentTool] 运行时上下文已更新{Style.RESET_ALL}")
 
@@ -368,6 +376,13 @@ class MessageAgentTool(Tool):
                     logger.info(f"{Fore.YELLOW}[MessageAgentTool] 工具挂起，等待用户输入/选择 (input_request_id={message_id})...{Style.RESET_ALL}")
                     await asyncio.wait_for(wait_event.wait(), timeout=300)
                     user_inputs = pending_inputs[message_id].get("inputs", {})
+
+                    # NOTE: 关键逻辑：将用户输入写入任务内缓存（如果包含 SMTP/DB 配置）
+                    # 这里负责 send_message 收集到配置后自动将其写入缓存，
+                    # 这样同一任务内后续的 python_executor 调用可以直接从缓存读取，不再弹窗。
+                    if user_inputs and isinstance(user_inputs, dict) and self._user_inputs_cache is not None:
+                        self._write_user_inputs_to_cache(user_inputs)
+
                     return {
                         "success": True,
                         "feedback": user_inputs,
@@ -383,4 +398,49 @@ class MessageAgentTool(Tool):
         except Exception as e:
             logger.exception(f"{Fore.RED}[MessageAgentTool] 发送消息或等待反馈时发生异常: {e}{Style.RESET_ALL}")
             return {"success": False, "error": f"发生异常: {str(e)}"}
+
+    def _write_user_inputs_to_cache(self, user_inputs: Dict[str, Any]) -> None:
+        """
+        将用户输入按配置分组写入任务内缓存
+
+        根据字段名的模式识别配置类型（SMTP / 数据库 / API Key），
+        然后将对应字段写入 user_inputs_cache 中的对应分组。
+
+        Args:
+            user_inputs: 用户提交的字段值字典，如 {smtp_server: .., sender_email: ..}
+        """
+        if not user_inputs or not isinstance(user_inputs, dict):
+            return
+        if self._user_inputs_cache is None:
+            return
+
+        # 识别 SMTP 相关字段
+        smtp_fields = {
+            k: v for k, v in user_inputs.items()
+            if k in ("smtp_server", "smtp_port", "sender_email", "sender_password")
+            and v is not None and str(v).strip()
+        }
+        if smtp_fields:
+            existing_smtp = self._user_inputs_cache.get("smtp_config", {})
+            merged_smtp = {**existing_smtp, **smtp_fields}
+            self._user_inputs_cache["smtp_config"] = merged_smtp
+            logger.info(
+                f"{Fore.GREEN}[用户输入缓存-Message] ✅ 已写入 smtp_config: "
+                f"字段={list(smtp_fields.keys())}{Style.RESET_ALL}"
+            )
+
+        # 识别数据库相关字段
+        db_fields = {
+            k: v for k, v in user_inputs.items()
+            if k in ("db_host", "db_port", "db_name", "db_user", "db_password")
+            and v is not None and str(v).strip()
+        }
+        if db_fields:
+            existing_db = self._user_inputs_cache.get("db_config", {})
+            merged_db = {**existing_db, **db_fields}
+            self._user_inputs_cache["db_config"] = merged_db
+            logger.info(
+                f"{Fore.GREEN}[用户输入缓存-Message] ✅ 已写入 db_config: "
+                f"字段={list(db_fields.keys())}{Style.RESET_ALL}"
+            )
 

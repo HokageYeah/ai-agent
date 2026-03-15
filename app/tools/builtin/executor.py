@@ -111,6 +111,9 @@ class PythonExecutorTool(Tool):
         self._stream_callback = None
         self._pending_confirmations = None
         self._pending_user_inputs = None
+        # NOTE: 任务内用户输入缓存引用（注入自 AgentRunMemory.user_inputs_cache）
+        # 共享引用，不复制；写入时将直接更新 AgentRunMemory 的底层字典。
+        self._user_inputs_cache: Optional[Any] = None
         
         # 创建受限的安全命名空间
         self._safe_globals = self._create_safe_globals()
@@ -125,7 +128,8 @@ class PythonExecutorTool(Tool):
         stream_callback: Optional[Any] = None,
         pending_confirmations: Optional[Dict[str, Any]] = None,
         pending_user_inputs: Optional[Dict[str, Any]] = None,
-        user_rejected_tools: Optional[List[str]] = None
+        user_rejected_tools: Optional[List[str]] = None,
+        user_inputs_cache: Optional[Any] = None
     ) -> None:
         """
         更新运行时上下文
@@ -137,6 +141,8 @@ class PythonExecutorTool(Tool):
             pending_confirmations: 挂起确认映射表
             pending_user_inputs: 挂起用户输入映射表
             user_rejected_tools: 用户拒绝的工具列表
+            user_inputs_cache: 任务内用户输入缓存（AgentRunMemory.user_inputs_cache 引用）
+                               用于在同一任务内跳过重复询问 SMTP 等配置
         """
         if stream_callback is not None:
             self._stream_callback = stream_callback
@@ -144,6 +150,8 @@ class PythonExecutorTool(Tool):
             self._pending_confirmations = pending_confirmations
         if pending_user_inputs is not None:
             self._pending_user_inputs = pending_user_inputs
+        if user_inputs_cache is not None:
+            self._user_inputs_cache = user_inputs_cache
         logger.debug(f"{Fore.BLUE}[PythonExecutorTool] 运行时上下文已更新{Style.RESET_ALL}")
     
     def _create_safe_globals(self) -> Dict[str, Any]:
@@ -545,32 +553,58 @@ class PythonExecutorTool(Tool):
                 "safety_check_failed": True
             }
         
-        # ── 用户已提供配置时：注入到代码并跳过预检查 ─────────────────────
-        # 若 params 中已包含用户提交的 smtp_server / sender_email 等，说明是「重试执行」，
-        # 应将实际值注入代码后直接执行，不再返回 needs_user_input
-        injected_code = self._inject_user_params_into_code(code, params)
-        if injected_code is not None:
-            code = injected_code
-            logger.info(
-                f"{Fore.GREEN}[PythonExecutorTool] 已注入用户提供的配置，跳过预检查，直接执行代码{Style.RESET_ALL}"
-            )
-        else:
-            # ── 预检查：分析代码是否需要额外配置 ─────────────────────────────
-            # 在执行前检测代码是否需要 SMTP/数据库等配置
-            pre_check_result = self._analyze_code_for_required_info(code)
-            if pre_check_result:
+        # ── 步骤1：先查缓存，若同任务内已有 SMTP 配置则直接注入 ──────────────
+        # 设计目的：防止同一任务内 python_executor 多次触发 SMTP 弹窗，造成无限循环。
+        # 触发条件：代码包含 smtplib 关键字且缓存已有 smtp_config。
+        code_lower_check = code.lower()
+        _cache_injected = False
+        if self._user_inputs_cache is not None and isinstance(self._user_inputs_cache, dict) and (
+            "smtplib" in code_lower_check or "smtp" in code_lower_check
+        ):
+            cached_smtp = self._user_inputs_cache.get("smtp_config")
+            if cached_smtp:
                 logger.info(
-                    f"{Fore.CYAN}[PythonExecutorTool] 预检查：检测到代码需要额外配置，"
-                    f"返回需要用户输入{Style.RESET_ALL}"
+                    f"{Fore.GREEN}[PythonExecutorTool] 🎯 SMTP 缓存命中！直接使用缓存配置，"
+                    f"跳过弹窗询问{Style.RESET_ALL}"
                 )
-                return {
-                    "success": False,
-                    "needs_user_input": True,
-                    "user_input_request": pre_check_result,
-                    "error": "代码需要额外配置才能执行",
-                    "output": "代码需要 SMTP/数据库等配置信息，请提供必要参数",
-                    "_pending_user_inputs": self._pending_user_inputs  # 传递引用，用于后续等待用户输入
-                }
+                cached_params = {**params, **cached_smtp}
+                injected_from_cache = self._inject_user_params_into_code(code, cached_params)
+                if injected_from_cache is not None:
+                    code = injected_from_cache
+                    _cache_injected = True
+                    logger.info(
+                        f"{Fore.GREEN}[PythonExecutorTool] 已从缓存注入 SMTP 配置，跳过预检查，直接执行代码{Style.RESET_ALL}"
+                    )
+
+        if not _cache_injected:
+            # ── 步骤2：尝试从 params 注入（用户本次直接在参数里传了配置）────────
+            # 若 params 中已包含用户提交的 smtp_server / sender_email 等，说明是「重试执行」，
+            # 应将实际值注入代码后直接执行，不再返回 needs_user_input
+            injected_code = self._inject_user_params_into_code(code, params)
+            if injected_code is not None:
+                code = injected_code
+                logger.info(
+                    f"{Fore.GREEN}[PythonExecutorTool] 已注入用户提供的配置，跳过预检查，直接执行代码{Style.RESET_ALL}"
+                )
+            else:
+                # ── 步骤3：预检查——分析代码是否需要额外配置 ──────────────────
+                # 在执行前检测代码是否需要 SMTP/数据库等配置
+                pre_check_result = self._analyze_code_for_required_info(code)
+                if pre_check_result:
+                    logger.info(
+                        f"{Fore.CYAN}[PythonExecutorTool] 预检查：检测到代码需要额外配置，"
+                        f"返回需要用户输入{Style.RESET_ALL}"
+                    )
+                    return {
+                        "success": False,
+                        "needs_user_input": True,
+                        "user_input_request": pre_check_result,
+                        "error": "代码需要额外配置才能执行",
+                        "output": "代码需要 SMTP/数据库等配置信息，请提供必要参数",
+                        # 传递引用，供 execution.py 在用户提交后写入缓存
+                        "_pending_user_inputs": self._pending_user_inputs,
+                        "_user_inputs_cache": self._user_inputs_cache
+                    }
 
         # ── 修正 LLM 常见拼写错误（如 email 模块类名）────────────────────
         # 标准库为 MIMEText / MIMEMultipart，LLM 常生成 MimeText / MimeMultipart 导致 ImportError
@@ -880,31 +914,79 @@ class PythonExecutorTool(Tool):
         
         # 检测 SMTP 邮件发送
         if "smtplib" in code_lower or "smtp" in code_lower or "email.mime" in code_lower:
-            # 检查是否使用了占位符模式
-            # 常见的占位符模式：your_xxx, xxx@xxx.com, "password", 'password' 等
-            placeholder_patterns = [
-                'your_email', 'your_password', 'your_username',
-                'xxx', 'example.com', '请替换', '需要配置',
-                'placeholder', 'test@'
-            ]
-            
-            has_placeholder = any(p in code_lower for p in placeholder_patterns)
-            
-            # 检查是否有实际的硬编码值（不是变量引用）
-            # 例如：sender_password = "your_password" 这种是占位符
             import re
-            # 匹配 sender_email = "xxx" 或 sender_password = "xxx" 这种赋值模式
-            email_assignments = re.findall(r'sender_email\s*=\s*["\']([^"\']+)["\']', code, re.IGNORECASE)
-            password_assignments = re.findall(r'sender_password\s*=\s*["\']([^"\']+)["\']', code, re.IGNORECASE)
-            smtp_server_assignments = re.findall(r'smtp\w*\s*=\s*["\']([^"\']+)["\']', code, re.IGNORECASE)
-            
-            # 检查赋值是否是占位符
-            is_placeholder_email = any('your' in e.lower() or 'xxx' in e.lower() or 'example' in e.lower() for e in email_assignments)
-            is_placeholder_password = any('your' in p.lower() or 'xxx' in p.lower() for p in password_assignments)
-            is_placeholder_smtp = any('your' in s.lower() or 'xxx' in s.lower() or 'example' in s.lower() for s in smtp_server_assignments)
-            
-            # 如果有占位符或没有实际配置，就需要用户输入
-            if has_placeholder or is_placeholder_email or is_placeholder_password or is_placeholder_smtp:
+
+            # NOTE:
+            # 这里只检查“SMTP 相关字段”本身是否为占位符，避免误判业务数据。
+            # 例如订单数据中 customer_email=lina@example.com 并不代表 SMTP 配置缺失，
+            # 若按整段代码扫描 "example.com"，会触发错误的重复弹窗。
+            placeholder_markers = ("your_", "xxx", "placeholder", "请替换", "需要配置", "test@")
+
+            def _is_placeholder_value(value: str) -> bool:
+                text = str(value or "").strip().lower()
+                if not text:
+                    return True
+                if any(marker in text for marker in placeholder_markers):
+                    return True
+                # 仅当 SMTP 关键字段本身写成 example.com 域时才视为占位符
+                if "example.com" in text:
+                    return True
+                return False
+
+            # 1) 常见变量赋值模式
+            smtp_server_assignments = re.findall(
+                r'\b(?:smtp_server|smtp_host|mail_server)\s*=\s*["\']([^"\']+)["\']',
+                code,
+                re.IGNORECASE
+            )
+            sender_email_assignments = re.findall(
+                r'\b(?:sender_email|from_email|email_user)\s*=\s*["\']([^"\']+)["\']',
+                code,
+                re.IGNORECASE
+            )
+            sender_password_assignments = re.findall(
+                r'\b(?:sender_password|smtp_password|auth_code|password)\s*=\s*["\']([^"\']+)["\']',
+                code,
+                re.IGNORECASE
+            )
+
+            # 2) 直接字面量调用模式：server.login("user","pass") + SMTP("host",port)
+            login_literal_credentials = re.findall(
+                r'\.login\(\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']\s*\)',
+                code,
+                re.IGNORECASE
+            )
+            smtp_constructor_literals = re.findall(
+                r'smtplib\.SMTP(?:_SSL)?\(\s*["\']([^"\']+)["\']\s*,\s*(\d+)',
+                code,
+                re.IGNORECASE
+            )
+
+            extracted_smtp_values: list[str] = []
+            extracted_smtp_values.extend(smtp_server_assignments)
+            extracted_smtp_values.extend(sender_email_assignments)
+            extracted_smtp_values.extend(sender_password_assignments)
+            for login_user, login_password in login_literal_credentials:
+                extracted_smtp_values.extend([login_user, login_password])
+            for smtp_host, smtp_port in smtp_constructor_literals:
+                extracted_smtp_values.extend([smtp_host, smtp_port])
+
+            has_assignment_style_config = bool(
+                smtp_server_assignments and sender_email_assignments and sender_password_assignments
+            )
+            has_literal_style_config = bool(
+                login_literal_credentials and smtp_constructor_literals
+            )
+            has_direct_smtp_config = has_assignment_style_config or has_literal_style_config
+            has_placeholder_in_smtp_config = any(_is_placeholder_value(v) for v in extracted_smtp_values)
+
+            # 如果没有检测到完整 SMTP 配置，或检测到占位符，则请求用户输入
+            if (not has_direct_smtp_config) or has_placeholder_in_smtp_config:
+                logger.info(
+                    f"{Fore.YELLOW}[PythonExecutorTool] SMTP 预检查判定需要用户输入: "
+                    f"has_direct_smtp_config={has_direct_smtp_config}, "
+                    f"has_placeholder={has_placeholder_in_smtp_config}{Style.RESET_ALL}"
+                )
                 return {
                     "message": "邮件发送需要 SMTP 服务器配置信息，请提供以下信息：",
                     "required_fields": [

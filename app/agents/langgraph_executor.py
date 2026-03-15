@@ -35,6 +35,7 @@ from app.memory.session_memory import get_session_memory, extract_summary_from_r
 import asyncio
 
 from app.tools.builtin.message import send_agent_message
+from app.utils.prompt_manager import PromptManager
 
 
 class AgentState(TypedDict):
@@ -138,6 +139,15 @@ class LangGraphAgentExecutor:
             tool_gateway=tool_gateway
         )
         self.reflection_engine = ReflectionEngine(llm_hub=llm_hub, tool_hub=tool_hub)
+        self.prompt_manager = PromptManager(prompt_dir="app/prompt/langgraph")
+        # NOTE: 启动时尝试预加载关键模板；若缺失则记录告警并在运行期回退内置模板，避免阻断服务启动。
+        try:
+            self.prompt_manager.load_prompt("error_root_cause_analysis")
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[LangGraph] 预加载错误分析模板失败（{exc}），"
+                f"运行期将回退内置提示词{Style.RESET_ALL}"
+            )
         
         # 构建状态图
         self.graph = self._build_graph()
@@ -981,6 +991,9 @@ class LangGraphAgentExecutor:
             plan=plan,
             context={
                 "task": state.get("task", ""),
+                # 透传当前迭代号：供执行引擎在 await_user_input / user_input_received
+                # 事件中打上正确 iteration，避免前端把跨轮事件混在一起。
+                "iteration": state.get("iterations", 0),
                 # 透传父级 stream_callback：子 Agent 用它推送 user_confirm_required 等事件
                 "stream_callback": stream_callback,
                 # 透传父级 pending_confirmations：子 Agent 把 confirm_id 注册到同一张表
@@ -989,6 +1002,9 @@ class LangGraphAgentExecutor:
                 "pending_user_inputs": self._pending_user_inputs,
                 # 透传用户拒绝的工具黑名单防止在子流程(如技能引擎/子Agent中)穿透
                 "user_rejected_tools": state.get("user_rejected_tools", []),
+                # 透传 run_memory：让执行引擎可把 user_inputs_cache 注入给 send_message/python_executor，
+                # 从而在同一任务内命中缓存并跳过重复输入弹窗。
+                "run_memory": state.get("run_memory"),
                 # 传入会话历史上下文消息：执行引擎在纯记忆问答场景（无工具调用）时使用，
                 # 当 LLM 规划的 final_answer.content 仍是意图描述而非真实答案时，
                 # 兜底利用这些历史摘要触发 LLM 合成真正的回答。
@@ -1374,6 +1390,55 @@ class LangGraphAgentExecutor:
         
         return state
     
+    def _build_error_analysis_prompt(
+        self,
+        agent,
+        task: str,
+        error_count: int,
+        error_text: str,
+    ) -> str:
+        """
+        构建错误分析提示词。
+
+        优先使用外置模板；当模板缺失或渲染失败时回退到内置提示词，
+        避免因提示词资源问题中断主执行流程。
+        """
+        try:
+            return self.prompt_manager.render_prompt(
+                "error_root_cause_analysis",
+                agent_name=agent.name,
+                agent_description=agent.description,
+                task=task,
+                error_count=error_count,
+                error_text=error_text,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[错误分析] 模板渲染失败（{exc}），回退内置提示词{Style.RESET_ALL}"
+            )
+            return f"""你是 {agent.name}，{agent.description}
+
+在执行以下任务的过程中遇到了一些错误：
+
+任务：{task}
+
+以下是本轮执行中发现的 {error_count} 个失败步骤：
+
+{error_text}
+
+请对上述错误进行深度分析，以 JSON 格式返回：
+{{
+  "root_cause": "根本原因分析（一段话，解释为什么会发生这些错误，以及各错误之间的关联）",
+  "suggestions": [
+    "具体修复建议1",
+    "具体修复建议2",
+    "..."
+  ],
+  "corrective_plan": "修正计划（简要描述下一轮应该如何调整执行方案以避免同样的错误）"
+}}
+
+请只返回 JSON，不要包含其他文本。"""
+
     async def _analyze_errors(
         self,
         agent,
@@ -1418,28 +1483,12 @@ class LangGraphAgentExecutor:
         error_text = "\n\n".join(error_lines)
 
         # ── 构建错误分析 Prompt ─────────────────────────────────────
-        analysis_prompt = f"""你是 {agent.name}，{agent.description}
-
-在执行以下任务的过程中遇到了一些错误：
-
-任务：{task}
-
-以下是本轮执行中发现的 {len(error_context)} 个失败步骤：
-
-{error_text}
-
-请对上述错误进行深度分析，以 JSON 格式返回：
-{{
-  "root_cause": "根本原因分析（一段话，解释为什么会发生这些错误，以及各错误之间的关联）",
-  "suggestions": [
-    "具体修复建议1",
-    "具体修复建议2",
-    "..."
-  ],
-  "corrective_plan": "修正计划（简要描述下一轮应该如何调整执行方案以避免同样的错误）"
-}}
-
-请只返回 JSON，不要包含其他文本。"""
+        analysis_prompt = self._build_error_analysis_prompt(
+            agent=agent,
+            task=task,
+            error_count=len(error_context),
+            error_text=error_text,
+        )
 
         # ── 调用 LLM 进行错误分析 ───────────────────────────────────
         try:
