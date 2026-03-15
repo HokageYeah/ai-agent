@@ -125,7 +125,10 @@ class ToolCallResult:
                 "role": "tool",
                 "tool_call_id": self.call_id,
                 "name": self.tool_name,
-                "content": json.dumps(self.result, ensure_ascii=False)
+                # 关键兜底：工具结果里可能包含 datetime/date/time 等对象。
+                # 若不加 default=str，会在工具调用循环里直接抛出
+                # "Object of type datetime is not JSON serializable" 并中断主流程。
+                "content": json.dumps(self.result, ensure_ascii=False, default=str)
             }
         else:
             return {
@@ -709,7 +712,8 @@ class ToolCallingGateway:
                     "role": "tool",
                     "tool_call_id": result.call_id,
                     "name": result.tool_name,
-                    "content": json.dumps(result.result, ensure_ascii=False, indent=2)
+                    # 与 to_dict 保持一致：统一允许非 JSON 原生类型通过 str 兜底序列化。
+                    "content": json.dumps(result.result, ensure_ascii=False, indent=2, default=str)
                 })
             else:
                 formatted.append({

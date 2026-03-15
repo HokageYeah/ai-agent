@@ -305,9 +305,17 @@ class ChildAgentManager:
             
             # 提取详细结果以供前端精美展示
             final_res = result.get("result") or {}
+            success = result.get("success", False) and final_res.get("success", False)
+            # 失败场景下补齐兜底错误文案，避免上层拿到 error=None 后在日志切片时报错
+            error_msg = final_res.get("error") or result.get("error")
+            if not success and (error_msg is None or str(error_msg).strip() == ""):
+                error_msg = (
+                    f"子 Agent {child_agent_id} 执行失败（未返回具体错误信息），"
+                    "可能由用户拒绝关键操作或中途终止导致。"
+                )
             
             return {
-                "success": result.get("success", False) and final_res.get("success", False),
+                "success": success,
                 "result": final_res.get("result"),  # 子 Agent 最终合成文字
                 "step_results": final_res.get("step_results", []),
                 "reflection": final_res.get("reflection", None),
@@ -315,7 +323,7 @@ class ChildAgentManager:
                 #       且父 Agent 不需要子 Agent 的对话历史
                 "agent_id": child_agent_id,
                 "agent_name": child_agent.name,
-                "error": final_res.get("error") or result.get("error"),
+                "error": str(error_msg) if error_msg is not None else None,
                 "user_rejected_tools": result.get("user_rejected_tools", [])
             }
             

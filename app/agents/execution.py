@@ -1946,6 +1946,11 @@ class ExecutionEngine:
                     # 内层 result 也可能有 error 字段（ExecutionResult.to_dict()）
                     result.get("result", {}).get("error") if isinstance(result.get("result"), dict) else None
                 )
+                if (not _sub_success) and (_sub_error is None or str(_sub_error).strip() == ""):
+                    _sub_error = (
+                        f"子 Agent '{agent_id}' 执行失败（未返回具体错误信息），"
+                        "可能由用户拒绝关键操作导致。"
+                    )
                 logger.info(
                     f"{Fore.GREEN if _sub_success else Fore.YELLOW}"
                     f"[委派←SpawnAgentTool] 子 Agent '{agent_id}' 通过 spawn_agent 工具执行完毕 "
@@ -1988,6 +1993,11 @@ class ExecutionEngine:
 
             _sub_success = result.get("success", False)
             _sub_error   = result.get("error")
+            if (not _sub_success) and (_sub_error is None or str(_sub_error).strip() == ""):
+                _sub_error = (
+                    f"子 Agent '{agent_id}' 执行失败（未返回具体错误信息），"
+                    "可能由用户拒绝关键操作导致。"
+                )
             logger.info(
                 f"{Fore.GREEN if _sub_success else Fore.YELLOW}"
                 f"[委派←ChildAgentManager] 子 Agent '{agent_id}' 执行完成 "

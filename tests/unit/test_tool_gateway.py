@@ -18,6 +18,7 @@ Tool Calling Gateway 单元测试
 import pytest
 import pytest_asyncio
 from unittest.mock import Mock, AsyncMock, patch
+from datetime import datetime
 from app.llm_hub.tool_gateway import (
     ToolCallingGateway,
     ToolCall,
@@ -202,6 +203,31 @@ class TestToolCallResult:
         assert result_dict["tool_call_id"] == "call-123"
         assert result_dict["name"] == "search"
         assert "results" in result_dict["content"]
+
+    def test_result_to_dict_success_with_datetime(self):
+        """
+        测试成功结果包含 datetime 时可被安全序列化
+
+        验证 to_dict() 在工具结果含非 JSON 原生类型时不会抛异常。
+        """
+        result = ToolCallResult(
+            call_id="call-datetime",
+            tool_name="datetime",
+            status=ToolCallStatus.SUCCESS,
+            result={
+                "success": True,
+                "result": "2026-03-15T23:44:23+08:00",
+                "datetime": datetime(2026, 3, 15, 23, 44, 23),
+                "operation": "now"
+            }
+        )
+
+        result_dict = result.to_dict()
+
+        assert result_dict["role"] == "tool"
+        assert result_dict["tool_call_id"] == "call-datetime"
+        assert result_dict["name"] == "datetime"
+        assert "2026-03-15" in result_dict["content"]
     
     def test_result_to_dict_failure(self):
         """

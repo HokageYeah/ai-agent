@@ -1,0 +1,27 @@
+2026-03-15 23:10:07 | ERROR    | app.agents.planning:_parse_plan:438 - [31mJSON 解析失败: Unterminated string starting at: line 15 column 20 (char 4088)[0m
+2026-03-15 23:10:07 | ERROR    | app.agents.planning:_parse_plan:439 - [31mLLM 输出: {
+  "steps": [
+    {
+      "action": "tool",
+      "tool_name": "python_executor",
+      "params": {
+        "code": "import pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\nimport s...[0m
+2026-03-15 23:10:46 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '0bf8c01517735874469012327e10a4', 'requestId': 'ce33f541706912a5ce06455ac27f9d4e'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 9da9e2e9-8d93-4b7f-a3d0-c4d20d3ad263'}[0m
+2026-03-15 23:10:46 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000044] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '0bf8c01517735874469012327e10a4', 'requestId': 'ce33f541706912a5ce06455ac27f9d4e'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 9da9e2e9-8d93-4b7f-a3d0-c4d20d3ad263'}[0m
+2026-03-15 23:10:46 | ERROR    | app.agents.planning:create_plan:216 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '0bf8c01517735874469012327e10a4', 'requestId': 'ce33f541706912a5ce06455ac27f9d4e'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 9da9e2e9-8d93-4b7f-a3d0-c4d20d3ad263'}[0m
+2026-03-15 23:15:20 | ERROR    | app.agents.execution:execute_plan:570 - [31m执行计划时发生错误: 'NoneType' object is not subscriptable[0m
+2026-03-15 23:15:20 | ERROR    | app.agents.langgraph_executor:run_graph:2340 - [31m[后台任务] 图执行异常: 'NoneType' object is not subscriptable[0m
+2026-03-15 23:15:20 | ERROR    | app.agents.langgraph_executor:execute_stream:2407 - [31m[流式执行] 图执行失败: 'NoneType' object is not subscriptable[0m
+2026-03-15 23:38:58 | ERROR    | app.agents.planning:_parse_plan:438 - [31mJSON 解析失败: Unterminated string starting at: line 7 column 17 (char 117)[0m
+2026-03-15 23:38:58 | ERROR    | app.agents.planning:_parse_plan:439 - [31mLLM 输出: {
+  "steps": [
+    {
+      "action": "tool",
+      "tool_name": "python_executor",
+      "params": {
+        "code": "import pandas as pd\nimport json\nfrom datetime import datetime\n\n# 解析数据库查询结果\nda...[0m
+2026-03-15 23:44:23 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000017] 推理请求失败: Object of type datetime is not JSON serializable[0m
+2026-03-15 23:44:23 | ERROR    | app.agents.execution:_execute_skill:1717 - [31m技能 data_analysis 执行失败: Object of type datetime is not JSON serializable[0m
+2026-03-15 23:56:29 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '0b52134d17735901894087989e2199', 'requestId': '3646f2bdd5104bdce24a55cc666555c3'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: bbd0b8b0-fac2-4e01-911b-9b54bd9f0058'}[0m
+2026-03-15 23:56:29 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000006] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '0b52134d17735901894087989e2199', 'requestId': '3646f2bdd5104bdce24a55cc666555c3'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: bbd0b8b0-fac2-4e01-911b-9b54bd9f0058'}[0m
+2026-03-15 23:56:29 | ERROR    | app.agents.execution:_synthesize_answer:672 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '0b52134d17735901894087989e2199', 'requestId': '3646f2bdd5104bdce24a55cc666555c3'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: bbd0b8b0-fac2-4e01-911b-9b54bd9f0058'}[0m

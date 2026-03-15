@@ -270,7 +270,9 @@ async def execute_agent_stream(
                 conversation_history=request.conversation_history
             ):
                 # 将事件序列化为 JSON 并用 SSE 格式发送
-                event_json = json.dumps(event, ensure_ascii=False)
+                # 关键兜底：SSE 事件数据可能包含 datetime/date/time 等对象，
+                # 使用 default=str 避免序列化异常导致流中断。
+                event_json = json.dumps(event, ensure_ascii=False, default=str)
                 yield f"data: {event_json}\n\n"
                 
                 # 记录日志
@@ -295,7 +297,7 @@ async def execute_agent_stream(
                 "error": str(e),
                 "timestamp": __import__("time").time() * 1000
             }
-            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(error_event, ensure_ascii=False, default=str)}\n\n"
 
     return StreamingResponse(
         generate_stream(),
@@ -570,4 +572,3 @@ async def submit_user_input(
         ret=["success"],
         v=1
     )
-

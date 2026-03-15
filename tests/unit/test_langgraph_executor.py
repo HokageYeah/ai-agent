@@ -215,3 +215,88 @@ async def test_execute_node_should_pass_run_memory_and_iteration_to_execution_co
     assert "context" in captured
     assert captured["context"]["run_memory"] is run_memory
     assert captured["context"]["iteration"] == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_node_handles_none_error_in_failed_step(monkeypatch):
+    """测试失败步骤 error=None 时不会触发 NoneType 下标异常"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    tool_hub = ToolHub()
+    skill_manager = SkillManager()
+
+    executor = LangGraphAgentExecutor(
+        llm_hub=inference_engine,
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        max_iterations=3
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role"
+    )
+    plan = Plan(
+        steps=[PlanStep("delegate", agent_id="general_agent", task="测试委派失败")],
+        reasoning="测试 error=None 的失败路径"
+    )
+    run_memory = AgentRunMemory(task="测试任务", agent_id=agent.agent_id, agent_name=agent.name)
+    events = []
+
+    async def fake_execute_plan(*args, **kwargs):
+        on_step_complete = kwargs.get("on_step_complete")
+        failed_step_result = {
+            "success": False,
+            "action": "delegate",
+            "agent_id": "general_agent",
+            "result": None,
+            "error": None
+        }
+        if on_step_complete is not None:
+            await on_step_complete(failed_step_result, 1, 1)
+        return ExecutionResult(
+            success=False,
+            result=None,
+            step_results=[failed_step_result],
+            error=None
+        )
+
+    async def stream_callback(event):
+        events.append(event)
+
+    monkeypatch.setattr(executor.execution_engine, "execute_plan", fake_execute_plan)
+
+    state: AgentState = {
+        "messages": [],
+        "current_plan": plan,
+        "tool_outputs": [],
+        "iterations": 1,
+        "final_result": None,
+        "task": "测试任务",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": run_memory,
+    }
+
+    new_state = await executor._execute_node(state, stream_callback=stream_callback)
+
+    # 应该成功进入错误收集，不应因 error=None 崩溃
+    assert new_state["error_context"]
+    assert new_state["error_context"][0]["error_msg"] == "Unknown error"
+
+    # 步骤失败事件中的 error 字段应被归一化为字符串
+    step_error_events = [
+        e for e in events
+        if e.get("event") == "agent_message"
+        and (e.get("data") or {}).get("progress", {}).get("stage") == "step_error"
+    ]
+    assert step_error_events
+    assert step_error_events[0]["data"].get("error") == "Unknown error"

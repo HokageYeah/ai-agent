@@ -1127,19 +1127,26 @@ class LangGraphAgentExecutor:
             
             # 若步骤失败，额外推送错误事件
             if not step_result.get("success", True):
+                # 统一归一化错误文本，避免 step_result["error"] 为 None 时触发切片异常
+                # （例如子 Agent 失败但未返回 error 字段内容）
+                step_error = step_result.get("error")
+                if step_error is None or str(step_error).strip() == "":
+                    step_error = "Unknown error"
+                step_error_text = str(step_error)
+
                 await send_agent_message(
                     stream_callback=_cb_ref,
                     message_type="progress",
-                    content=f"步骤执行出错: {step_result.get('error', 'Unknown error')}",
+                    content=f"步骤执行出错: {step_error_text}",
                     progress={"stage": "step_error", "iteration": _iter_ref, "current": step_idx, "total": total},
                     extra_data={
-                        "error": step_result.get("error", "Unknown error"),
-                        **step_result
+                        **step_result,
+                        "error": step_error_text
                     }
                 )
                 logger.warning(
                     f"{Fore.YELLOW}[实时步骤回调] 步骤失败事件已推送: "
-                    f"step={step_idx}/{total}, error={step_result.get('error', '')[:80]}{Style.RESET_ALL}"
+                    f"step={step_idx}/{total}, error={step_error_text[:80]}{Style.RESET_ALL}"
                 )
 
         # 执行计划，并传入实时步骤回调（仅在有 stream_callback 时才传入，无需 SSE 时跳过）
@@ -1277,7 +1284,16 @@ class LangGraphAgentExecutor:
             new_error_records = []
             for sr in failed_steps:
                 action = sr.get("action", "unknown")
-                error_msg = sr.get("error", str(sr.get("result", "")))
+                # 不能直接用 dict.get 默认值：当 error 键存在但值为 None 时，会返回 None
+                # 后续日志切片/序列化会触发 'NoneType' object is not subscriptable。
+                raw_error_msg = sr.get("error")
+                if raw_error_msg is None or str(raw_error_msg).strip() == "":
+                    fallback_result = sr.get("result")
+                    if fallback_result is None:
+                        raw_error_msg = "Unknown error"
+                    else:
+                        raw_error_msg = str(fallback_result)
+                error_msg = str(raw_error_msg)
 
                 # 构建描述性步骤名称
                 if action == "tool":
