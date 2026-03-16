@@ -12089,3 +12089,424 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 2026-03-16 10:03:57 | DEBUG    | app.api.endpoints.skills:list_skills:67 - [36m[技能列表] translation 包含 2 个参数元数据[0m
 2026-03-16 10:03:57 | DEBUG    | app.api.endpoints.skills:list_skills:67 - [36m[技能列表] weather 包含 4 个参数元数据[0m
 2026-03-16 10:03:57 | INFO     | app.api.endpoints.skills:list_skills:82 - [32m成功列出 10 个技能，参数元数据已携带[0m
+2026-03-16 22:41:04 | INFO     | app.core.logging_uru:setup_logging:138 - 日志系统初始化完成 - 使用 loguru（第三方HTTP日志已降噪）
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Using selector: KqueueSelector
+2026-03-16 22:41:04 | INFO     | app.core.logging_uru:setup_logging:138 - 日志系统初始化完成 - 使用 loguru（第三方HTTP日志已降噪）
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:42 - [36m=======================================================[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:43 - [36m  AI Agent 服务启动中...[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:44 - [36m=======================================================[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:47 - [34m[启动] 连接 MySQL 数据库...[0m
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Building SSL context
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Switching to SSL
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - SSL has been enabled
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Starting authorization phase
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - The provided initial strategy is caching_sha2_password
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - package: mysql.connector.plugins
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - plugin_name: caching_sha2_password
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Server's response is an auth switch request
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - Switching to strategy mysql_native_password
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - package: mysql.connector.plugins
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - plugin_name: mysql_native_password
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - # request: b'r\xf4O\xca\x19)\xe1\xb6\xd0\xa1\xf8\x96PVc\x06\x1bRc\x02' size: 20
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - # server response packet: b'\x07\x00\x00\x05\x00\x00\x00\x02\x00\x00\x00'
+2026-03-16 22:41:04 | DEBUG    | logging:callHandlers:1744 - mysql_native_password completed succesfully
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - SELECT DATABASE()
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - [raw sql] {}
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - SELECT @@sql_mode
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - [raw sql] {}
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - SELECT @@lower_case_table_names
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - [raw sql] {}
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - BEGIN (implicit)
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - SELECT 1
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - [generated in 0.00091s] {}
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - sqlalchemy数据库连接成功
+2026-03-16 22:41:04 | INFO     | logging:callHandlers:1744 - ROLLBACK
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:49 - [32m[启动] MySQL 数据库连接成功[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:52 - [34m[启动] 初始化 Channel Layer...[0m
+2026-03-16 22:41:04 | INFO     | app.channels.manager:get_channel_manager:414 - [34m【渠道管理器】首次创建 ChannelManager 全局单例[0m
+2026-03-16 22:41:04 | INFO     | app.channels.manager:__init__:45 - [34m【渠道管理器】ChannelManager 初始化完成[0m
+2026-03-16 22:41:04 | INFO     | app.channels.adapters.rest_api:__init__:40 - [32mREST API 渠道适配器初始化完成 - ID: rest_api[0m
+2026-03-16 22:41:04 | INFO     | app.channels.manager:register_channel:90 - [32m【渠道管理器】已注册渠道: [36mrest_api[0m
+2026-03-16 22:41:04 | INFO     | app.channels.adapters.web_chat:__init__:45 - [32mWeb Chat 渠道适配器初始化完成 - ID: web_chat[0m
+2026-03-16 22:41:04 | INFO     | app.channels.manager:register_channel:90 - [32m【渠道管理器】已注册渠道: [36mweb_chat[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:61 - [32m[启动] Channel Layer 初始化完成 ✅[0m
+2026-03-16 22:41:04 | INFO     | app.main:lifespan:66 - [34m[启动] 预热核心服务 (Agent/Chat/Automation)...[0m
+2026-03-16 22:41:04 | INFO     | app.utils.dependencies:get_agent_registry:184 - [34m【依赖注入】初始化 AgentRegistry...[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:_iter_agent_config_files:44 - [34m[客服 Agent 配置加载] 发现配置文件 4 个：['cs_master.yml', 'general_agent.yml', 'order_agent.yml', 'refund_agent.yml'][0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:_parse_single_agent_config:60 - [34m[客服 Agent 配置加载] 开始读取: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/config/cs_master.yml[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:_parse_single_agent_config:91 - [36m[客服 Agent 配置加载] 解析成功: cs_master (客服总监)[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:_parse_single_agent_config:60 - [34m[客服 Agent 配置加载] 开始读取: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/config/general_agent.yml[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:_parse_single_agent_config:91 - [36m[客服 Agent 配置加载] 解析成功: general_agent (通用助手)[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:_parse_single_agent_config:60 - [34m[客服 Agent 配置加载] 开始读取: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/config/order_agent.yml[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:_parse_single_agent_config:91 - [36m[客服 Agent 配置加载] 解析成功: order_agent (订单专员)[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:_parse_single_agent_config:60 - [34m[客服 Agent 配置加载] 开始读取: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/config/refund_agent.yml[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:_parse_single_agent_config:91 - [36m[客服 Agent 配置加载] 解析成功: refund_agent (退款专员)[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:load_customer_service_agents:133 - [32m[客服 Agent 配置加载] 加载完成，共 4 个 Agent：['cs_master', 'general_agent', 'order_agent', 'refund_agent'][0m
+2026-03-16 22:41:04 | INFO     | app.agents.registry:__init__:33 - [32mAgent 注册表初始化完成[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:register_customer_service_agents:178 - [34m[客服 Agent 库] 开始注册 Agent，共 4 个[0m
+2026-03-16 22:41:04 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 客服总监 (ID: cs_master), 能力: 问题分类, 任务委派, 结果整合, 客户沟通[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:184 - [36m[客服 Agent 库] 已注册 Agent: cs_master (客服总监)[0m
+2026-03-16 22:41:04 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 订单专员 (ID: order_agent), 能力: 订单查询, 订单更新, 配送跟踪, 订单分析[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:184 - [36m[客服 Agent 库] 已注册 Agent: order_agent (订单专员)[0m
+2026-03-16 22:41:04 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 退款专员 (ID: refund_agent), 能力: 退款申请, 退款审核, 退款查询, 退款分析[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:184 - [36m[客服 Agent 库] 已注册 Agent: refund_agent (退款专员)[0m
+2026-03-16 22:41:04 | INFO     | app.agents.registry:register_agent:48 - [36m注册 Agent: 通用助手 (ID: general_agent), 能力: 网络搜索, 信息查询, 代码生成, 文本翻译, 数据分析, 文本写作, HTTP 请求, 文件读写, 文件精准编辑, 目录浏览, Shell 命令执行, 数学计算[0m
+2026-03-16 22:41:04 | DEBUG    | app.agents.library.customer_service:register_customer_service_agents:184 - [36m[客服 Agent 库] 已注册 Agent: general_agent (通用助手)[0m
+2026-03-16 22:41:04 | INFO     | app.agents.library.customer_service:register_customer_service_agents:188 - [32m[客服 Agent 库] 所有 Agent 注册完成，共 4 个[0m
+2026-03-16 22:41:04 | INFO     | app.utils.dependencies:get_agent_registry:193 - [32m【依赖注入】AgentRegistry 初始化完成[0m
+2026-03-16 22:41:04 | INFO     | app.utils.dependencies:get_agent_executor:228 - [34m【依赖注入】初始化 LangGraphAgentExecutor（含 ToolCallingGateway）...[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.providers.openai:__init__:68 - [36m初始化 OpenAI 供应商适配器，基础URL: https://apis.iflow.cn/v1[0m
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.providers.openai:__init__:86 - [34mOpenAI 异步客户端创建完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:248 - [36m【依赖注入】已创建 OpenAIProvider（base_url=https://apis.iflow.cn/v1）[0m
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: qwen3-max (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: deepseek-v3.2 (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-4-turbo (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-3.5-turbo (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-opus-20240229 (anthropic)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-sonnet-20240229 (anthropic)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-haiku-20240307 (anthropic)
+2026-03-16 22:41:05 | INFO     | app.llm_hub.registry:_initialize_default_models:81 - [36mInitialized ModelRegistry with 7 default models[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:252 - [36m【依赖注入】已创建 ModelRegistry[0m
+2026-03-16 22:41:05 | INFO     | app.skills.manager:__init__:52 - [34mSkillManager 初始化完成 | root=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md | auto_discover=True[0m
+2026-03-16 22:41:05 | INFO     | app.skills.manager:discover_skills:85 - [36m开始扫描技能目录，共发现 10 个 SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: api-log-reporter | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/api-log-reporter/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: code_generation | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/code_generation/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: data_analysis | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/data_analysis/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: dynamic_probe | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/dynamic_probe/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: github | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/github/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: skill-creator | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/skill-creator/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: text_writing | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/text_writing/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: tmux | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/tmux/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: translation | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/translation/SKILL.md[0m
+2026-03-16 22:41:05 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: weather | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/weather/SKILL.md[0m
+2026-03-16 22:41:05 | INFO     | app.skills.manager:discover_skills:152 - [32m技能扫描完成，总计 10 个（含不可用技能）[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:__init__:98 - [DatabaseQueryTool] 已创建共享内存数据库连接
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:__init__:100 - [DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: :memory:
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.search:__init__:164 - [36m[SearchTool] 网络搜索工具初始化完成 | 主方案: DuckDuckGo HTML 解析（支持中文）| 备用: Instant Answer API[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.http:__init__:277 - [36m[HTTPRequestTool] HTTP 请求工具初始化完成，默认超时=30.0s，最大重定向=5次，响应截断=50000字符[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.executor:__init__:124 - [PythonExecutorTool] Python 代码执行工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:210 - [FileReadTool] 文件读取工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:504 - [FileWriteTool] 文件写入工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:881 - [36m[FileEditTool] 文件精准编辑工具初始化完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:1098 - [36m[FileListDirTool] 目录列表工具初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.shell:__init__:131 - [36m[ShellExecutorTool] Shell 命令执行工具初始化完成 | 超时=60s | 黑名单规则=12条 | 工作目录限制=关闭 | 输出截断=10000字符[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: search[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: http_request[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: python_executor[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_read[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_write[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_edit[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: list_dir[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: shell_exec[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: database_query[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: calculator[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: datetime[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin:register_all_builtin_tools:97 - [32m所有内置工具注册完成，共注册 11 个工具[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:192 - [34m[数据库初始化] 开始创建订单系统表结构...[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:198 - [36m[数据库初始化] 创建 customers 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:201 - [36m[数据库初始化] 创建 products 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:204 - [36m[数据库初始化] 创建 orders 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:207 - [36m[数据库初始化] 创建 order_items 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:210 - [36m[数据库初始化] 创建 refunds 表完成[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:218 - [32m[数据库初始化] 已插入 5 条客户数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:227 - [32m[数据库初始化] 已插入 8 条商品数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:238 - [32m[数据库初始化] 已插入 10 条订单数据（订单号 1001-1010）[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:247 - [32m[数据库初始化] 已插入 12 条订单明细[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:256 - [32m[数据库初始化] 已插入 3 条退款数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:259 - [32m[数据库初始化] ✅ 订单测试数据库初始化完成！包含 5 位客户, 8 款商品, 10 条订单 (1001-1010)[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:280 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:281 - [36m[数据库] 当前测试数据概览：[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - customers       5 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - products        8 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - orders          10 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - order_items     12 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - refunds         3 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:299 - [36m  - 订单状态分布: delivered(5), shipped(2), pending(1), confirmed(1), cancelled(1)[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:303 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:refresh_schema_description:166 - [DatabaseQueryTool] Schema 描述已更新，包含 6 张表: customers, order_items, orders, products, refunds, sqlite_sequence
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.database:refresh_schema_description:170 - [DatabaseQueryTool] 完整 Schema:
+【数据库 Schema（请严格按照以下列名编写 SQL）】
+  表 customers: id(INTEGER), name(TEXT), phone(TEXT), email(TEXT), address(TEXT), level(TEXT), created_at(TEXT)
+  表 order_items: id(INTEGER), order_id(INTEGER), product_id(INTEGER), product_name(TEXT), quantity(INTEGER), unit_price(REAL), total_price(REAL)
+  表 orders: id(INTEGER), customer_id(INTEGER), total_amount(REAL), paid_amount(REAL), discount_amount(REAL), status(TEXT), payment_status(TEXT), payment_method(TEXT), shipping_address(TEXT), tracking_number(TEXT), remark(TEXT), created_at(TEXT), shipped_at(TEXT), delivered_at(TEXT)
+  表 products: id(INTEGER), name(TEXT), category(TEXT), price(REAL), cost_price(REAL), stock(INTEGER), unit(TEXT), description(TEXT)
+  表 refunds: id(INTEGER), order_id(INTEGER), amount(REAL), reason(TEXT), status(TEXT), refund_type(TEXT), apply_at(TEXT), processed_at(TEXT), remark(TEXT)
+  表 sqlite_sequence: name(), seq()
+2026-03-16 22:41:05 | INFO     | app.tools.builtin:register_all_builtin_tools:112 - [32m[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:260 - [36m【依赖注入】已注册 11 个内置工具，10 个动态技能[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_tool_calling_gateway:587 - [34m【依赖注入】初始化 ToolCallingGateway...[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:__init__:176 - [36m初始化工具调用网关 (ToolCallingGateway)[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_tool_calling_gateway:593 - [36m【依赖注入】ToolCallingGateway 实例已创建[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_tool_hub:484 - [34m【依赖注入】初始化 ToolHub...[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:__init__:98 - [DatabaseQueryTool] 已创建共享内存数据库连接
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:__init__:100 - [DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: :memory:
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.search:__init__:164 - [36m[SearchTool] 网络搜索工具初始化完成 | 主方案: DuckDuckGo HTML 解析（支持中文）| 备用: Instant Answer API[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.http:__init__:277 - [36m[HTTPRequestTool] HTTP 请求工具初始化完成，默认超时=30.0s，最大重定向=5次，响应截断=50000字符[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.executor:__init__:124 - [PythonExecutorTool] Python 代码执行工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:210 - [FileReadTool] 文件读取工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:504 - [FileWriteTool] 文件写入工具初始化完成
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:881 - [36m[FileEditTool] 文件精准编辑工具初始化完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.file:__init__:1098 - [36m[FileListDirTool] 目录列表工具初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.shell:__init__:131 - [36m[ShellExecutorTool] Shell 命令执行工具初始化完成 | 超时=60s | 黑名单规则=12条 | 工作目录限制=关闭 | 输出截断=10000字符[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: search[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: http_request[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: python_executor[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_read[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_write[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_edit[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: list_dir[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: shell_exec[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: database_query[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: calculator[0m
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: datetime[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin:register_all_builtin_tools:97 - [32m所有内置工具注册完成，共注册 11 个工具[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:192 - [34m[数据库初始化] 开始创建订单系统表结构...[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:198 - [36m[数据库初始化] 创建 customers 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:201 - [36m[数据库初始化] 创建 products 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:204 - [36m[数据库初始化] 创建 orders 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:207 - [36m[数据库初始化] 创建 order_items 表完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.db.seed_order_data:seed_database:210 - [36m[数据库初始化] 创建 refunds 表完成[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:218 - [32m[数据库初始化] 已插入 5 条客户数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:227 - [32m[数据库初始化] 已插入 8 条商品数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:238 - [32m[数据库初始化] 已插入 10 条订单数据（订单号 1001-1010）[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:247 - [32m[数据库初始化] 已插入 12 条订单明细[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:256 - [32m[数据库初始化] 已插入 3 条退款数据[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:seed_database:259 - [32m[数据库初始化] ✅ 订单测试数据库初始化完成！包含 5 位客户, 8 款商品, 10 条订单 (1001-1010)[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:280 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:281 - [36m[数据库] 当前测试数据概览：[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - customers       5 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - products        8 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - orders          10 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - order_items     12 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - refunds         3 条记录[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:299 - [36m  - 订单状态分布: delivered(5), shipped(2), pending(1), confirmed(1), cancelled(1)[0m
+2026-03-16 22:41:05 | INFO     | app.db.seed_order_data:print_data_summary:303 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.database:refresh_schema_description:166 - [DatabaseQueryTool] Schema 描述已更新，包含 6 张表: customers, order_items, orders, products, refunds, sqlite_sequence
+2026-03-16 22:41:05 | DEBUG    | app.tools.builtin.database:refresh_schema_description:170 - [DatabaseQueryTool] 完整 Schema:
+【数据库 Schema（请严格按照以下列名编写 SQL）】
+  表 customers: id(INTEGER), name(TEXT), phone(TEXT), email(TEXT), address(TEXT), level(TEXT), created_at(TEXT)
+  表 order_items: id(INTEGER), order_id(INTEGER), product_id(INTEGER), product_name(TEXT), quantity(INTEGER), unit_price(REAL), total_price(REAL)
+  表 orders: id(INTEGER), customer_id(INTEGER), total_amount(REAL), paid_amount(REAL), discount_amount(REAL), status(TEXT), payment_status(TEXT), payment_method(TEXT), shipping_address(TEXT), tracking_number(TEXT), remark(TEXT), created_at(TEXT), shipped_at(TEXT), delivered_at(TEXT)
+  表 products: id(INTEGER), name(TEXT), category(TEXT), price(REAL), cost_price(REAL), stock(INTEGER), unit(TEXT), description(TEXT)
+  表 refunds: id(INTEGER), order_id(INTEGER), amount(REAL), reason(TEXT), status(TEXT), refund_type(TEXT), apply_at(TEXT), processed_at(TEXT), remark(TEXT)
+  表 sqlite_sequence: name(), seq()
+2026-03-16 22:41:05 | INFO     | app.tools.builtin:register_all_builtin_tools:112 - [32m[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_tool_hub:493 - [32m【依赖注入】ToolHub 初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:_sync_tools_to_gateway:526 - [34m【工具同步】开始将 ToolHub 中的工具同步到 ToolCallingGateway，共 11 个工具[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: search, 参数模式: ['query', 'max_results'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: search[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: http_request, 参数模式: ['method', 'url', 'headers', 'params', 'body', 'body_type', 'timeout', 'follow_redirects', 'extract_text'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: http_request[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: python_executor, 参数模式: ['code', 'timeout'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: python_executor[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: file_read, 参数模式: ['path', 'encoding', 'max_size'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: file_read[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: file_write, 参数模式: ['path', 'content', 'encoding', 'mode', 'create_dirs', 'backup', 'is_binary'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: file_write[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: file_edit, 参数模式: ['path', 'old_text', 'new_text', 'encoding'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: file_edit[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: list_dir, 参数模式: ['path', 'show_hidden', 'show_size'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: list_dir[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: shell_exec, 参数模式: ['command', 'working_dir', 'timeout', 'env'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: shell_exec[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: database_query, 参数模式: ['query', 'params', 'db_path', 'limit', 'timeout'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: database_query[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: calculator, 参数模式: ['expression', 'precision', 'degrees'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: calculator[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: datetime, 参数模式: ['operation', 'datetime', 'format', 'days', 'hours', 'minutes', 'seconds', 'date1', 'date2', 'timezone', 'lang'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:_sync_tools_to_gateway:548 - [36m【工具同步】已同步工具: datetime[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:_sync_tools_to_gateway:557 - [32m【工具同步】工具同步完成，成功同步 11/11 个工具[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_tool_calling_gateway:603 - [32m【依赖注入】ToolCallingGateway 初始化完成，已同步 11 个工具: ['search', 'http_request', 'python_executor', 'file_read', 'file_write', 'file_edit', 'list_dir', 'shell_exec', 'database_query', 'calculator', 'datetime'][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:271 - [36m【依赖注入】已获取 ToolCallingGateway（Agent Executor 备用）[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:162 - [36m初始化 PromptBuilder: PromptBuilder[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.streaming:__init__:81 - [36m初始化流式输出管理器 (StreamingManager)[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:166 - [36m初始化 StreamingManager: StreamingManager[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:173 - [36m初始化 ToolCallingGateway: ToolCallingGateway[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:174 - [36m最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:175 - [36m工具调用网关: <app.llm_hub.tool_gateway.ToolCallingGateway object at 0x10c5941a0>[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:180 - [32m工具调用网关已接入 InferenceEngine，最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:196 - [32m推理引擎初始化完成，默认供应商: OpenAIProvider[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:285 - [36m【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine[0m
+2026-03-16 22:41:05 | INFO     | app.agents.child_agent_manager:__init__:65 - [32m子 Agent 管理器初始化完成 [工具网关: 已启用][0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_agent_executor:301 - [36m【依赖注入】已创建 ChildAgentManager（含 ToolCallingGateway），支持多层 Agent 委派[0m
+2026-03-16 22:41:05 | DEBUG    | app.agents.registry:list_agents:78 - [34m列出所有 Agent，共 4 个[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.spawn:__init__:101 - [36m[SpawnAgentTool] 初始化完成 | 父Agent=None | 流式回调=无 | 可委派Agent=cs_master(客服总监) / order_agent(订单专员) / refund_agent(退款专员) / general_agent(通用助手)[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: spawn_agent, 参数模式: ['agent_id', 'task', 'context'][0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_agent_executor:326 - [32m【依赖注入】SpawnAgentTool 已注册到 ToolHub 和 Gateway | tool_name=spawn_agent[0m
+2026-03-16 22:41:05 | INFO     | app.tools.builtin.message:__init__:147 - [36m[MessageAgentTool] 初始化完成 | 流式回调=未注入[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.tool_gateway:register_tool:190 - [32m注册工具: send_message, 参数模式: ['message_type', 'content', 'importance', 'required_fields', 'confirm_action', 'options', 'allow_multiple', 'progress'][0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_agent_executor:342 - [32m【依赖注入】MessageAgentTool 已注册到 ToolHub 和 Gateway | tool_name=send_message[0m
+2026-03-16 22:41:05 | INFO     | app.utils.prompt_manager:__init__:66 - 提示词管理器初始化完成，目录: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/prompt/plan
+2026-03-16 22:41:05 | INFO     | app.agents.planning:__init__:98 - [32m规划引擎初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.utils.prompt_manager:__init__:66 - 提示词管理器初始化完成，目录: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/prompt/execution
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: answer_synthesis_with_results -> answer_synthesis_with_results.txt
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: context_fallback_synthesis -> context_fallback_synthesis.txt
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: generic_skill_fallback -> generic_skill_fallback.txt
+2026-03-16 22:41:05 | INFO     | app.agents.execution:__init__:119 - [32m执行引擎初始化完成 [工具网关: 已启用][0m
+2026-03-16 22:41:05 | INFO     | app.utils.prompt_manager:__init__:66 - 提示词管理器初始化完成，目录: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/prompt/reflection
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: system_eval_rules -> system_eval_rules.txt
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: iteration_trigger_with_errors -> iteration_trigger_with_errors.txt
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: legacy_reflection_with_task -> legacy_reflection_with_task.txt
+2026-03-16 22:41:05 | INFO     | app.agents.reflection:__init__:95 - [32m反思引擎初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.utils.prompt_manager:__init__:66 - 提示词管理器初始化完成，目录: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/prompt/langgraph
+2026-03-16 22:41:05 | DEBUG    | app.utils.prompt_manager:load_prompt:87 - 提示词加载成功: error_root_cause_analysis -> error_root_cause_analysis.txt
+2026-03-16 22:41:05 | INFO     | app.agents.langgraph_executor:_build_graph:529 - [34m构建 LangGraph 状态图[0m
+2026-03-16 22:41:05 | INFO     | app.agents.langgraph_executor:_build_graph:572 - [32m状态图构建完成[0m
+2026-03-16 22:41:05 | INFO     | app.agents.langgraph_executor:__init__:166 - [32mLangGraph Agent 执行器初始化完成 [工具网关: 已启用][0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_agent_executor:359 - [32m【依赖注入】LangGraphAgentExecutor 初始化完成（含 ChildAgentManager + ToolCallingGateway，工具调用路径：ExecutionEngine → Gateway → Tool）[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_chat_service:390 - [34m【依赖注入】初始化 ChatService（含 ToolCallingGateway）...[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.providers.openai:__init__:68 - [36m初始化 OpenAI 供应商适配器，基础URL: https://apis.iflow.cn/v1[0m
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.providers.openai:__init__:86 - [34mOpenAI 异步客户端创建完成[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_chat_service:404 - [36m【依赖注入】已创建 OpenAIProvider (base_url=https://apis.iflow.cn/v1)[0m
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: qwen3-max (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: deepseek-v3.2 (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-4-turbo (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-3.5-turbo (openai)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-opus-20240229 (anthropic)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-sonnet-20240229 (anthropic)
+2026-03-16 22:41:05 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-haiku-20240307 (anthropic)
+2026-03-16 22:41:05 | INFO     | app.llm_hub.registry:_initialize_default_models:81 - [36mInitialized ModelRegistry with 7 default models[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_chat_service:411 - [36m【依赖注入】已创建 ModelRegistry[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_chat_service:418 - [36m【依赖注入】已获取 ToolCallingGateway（ChatService 工具调用支持）[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:162 - [36m初始化 PromptBuilder: PromptBuilder[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.streaming:__init__:81 - [36m初始化流式输出管理器 (StreamingManager)[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:166 - [36m初始化 StreamingManager: StreamingManager[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:173 - [36m初始化 ToolCallingGateway: ToolCallingGateway[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:174 - [36m最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:175 - [36m工具调用网关: <app.llm_hub.tool_gateway.ToolCallingGateway object at 0x10c5941a0>[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:180 - [32m工具调用网关已接入 InferenceEngine，最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.inference:__init__:196 - [32m推理引擎初始化完成，默认供应商: OpenAIProvider[0m
+2026-03-16 22:41:05 | DEBUG    | app.utils.dependencies:get_chat_service:429 - [36m【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine[0m
+2026-03-16 22:41:05 | INFO     | app.services.chat_service:__init__:42 - [32m对话服务初始化完成[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_chat_service:438 - [32m【依赖注入】ChatService 初始化完成（含 ToolCallingGateway 支持）[0m
+2026-03-16 22:41:05 | INFO     | app.utils.dependencies:get_automation_service:97 - [34m【依赖注入】初始化 AutomationService（含工具调用网关）...[0m
+2026-03-16 22:41:05 | INFO     | app.llm_hub.providers.openai:__init__:68 - [36m初始化 OpenAI 供应商适配器，基础URL: https://apis.iflow.cn/v1[0m
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.providers.openai:__init__:86 - [34mOpenAI 异步客户端创建完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.utils.dependencies:get_automation_service:113 - [36m【依赖注入】已创建 OpenAIProvider[0m
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: qwen3-max (openai)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: deepseek-v3.2 (openai)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-4-turbo (openai)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: gpt-3.5-turbo (openai)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-opus-20240229 (anthropic)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-sonnet-20240229 (anthropic)
+2026-03-16 22:41:06 | DEBUG    | app.llm_hub.registry:register_model:86 - Registered model: claude-3-haiku-20240307 (anthropic)
+2026-03-16 22:41:06 | INFO     | app.llm_hub.registry:_initialize_default_models:81 - [36mInitialized ModelRegistry with 7 default models[0m
+2026-03-16 22:41:06 | DEBUG    | app.utils.dependencies:get_automation_service:116 - [36m【依赖注入】已创建 ModelRegistry[0m
+2026-03-16 22:41:06 | INFO     | app.skills.manager:__init__:52 - [34mSkillManager 初始化完成 | root=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md | auto_discover=True[0m
+2026-03-16 22:41:06 | INFO     | app.skills.manager:discover_skills:85 - [36m开始扫描技能目录，共发现 10 个 SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: api-log-reporter | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/api-log-reporter/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: code_generation | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/code_generation/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: data_analysis | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/data_analysis/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: dynamic_probe | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/dynamic_probe/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: github | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/github/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: skill-creator | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/skill-creator/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: text_writing | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/text_writing/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: tmux | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/tmux/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: translation | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/translation/SKILL.md[0m
+2026-03-16 22:41:06 | DEBUG    | app.skills.manager:discover_skills:140 - [32m技能可用: weather | path=/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/skills/skills_md/weather/SKILL.md[0m
+2026-03-16 22:41:06 | INFO     | app.skills.manager:discover_skills:152 - [32m技能扫描完成，总计 10 个（含不可用技能）[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:__init__:98 - [DatabaseQueryTool] 已创建共享内存数据库连接
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:__init__:100 - [DatabaseQueryTool] 数据库查询工具初始化完成，默认数据库: :memory:
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.search:__init__:164 - [36m[SearchTool] 网络搜索工具初始化完成 | 主方案: DuckDuckGo HTML 解析（支持中文）| 备用: Instant Answer API[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.http:__init__:277 - [36m[HTTPRequestTool] HTTP 请求工具初始化完成，默认超时=30.0s，最大重定向=5次，响应截断=50000字符[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.executor:__init__:124 - [PythonExecutorTool] Python 代码执行工具初始化完成
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.file:__init__:210 - [FileReadTool] 文件读取工具初始化完成
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.file:__init__:504 - [FileWriteTool] 文件写入工具初始化完成
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.file:__init__:881 - [36m[FileEditTool] 文件精准编辑工具初始化完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin.file:__init__:78 - [36m[BaseFileTool] 初始化完成，允许目录: ['/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent', '/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T'][0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.file:__init__:1098 - [36m[FileListDirTool] 目录列表工具初始化完成[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.shell:__init__:131 - [36m[ShellExecutorTool] Shell 命令执行工具初始化完成 | 超时=60s | 黑名单规则=12条 | 工作目录限制=关闭 | 输出截断=10000字符[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.calculator:__init__:119 - [CalculatorTool] 计算器工具初始化完成
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.datetime:__init__:123 - [DateTimeTool] 日期时间工具初始化完成，默认时区: UTC
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: search[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: http_request[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: python_executor[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_read[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_write[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: file_edit[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: list_dir[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: shell_exec[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: database_query[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: calculator[0m
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin:register_all_builtin_tools:95 - [32m已注册内置工具: datetime[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin:register_all_builtin_tools:97 - [32m所有内置工具注册完成，共注册 11 个工具[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:192 - [34m[数据库初始化] 开始创建订单系统表结构...[0m
+2026-03-16 22:41:06 | DEBUG    | app.db.seed_order_data:seed_database:198 - [36m[数据库初始化] 创建 customers 表完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.db.seed_order_data:seed_database:201 - [36m[数据库初始化] 创建 products 表完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.db.seed_order_data:seed_database:204 - [36m[数据库初始化] 创建 orders 表完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.db.seed_order_data:seed_database:207 - [36m[数据库初始化] 创建 order_items 表完成[0m
+2026-03-16 22:41:06 | DEBUG    | app.db.seed_order_data:seed_database:210 - [36m[数据库初始化] 创建 refunds 表完成[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:218 - [32m[数据库初始化] 已插入 5 条客户数据[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:227 - [32m[数据库初始化] 已插入 8 条商品数据[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:238 - [32m[数据库初始化] 已插入 10 条订单数据（订单号 1001-1010）[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:247 - [32m[数据库初始化] 已插入 12 条订单明细[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:256 - [32m[数据库初始化] 已插入 3 条退款数据[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:seed_database:259 - [32m[数据库初始化] ✅ 订单测试数据库初始化完成！包含 5 位客户, 8 款商品, 10 条订单 (1001-1010)[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:seed_data:118 - [DatabaseQueryTool] 开始向共享内存数据库注入种子数据...
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:280 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:281 - [36m[数据库] 当前测试数据概览：[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - customers       5 条记录[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - products        8 条记录[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - orders          10 条记录[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - order_items     12 条记录[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:288 - [36m  - refunds         3 条记录[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:299 - [36m  - 订单状态分布: delivered(5), shipped(2), pending(1), confirmed(1), cancelled(1)[0m
+2026-03-16 22:41:06 | INFO     | app.db.seed_order_data:print_data_summary:303 - [36m──────────────────────────────────────────────────[0m
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:seed_data:120 - [DatabaseQueryTool] 种子数据注入完成 ✅
+2026-03-16 22:41:06 | INFO     | app.tools.builtin.database:refresh_schema_description:166 - [DatabaseQueryTool] Schema 描述已更新，包含 6 张表: customers, order_items, orders, products, refunds, sqlite_sequence
+2026-03-16 22:41:06 | DEBUG    | app.tools.builtin.database:refresh_schema_description:170 - [DatabaseQueryTool] 完整 Schema:
+【数据库 Schema（请严格按照以下列名编写 SQL）】
+  表 customers: id(INTEGER), name(TEXT), phone(TEXT), email(TEXT), address(TEXT), level(TEXT), created_at(TEXT)
+  表 order_items: id(INTEGER), order_id(INTEGER), product_id(INTEGER), product_name(TEXT), quantity(INTEGER), unit_price(REAL), total_price(REAL)
+  表 orders: id(INTEGER), customer_id(INTEGER), total_amount(REAL), paid_amount(REAL), discount_amount(REAL), status(TEXT), payment_status(TEXT), payment_method(TEXT), shipping_address(TEXT), tracking_number(TEXT), remark(TEXT), created_at(TEXT), shipped_at(TEXT), delivered_at(TEXT)
+  表 products: id(INTEGER), name(TEXT), category(TEXT), price(REAL), cost_price(REAL), stock(INTEGER), unit(TEXT), description(TEXT)
+  表 refunds: id(INTEGER), order_id(INTEGER), amount(REAL), reason(TEXT), status(TEXT), refund_type(TEXT), apply_at(TEXT), processed_at(TEXT), remark(TEXT)
+  表 sqlite_sequence: name(), seq()
+2026-03-16 22:41:06 | INFO     | app.tools.builtin:register_all_builtin_tools:112 - [32m[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010[0m
+2026-03-16 22:41:06 | DEBUG    | app.utils.dependencies:get_automation_service:124 - [36m【依赖注入】已注册 11 个内置工具，10 个动态技能[0m
+2026-03-16 22:41:06 | DEBUG    | app.utils.dependencies:get_automation_service:138 - [36m【依赖注入】已获取 ToolCallingGateway，可用工具: ['search', 'http_request', 'python_executor', 'file_read', 'file_write', 'file_edit', 'list_dir', 'shell_exec', 'database_query', 'calculator', 'datetime', 'spawn_agent', 'send_message'][0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:162 - [36m初始化 PromptBuilder: PromptBuilder[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.streaming:__init__:81 - [36m初始化流式输出管理器 (StreamingManager)[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:166 - [36m初始化 StreamingManager: StreamingManager[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:173 - [36m初始化 ToolCallingGateway: ToolCallingGateway[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:174 - [36m最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:175 - [36m工具调用网关: <app.llm_hub.tool_gateway.ToolCallingGateway object at 0x10c5941a0>[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:180 - [32m工具调用网关已接入 InferenceEngine，最大工具调用迭代次数: 20[0m
+2026-03-16 22:41:06 | INFO     | app.llm_hub.inference:__init__:196 - [32m推理引擎初始化完成，默认供应商: OpenAIProvider[0m
+2026-03-16 22:41:06 | DEBUG    | app.utils.dependencies:get_automation_service:152 - [36m【依赖注入】已创建集成 ToolCallingGateway 的 InferenceEngine[0m
+2026-03-16 22:41:06 | INFO     | app.services.automation_service:__init__:51 - [32m自动化服务初始化完成[0m
+2026-03-16 22:41:06 | INFO     | app.utils.dependencies:get_automation_service:162 - [32m【依赖注入】AutomationService 初始化完成（含 ToolCallingGateway 支持）[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:76 - [32m[启动] 核心服务预热完成 ✅[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:79 - [34m[启动] 注入服务依赖到 ChannelManager...[0m
+2026-03-16 22:41:06 | INFO     | app.channels.manager:set_services:76 - [32m【渠道管理器】已注入服务依赖: ChatService, LangGraphAgentExecutor, AutomationService[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:86 - [32m[启动] ChannelManager 路由绑定完成 ✅[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:91 - [32m=======================================================[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:92 - [32m  AI Agent 服务启动完成，等待请求...[0m
+2026-03-16 22:41:06 | INFO     | app.main:lifespan:93 - [32m=======================================================[0m
