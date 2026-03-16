@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.4
-- **最后更新**: 2026-03-13
+- **版本号**: v1.5
+- **最后更新**: 2026-03-16
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -14,7 +14,7 @@
 1. **统一 LLM 调用**：支持多种模型供应商
 2. **工具调用能力**：Agent 可以调用外部工具完成复杂任务
 3. **记忆管理**：支持多轮对话上下文
-4. **技能系统**：预定义可复用的 AI 技能
+4. **技能系统**：基于 `SKILL.md` 的动态技能包（Metadata 路由 + 懒加载执行）
 5. **工作流引擎**：支持顺序、并行、条件分支执行
 6. **Agent 系统**：具备规划、执行、反思能力的智能体，支持子 Agent 协作
 7. **错误感知自我纠错**：收集执行错误，通过 LLM 分析根因并指导重规划，防止反复触碰失败路径
@@ -80,6 +80,26 @@ Capability Layer (能力调用)
 LLM Hub (统一推理)
   ↓
 响应返回
+```
+
+### 2.3 动态技能数据流（已落地）
+
+```
+用户任务
+  ↓
+[技能发现] SkillManager.discover_skills()
+  └─ 扫描 app/skills/skills_md/*/SKILL.md，建立轻量元数据索引
+  ↓
+[技能路由] _route_skills_by_metadata()
+  └─ 按任务文本 + when_to_use + tags + inputs 打分筛选 Top-K
+  ↓
+[规划] PlanningEngine 仅看到“已筛选技能”的轻量信息（非全文 Prompt）
+  ↓
+[执行] ExecutionEngine._execute_skill()
+  └─ skill_manager.get_skill() 按需懒加载完整技能正文与资源
+  └─ 按技能声明工具白名单过滤，执行局部推理
+  ↓
+返回技能结果 / 继续执行后续步骤（如 file_write、final_answer）
 ```
 
 ---
@@ -383,157 +403,153 @@ class ToolHub:
 
 ## 6. Skill System（技能系统）
 
-技能是预定义的 AI 能力组合，包含 Prompt 模板和所需工具。
+技能系统已从“代码硬注册”升级为“文件系统动态加载”模式，核心原则如下：
 
-### 6.1 技能定义
+1. 决策阶段只暴露轻量元信息（Metadata），不把所有技能正文塞进 Prompt  
+2. 执行阶段按需懒加载（Lazy Loading）目标技能全文、脚本与资源  
+3. 技能执行时按技能声明做工具白名单收敛，防止无关工具循环  
+
+### 6.1 技能包目录规范
+
+```
+app/skills/skills_md/
+├── weather/
+│   ├── SKILL.md
+│   ├── scripts/
+│   └── resources/
+├── tmux/
+├── github/
+├── api-log-reporter/
+└── ...
+```
+
+每个技能是一个独立目录，最小要求是 `SKILL.md`，可选包含：
+- `scripts/`：确定性脚本（推荐承载复杂统计与解析）
+- `resources/`：参数说明、模板、规则文件等静态资源
+
+### 6.2 `SKILL.md` 协议（YAML + Markdown）
+
+```markdown
+---
+name: api-log-reporter
+description: 读取 API 运行日志并生成结构化日报
+required_tools: ["shell_exec", "file_read"]
+optional_tools: []
+tags: ["api", "log", "report"]
+memory_include_short_term: true
+---
+
+# 何时使用 (When to use)
+- 需要分析 API 日志并输出日报
+
+# 输入参数 (Inputs)
+- log_path: 日志文件路径
+- date_range: today/all/区间
+
+# 执行指令 (Instructions)
+...技能执行规则...
+
+# 脚本 (Scripts)
+- scripts/analyze_api_log.py
+
+# 资源 (Resources)
+- resources/param_schemas.json
+```
+
+说明：
+- Frontmatter 用于发现阶段解析，构建 `SkillMetadata`
+- Markdown 正文用于执行阶段注入 Prompt（Instructions）
+- Inputs/Scripts/Resources 由 `SkillManager` 标准章节解析器提取
+
+### 6.3 运行时数据模型
 
 ```python
-from enum import Enum
-from pydantic import BaseModel
-
-class MemoryStrategy(BaseModel):
-    """记忆策略"""
-    include_short_term: bool = True
+class SkillMetadata(BaseModel):
+    skill_id: str
+    description: str
+    source_path: str
+    when_to_use: list[str]
+    inputs: list[str]
+    input_descriptions: dict[str, str]
+    required_tools: list[str]
+    optional_tools: list[str]
+    tags: list[str]
+    scripts: list[str]
+    resources: list[str]
 
 class Skill(BaseModel):
-    """技能定义"""
     skill_id: str
-    name: str
     description: str
-    prompt_template: str              # Prompt 模板
-    required_tools: list[str]         # 所需工具
-    optional_tools: list[str] = []    # 可选工具
-    memory_strategy: MemoryStrategy    # 记忆策略
-    examples: list[dict] = []         # Few-shot 示例
-    tags: list[str] = []              # 标签
+    prompt_template: str         # Instructions 正文
+    required_tools: list[str]
+    optional_tools: list[str]
+    param_schemas: dict[str, ParamSchema]
+    source_path: str
+    scripts: list[str]
+    resources: list[str]
 ```
 
-### 6.2 示例技能
-
-```python
-# 数据分析技能
-DATA_ANALYSIS_SKILL = Skill(
-    skill_id="data_analysis",
-    name="数据分析",
-    description="分析数据并生成洞察",
-    prompt_template="""
-你是一个数据分析专家。请分析以下数据:
-{data}
-
-要求:
-1. 识别关键趋势
-2. 发现异常值
-3. 提供可行建议
-""",
-    required_tools=["python_executor"],
-    memory_strategy=MemoryStrategy(include_short_term=True)
-)
-
-# 代码生成技能
-CODE_GENERATION_SKILL = Skill(
-    skill_id="code_generation",
-    name="代码生成",
-    description="根据需求生成代码",
-    prompt_template="""
-你是一个资深开发者。请根据以下需求生成代码:
-{requirements}
-
-语言: {language}
-框架: {framework}
-
-要求:
-1. 代码符合最佳实践
-2. 包含必要的注释
-3. 处理边界情况
-""",
-    required_tools=["code_executor"],
-    memory_strategy=MemoryStrategy(include_short_term=True)
-)
-
-# 文本写作技能
-TEXT_WRITING_SKILL = Skill(
-    skill_id="text_writing",
-    name="文本写作",
-    description="专业文本写作",
-    prompt_template="""
-请根据以下要求撰写文本:
-主题: {topic}
-类型: {content_type}
-风格: {style}
-字数要求: {word_count}
-""",
-    required_tools=[],
-    memory_strategy=MemoryStrategy(include_short_term=False)
-)
-
-# 翻译技能
-TRANSLATION_SKILL = Skill(
-    skill_id="translation",
-    name="翻译",
-    description="多语言翻译",
-    prompt_template="""
-请将以下文本翻译成{target_language}:
-{text}
-
-要求:
-1. 保持原文风格
-2. 确保专业术语准确
-""",
-    required_tools=[],
-    memory_strategy=MemoryStrategy(include_short_term=False)
-)
-```
-
-### 6.3 技能管理器
+### 6.4 SkillManager 生命周期（Discover -> Route -> Lazy Load -> Runtime）
 
 ```python
 class SkillManager:
-    """技能管理器"""
-    
-    def __init__(self):
-        self._skills: Dict[str, Skill] = {}
-    
-    def register_skill(self, skill: Skill):
-        """注册技能"""
-        self._skills[skill.skill_id] = skill
-    
-    def get_skill(self, skill_id: str) -> Optional[Skill]:
-        """获取技能"""
-        return self._skills.get(skill_id)
-    
-    def list_skills(self) -> list[Skill]:
-        """列出所有技能"""
-        return list(self._skills.values())
-    
-    async def execute_skill(
-        self,
-        skill_id: str,
-        parameters: dict,
-        context: dict
-    ) -> dict:
-        """执行技能"""
-        
-        skill = self.get_skill(skill_id)
-        if not skill:
-            raise ValueError(f"Skill not found: {skill_id}")
-        
-        # 1. 构建 Prompt
-        prompt = skill.prompt_template.format(**parameters)
-        
-        # 2. 准备工具
-        tools = [
-            context["tool_hub"].get_tool(name)
-            for name in skill.required_tools
-        ]
-        
-        # 3. 执行推理
-        result = await context["llm_hub"].infer(
-            messages=[{"role": "user", "content": prompt}],
-            tools=[t for t in tools if t],
-            config=context.get("config", {})
-        )
-        
-        return result
+    def discover_skills(force_reload=False, include_unavailable=False):
+        # 扫描 skills_md/*/SKILL.md，解析 frontmatter + 标准章节
+        ...
+
+    def list_skill_metadata(include_unavailable=False):
+        # 返回轻量元信息，供路由阶段使用
+        ...
+
+    def load_skill(skill_name):
+        # 按需读取完整技能正文与参数元数据（懒加载）
+        ...
+
+    def list_skills():
+        # 返回轻量 Skill 视图（供规划展示）
+        ...
+
+    async def execute_skill_runtime(...):
+        # 组装运行时 Prompt 并调用 llm_hub.infer()
+        ...
+```
+
+### 6.5 Agent 主链路中的技能动态路由与执行
+
+1. **规划前路由**（`langgraph_executor.py`）  
+   - `list_skills()` 获取候选技能轻量视图  
+   - `_route_skills_by_metadata()` 基于任务文本、`when_to_use`、`tags`、`inputs` 打分  
+   - 仅 Top-K 技能进入 Planning Prompt，降低噪声和 token 成本
+
+2. **执行时懒加载**（`execution.py`）  
+   - `_execute_skill()` 调用 `skill_manager.get_skill(skill_id)` 触发懒加载  
+   - 使用 `safe_format` 构建技能 Prompt，并注入技能参数与执行硬约束  
+   - 结合技能声明做工具过滤：  
+     `agent.available_tools ∩ (required_tools ∪ optional_tools)`  
+     再减去敏感工具（如 `file_write`）和用户已拒绝工具
+   - 若 `required_tools` 缺失则快速失败，避免无效循环
+
+3. **最终答案合成阶段**  
+   - 合成阶段禁用工具调用（`InferenceConfig` 不注入 tools），避免总结阶段再次触发工具循环
+
+4. **独立技能 API 路径一致性**（`/api/v1/skills/{skill_id}/execute`）  
+   - 直调技能入口同样按 `required_tools/optional_tools` 过滤工具定义  
+   - 缺失必需工具会快速返回错误，防止“带病运行”  
+   - 敏感工具（如 `file_write`）默认不允许在技能内部隐式触发
+
+### 6.6 技能动态加载时序（主路径）
+
+```mermaid
+flowchart TD
+    A[用户任务] --> B[SkillManager.discover_skills]
+    B --> C[list_skill_metadata]
+    C --> D[_route_skills_by_metadata Top-K]
+    D --> E[PlanningEngine 仅看到候选技能元信息]
+    E --> F[ExecutionEngine _execute_skill]
+    F --> G[load_skill(skill_id) 懒加载完整技能]
+    G --> H[按技能工具白名单过滤可用工具]
+    H --> I[LLM 执行技能指令]
+    I --> J[返回技能结果/进入后续工具步骤]
 ```
 
 ---
@@ -1560,12 +1576,13 @@ app/
 │   ├── __init__.py
 │   ├── base.py         # 技能基类
 │   ├── manager.py      # 技能管理器
-│   └── library/        # 技能库
-│       ├── __init__.py
-│       ├── data_analysis.py
-│       ├── code_generation.py
-│       ├── text_writing.py
-│       └── translation.py
+│   ├── skills.py       # 兼容层/辅助加载器
+│   ├── skills_md/      # 主技能仓库（动态技能包）
+│   │   └── <skill_name>/
+│   │       ├── SKILL.md
+│   │       ├── scripts/
+│   │       └── resources/
+│   └── library/        # 历史兼容目录（可逐步迁移）
 │
 ├── workflows/
 │   ├── __init__.py
@@ -1635,10 +1652,13 @@ app/
   ↓
 [规划节点] 规划引擎：创建执行计划
   │  工具列表按 available_tools 白名单过滤后传给 LLM
+  │  技能先经过 metadata 路由筛选（Top-K）再进入规划上下文
   │  若有 error_context，携带历史错误与纠正建议一起生成计划
   ↓
 [执行节点] 执行引擎：按计划逐步执行
-  │  工具/技能步骤经 Tool Hub 执行；委派步骤经 SpawnAgentTool 注入上下文后执行
+  │  工具步骤经 Tool Hub 执行
+  │  技能步骤经 SkillManager 懒加载后调用 LLM 执行（并按技能声明过滤工具白名单）
+  │  委派步骤经 SpawnAgentTool 注入上下文后执行
   │
   │  [步骤开始] 触发 on_step_start 回调
   │       ↓ 推送 tool_start / delegate_start / skill_start SSE 事件
@@ -1698,7 +1718,7 @@ SpawnAgentTool 调用 ChildAgentManager.delegate_task → 子 Agent 执行任务
 
 ```toml
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.13"
 
 # Web 框架
 fastapi = "^0.109.0"
@@ -1750,3 +1770,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.3）**：用户确认流程（敏感工具执行前需用户确认，`/agents/confirm`、`user_rejected_tools`）；子 Agent 流式与确认透传（`sub_agent_start`/`sub_agent_end`、`is_sub_agent`、合成答案 `answer`）；跨迭代规划上下文（`planning_context`、`reflection_history`）；迭代防循环熔断（无可执行动作、重复反思时结束）。
 
 > ✅ **已完成（v1.4）**：子 Agent 委派统一路径（`action: "delegate"` 与 `action: "tool", tool_name: "spawn_agent"` 均优先经 **SpawnAgentTool** 执行，并对其注入 `stream_callback`/`pending_confirmations`/`user_rejected_tools`）；执行引擎对支持 `update_context` 的工具做运行时上下文注入；子 Agent 执行结果统一使用 `ExecutionResult.to_dict()` 的 `success`（布尔）与 `error` 字段，`execute_with_callback` 据此返回，避免误报“Unknown error”；前端轨迹对事件重排序，使「工具/技能完成」在「委派子 Agent」之前展示，符合“先执行本层再委派”的阅读顺序。
+
+> ✅ **已完成（v1.5）**：技能系统完成动态加载重构（`skills_md/*/SKILL.md` 文件系统发现、`SkillMetadata` 路由、执行阶段懒加载）；规划阶段仅注入候选技能元信息，执行阶段按 `required_tools/optional_tools` 进行工具白名单收敛并屏蔽敏感工具隐式调用；独立技能执行接口（`/api/v1/skills/{skill_id}/execute`）与主执行链路在工具过滤与缺失必需工具快速失败策略上保持一致。

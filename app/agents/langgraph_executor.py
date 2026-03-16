@@ -283,7 +283,7 @@ class LangGraphAgentExecutor:
             scored.append((score, skill, reasons))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        # 只保留正分技能，避免无关技能污染规划
+        # 先保留正分技能；若全为 0 分，说明任务语义与技能库无明显相关
         positives = [item for item in scored if item[0] > 0]
         if not positives:
             logger.info(
@@ -291,11 +291,35 @@ class LangGraphAgentExecutor:
             )
             return all_skills
 
-        selected = [item[1] for item in positives[: max(1, min(top_k, len(positives)))]]
+        # 阈值过滤策略（绝对阈值 + 相对阈值）：
+        # - 绝对阈值：防止低分技能“搭车”进入候选
+        # - 相对阈值：只保留与 Top1 相关性接近的技能，减少跨域误选（如天气任务误带 github）
+        top_score = positives[0][0]
+        absolute_threshold = 3.0
+        relative_ratio = 0.55
+        dynamic_threshold = max(absolute_threshold, top_score * relative_ratio)
+        filtered = [item for item in positives if item[0] >= dynamic_threshold]
+
+        # 防御性回退：若阈值过严导致空集，至少保留 Top1，避免出现“无技能可用”
+        if not filtered:
+            filtered = positives[:1]
+            logger.info(
+                f"{Fore.YELLOW}[技能路由] 阈值过滤后为空，已回退保留 Top1: "
+                f"{filtered[0][1].skill_id}{Style.RESET_ALL}"
+            )
+
+        selected = [item[1] for item in filtered[: max(1, min(top_k, len(filtered)))]]
         logger.info(
             f"{Fore.BLUE}[技能路由] 动态筛选完成 | task='{task[:50]}' | "
             f"候选={len(all_skills)} -> 入选={len(selected)} | "
+            f"top_score={top_score:.2f} | 阈值={dynamic_threshold:.2f} "
+            f"(绝对={absolute_threshold:.2f}, 相对={relative_ratio:.2f}) | "
+            f"正分={len(positives)} -> 过滤后={len(filtered)} | "
             f"skills={[s.skill_id for s in selected]}{Style.RESET_ALL}"
+        )
+        logger.debug(
+            f"{Fore.BLUE}[技能路由] Top评分明细: "
+            f"{[(round(s, 2), sk.skill_id, rs[:2]) for s, sk, rs in scored[:5]]}{Style.RESET_ALL}"
         )
         return selected
 

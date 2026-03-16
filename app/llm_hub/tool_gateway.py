@@ -268,13 +268,25 @@ class ToolCallingGateway:
         logger.info(
             f"{Fore.BLUE}检测到 {len(tool_calls)} 个工具调用请求{Style.RESET_ALL}"
         )
-        
+
+        # 批次统计（本次 execute_tool_calls 调用）
+        batch_total = 0
+        batch_success = 0
+        batch_failed = 0
+
         # 步骤 2: 执行每个工具调用
         results = []
         for tool_call in tool_calls:
             result = await self._execute_single_call(tool_call, context)
             results.append(result)
-            
+
+            # 更新本次批次统计
+            batch_total += 1
+            if result.status == ToolCallStatus.SUCCESS:
+                batch_success += 1
+            else:
+                batch_failed += 1
+
             # 更新统计
             self._stats["total_calls"] += 1
             if result.status == ToolCallStatus.SUCCESS:
@@ -288,15 +300,24 @@ class ToolCallingGateway:
         # 只保留最近 100 条记录
         if len(self._call_history) > 100:
             self._call_history = self._call_history[-100:]
-        
+
         # 打印统计
-        success_rate = self._stats["successful_calls"] / max(1, self._stats["total_calls"])
+        # NOTE:
+        # - “本次”统计用于描述当前这一次 execute_tool_calls 的执行结果
+        # - “累计”统计用于全局观测网关生命周期内的总调用情况
+        # 这样可避免日志里出现“检测到 1 个请求，但总数=10”的理解歧义。
+        batch_success_rate = batch_success / max(1, batch_total)
+        cumulative_success_rate = self._stats["successful_calls"] / max(1, self._stats["total_calls"])
         logger.info(
             f"{Fore.GREEN}工具调用完成: "
-            f"总数={self._stats['total_calls']}, "
-            f"成功={self._stats['successful_calls']}, "
-            f"失败={self._stats['failed_calls']}, "
-            f"成功率={success_rate:.1%}{Style.RESET_ALL}"
+            f"本次总数={batch_total}, "
+            f"本次成功={batch_success}, "
+            f"本次失败={batch_failed}, "
+            f"本次成功率={batch_success_rate:.1%} | "
+            f"累计总数={self._stats['total_calls']}, "
+            f"累计成功={self._stats['successful_calls']}, "
+            f"累计失败={self._stats['failed_calls']}, "
+            f"累计成功率={cumulative_success_rate:.1%}{Style.RESET_ALL}"
         )
         
         return results

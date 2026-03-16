@@ -1,0 +1,32 @@
+{
+  "log_path": {
+    "label": "日志文件路径",
+    "description": "API 日志文件路径（相对路径或绝对路径）。",
+    "examples": [
+      "/var/log/api/access.log",
+      "./logs/api.log",
+      "web/src/api/api-log.txt"
+    ],
+    "required": true
+  },
+  "date_range": {
+    "label": "日期范围",
+    "description": "统计日期范围，支持 today / all / 单日 / 区间。",
+    "examples": [
+      "today",
+      "all",
+      "2026-03-16",
+      "2026-03-01 to 2026-03-16"
+    ],
+    "required": false
+  },
+  "output_format": {
+    "label": "输出格式",
+    "description": "日报输出格式：text（三段式）或 json（结构化）。",
+    "examples": [
+      "text",
+      "json"
+    ],
+    "required": false
+  }
+}

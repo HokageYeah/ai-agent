@@ -61,7 +61,12 @@ _DEFAULT_DENY_PATTERNS: List[str] = [
     r"\brm\s+-[rf]{1,2}\b",           # rm -r / rm -rf / rm -fr（递归删除）
     r"\bdel\s+/[fq]\b",              # Windows del /f / del /q（强制删除）
     r"\brmdir\s+/s\b",               # Windows rmdir /s（递归删除目录）
-    r"\b(format|mkfs|diskpart)\b",   # 磁盘格式化类命令
+    # NOTE:
+    # - 旧规则 "\b(format|mkfs|diskpart)\b" 会误伤 URL 查询串（如 ?format=3）
+    # - 这里改为“命令语义级”匹配：仅拦截真正的磁盘格式化命令，避免拦截天气等普通查询
+    r"\bmkfs(?:\.[a-z0-9_+-]+)?\b",  # Linux mkfs / mkfs.ext4 等
+    r"\bdiskpart\b",                 # Windows 磁盘分区工具
+    r"(^|[\s;&|])format(?:\.com)?\s+[a-z]:",  # Windows format C:
     r"\bdd\s+if=",                   # dd 命令写入磁盘
     r">\s*/dev/sd",                  # 重定向写入磁盘设备
     r"\b(shutdown|reboot|poweroff|halt)\b",  # 系统电源操作

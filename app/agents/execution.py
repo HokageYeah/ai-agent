@@ -644,18 +644,17 @@ class ExecutionEngine:
 
         try:
             from app.llm_hub.inference import InferenceConfig
-            
-            # 获取工具定义（用于 LLM function calling）
-            tools = []
-            if self.tool_hub:
-                tools = self.tool_hub.get_schemas()
-                logger.debug(f"{Fore.CYAN}[执行引擎] 答案合成 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+            # 答案合成阶段只基于已有执行结果组织自然语言，不再开放额外工具调用，
+            # 避免模型在“总结阶段”继续发起无关工具循环，导致耗时和不稳定性上升。
+            logger.debug(
+                f"{Fore.CYAN}[执行引擎] 答案合成阶段禁用工具调用，"
+                f"仅根据已收集结果生成最终回答{Style.RESET_ALL}"
+            )
             
             config = InferenceConfig(
                 model=agent.agent_config.execution_model,
                 stream=False,
                 temperature=0.3,   # 答案合成用低温度，减少幻觉
-                tools=tools
             )
             response = await self.llm_hub.infer(
                 messages=[{"role": "user", "content": synthesis_prompt}],
@@ -1649,8 +1648,38 @@ class ExecutionEngine:
             # 敏感工具列表：禁止在技能内部隐式调用，必须由外层 Agent 在计划中显式调用以触发二次确认
             SENSITIVE_TOOLS = {"file_write"}
             
-            # 过滤：只允许被授权的工具，排除敏感工具，并且排除用户已拒绝的工具
+            # 过滤：只允许被授权的工具，排除敏感工具、用户已拒绝工具，
+            # 并优先按技能声明(required_tools/optional_tools)收紧工具白名单。
             user_rejected = context.get("user_rejected_tools", []) if context else []
+            user_rejected_set = {
+                str(x).strip() for x in user_rejected
+                if isinstance(x, str) and str(x).strip()
+            }
+            agent_allowed_tools = (
+                {
+                    str(x).strip() for x in (agent.available_tools or [])
+                    if isinstance(x, str) and str(x).strip()
+                }
+                if agent and agent.available_tools
+                else set()
+            )
+            skill_required_tools = {
+                str(x).strip() for x in (skill.required_tools or [])
+                if isinstance(x, str) and str(x).strip()
+            }
+            skill_optional_tools = {
+                str(x).strip() for x in (skill.optional_tools or [])
+                if isinstance(x, str) and str(x).strip()
+            }
+            declared_skill_tools = skill_required_tools | skill_optional_tools
+            if declared_skill_tools:
+                logger.info(
+                    f"{Fore.CYAN}[执行引擎] 技能 {skill_id} 声明工具白名单: "
+                    f"required={sorted(skill_required_tools)} | "
+                    f"optional={sorted(skill_optional_tools)}{Style.RESET_ALL}"
+                )
+
+            registered_tool_names = set()
             for t_schema in all_tools_schemas:
                 t_name = self._extract_tool_name_from_schema(t_schema)
                 if not t_name:
@@ -1658,21 +1687,58 @@ class ExecutionEngine:
                         f"{Fore.YELLOW}[执行引擎] 跳过无法识别名称的工具 Schema: {t_schema}{Style.RESET_ALL}"
                     )
                     continue
-                if agent and agent.available_tools and t_name not in agent.available_tools:
+                registered_tool_names.add(t_name)
+                if agent_allowed_tools and t_name not in agent_allowed_tools:
                     continue
                 if t_name in SENSITIVE_TOOLS:
                     continue
-                if t_name in user_rejected:
+                if t_name in user_rejected_set:
+                    continue
+                if declared_skill_tools and t_name not in declared_skill_tools:
                     continue
                 tools.append(t_schema)
             
             tool_names_for_skill = [
-                self._extract_tool_name_from_schema(s) for s in tools
+                n for n in (self._extract_tool_name_from_schema(s) for s in tools) if n
             ]
+            tool_names_for_skill_set = set(tool_names_for_skill)
+            missing_required_tools = sorted(
+                x for x in skill_required_tools if x not in tool_names_for_skill_set
+            )
+            if missing_required_tools:
+                missing_detail = (
+                    "技能声明的 required_tools 未在当前运行时工具集中满足: "
+                    f"{missing_required_tools}。"
+                    f"可用工具={sorted(registered_tool_names)}，"
+                    f"Agent授权工具={sorted(agent_allowed_tools) if agent_allowed_tools else 'ALL'}。"
+                    "请检查 SKILL.md 的 required_tools 是否与工具注册名一致。"
+                )
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 技能 {skill_id} 缺失必需工具: "
+                    f"{missing_required_tools}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": missing_detail,
+                    "action": "skill",
+                    "skill_id": skill_id
+                }
+
             logger.debug(
                 f"{Fore.CYAN}[执行引擎] 技能执行 - 过滤后提供 {len(tools)} 个工具定义"
-                f"（排除拒绝工具: {user_rejected}，排除敏感工具: {SENSITIVE_TOOLS}）"
+                f"（排除拒绝工具: {sorted(user_rejected_set)}，排除敏感工具: {SENSITIVE_TOOLS}）"
                 f" | tools={tool_names_for_skill}{Style.RESET_ALL}"
+            )
+
+            # 为技能执行追加可解释的工具预算，降低模型在同一任务上的重复循环概率。
+            # 预算值作为“软约束”写入 prompt，不会阻断正常任务。
+            tool_budget = max(2, min(6, len(tool_names_for_skill) + 1))
+            prompt += (
+                "\n\n【工具调用预算】\n"
+                f"- 本次可用工具: {tool_names_for_skill or ['（无）']}\n"
+                f"- 建议工具调用上限: {tool_budget} 次\n"
+                "- 每次调用前先说明目标，禁止为同一统计目标重复调用多条等价命令。\n"
+                "- 工具结果足够时必须停止调用并直接给出结论。"
             )
             
             config = InferenceConfig(

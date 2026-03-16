@@ -1,0 +1,80 @@
+{
+  "brief": {
+    "label": "技能需求描述",
+    "description": "用户对新技能功能与目标的自然语言描述。",
+    "examples": [
+      "创建一个用于查询仓库 CI 状态并输出日报的技能",
+      "创建一个将会议纪要自动整理为任务清单的技能"
+    ],
+    "required": true
+  },
+  "skill_name": {
+    "label": "技能名称",
+    "description": "可选，技能唯一 ID。建议使用小写英文与连字符，如 order-reporter。",
+    "examples": [
+      "order-reporter",
+      "meeting-minutes-tasker"
+    ],
+    "required": false
+  },
+  "target_dir": {
+    "label": "技能根目录",
+    "description": "技能生成目录，默认 app/skills/skills_md。",
+    "examples": [
+      "app/skills/skills_md"
+    ],
+    "required": false
+  },
+  "required_tools": {
+    "label": "必需工具",
+    "description": "逗号分隔的工具名列表。",
+    "examples": [
+      "shell_exec,file_read",
+      "http_request,python_executor"
+    ],
+    "required": false
+  },
+  "optional_tools": {
+    "label": "可选工具",
+    "description": "逗号分隔的工具名列表。",
+    "examples": [
+      "list_dir,file_edit"
+    ],
+    "required": false
+  },
+  "tags": {
+    "label": "技能标签",
+    "description": "逗号分隔的标签，用于路由语义辅助。",
+    "examples": [
+      "report,automation,ci"
+    ],
+    "required": false
+  },
+  "include_script_template": {
+    "label": "生成示例脚本",
+    "description": "yes/no，是否生成 scripts/example_task.py。",
+    "examples": [
+      "yes",
+      "no"
+    ],
+    "required": false
+  },
+  "include_param_schema": {
+    "label": "生成参数定义",
+    "description": "yes/no，是否生成 resources/param_schemas.json。",
+    "examples": [
+      "yes",
+      "no"
+    ],
+    "required": false
+  },
+  "overwrite": {
+    "label": "是否覆盖",
+    "description": "yes/no，同名技能已存在时是否覆盖。",
+    "examples": [
+      "no",
+      "yes"
+    ],
+    "required": false
+  }
+}

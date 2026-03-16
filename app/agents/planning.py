@@ -402,10 +402,49 @@ class PlanningEngine:
         return "\n".join([f"- {tool.name}: {tool.schema.description}" for tool in tools])
 
     def _format_skills(self, skills: List[Skill]) -> str:
-        """格式化技能列表。"""
+        """
+        格式化技能列表。
+
+        设计说明：
+        - 规划阶段是模型“选技能”的关键入口，若只给描述而不暴露输入参数名，
+          模型容易把参数名写错（例如把 weather 的 location 写成 city）。
+        - 这里显式注入每个技能的输入参数与简短说明，降低规划参数漂移概率。
+        """
         if not skills:
             return "无可用技能"
-        return "\n".join([f"- {skill.skill_id} ({skill.name}): {skill.description}" for skill in skills])
+
+        lines: List[str] = []
+        for skill in skills:
+            base = f"- {skill.skill_id} ({skill.name}): {skill.description}"
+
+            # 轻量化参数展示：优先使用 param_schemas（由 metadata 解析而来）
+            param_schemas = getattr(skill, "param_schemas", {}) or {}
+            if param_schemas:
+                param_parts: List[str] = []
+                for param_name, schema in param_schemas.items():
+                    desc = ""
+                    try:
+                        desc = (getattr(schema, "description", "") or "").strip()
+                    except Exception:
+                        desc = ""
+
+                    # 说明为空时仅展示参数名，避免噪音
+                    if desc:
+                        param_parts.append(f"{param_name}({desc})")
+                    else:
+                        param_parts.append(str(param_name))
+
+                # 控制长度，避免规划 Prompt 过长
+                preview = ", ".join(param_parts[:8])
+                if len(param_parts) > 8:
+                    preview += ", ..."
+                base += f" | 输入参数: {preview}"
+            else:
+                base += " | 输入参数: 无"
+
+            lines.append(base)
+
+        return "\n".join(lines)
 
     def _parse_plan(self, llm_output: str) -> Plan:
         """解析 LLM 返回的计划。"""

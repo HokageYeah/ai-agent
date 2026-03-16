@@ -1,0 +1,46 @@
+{
+  "topic": {
+    "label": "探针主题",
+    "description": "本次验证任务的主题描述，建议包含“动态加载/懒加载/脚本调用”等关键词。",
+    "examples": [
+      "验证天气任务是否只路由 weather",
+      "验证技能懒加载后是否会执行本地脚本"
+    ],
+    "required": true
+  },
+  "run_script": {
+    "label": "是否执行脚本",
+    "description": "是否实际执行探针脚本，建议使用 yes/no。",
+    "examples": [
+      "yes",
+      "no"
+    ],
+    "required": true
+  },
+  "template_name": {
+    "label": "模板文件名",
+    "description": "resources 目录中的模板文件名，不含路径时默认在 resources/ 中查找。",
+    "examples": [
+      "report_template.md"
+    ],
+    "required": false
+  },
+  "save_path": {
+    "label": "报告保存路径",
+    "description": "脚本输出报告保存路径，支持相对路径和绝对路径。",
+    "examples": [
+      "dynamic_probe_report.md",
+      "tmp/dynamic_probe_report.md"
+    ],
+    "required": false
+  },
+  "notes": {
+    "label": "附加说明",
+    "description": "写入报告末尾的附加说明。",
+    "examples": [
+      "本次主要验证资源加载与脚本调用",
+      "期望日志出现技能懒加载成功"
+    ],
+    "required": false
+  }
+}

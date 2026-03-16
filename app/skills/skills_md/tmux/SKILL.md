@@ -24,7 +24,7 @@ description: 通过 tmux 会话控制交互式命令行，支持发送按键与�
 
 推荐初始化流程：
 ```bash
-SOCKET_DIR="${AI_AGENT_TMUX_SOCKET_DIR:-${NANOBOT_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/ai-agent-tmux-sockets}}"
+SOCKET_DIR="${AI_AGENT_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/ai-agent-tmux-sockets}"
 mkdir -p "$SOCKET_DIR"
 SOCKET="$SOCKET_DIR/ai-agent.sock"
 SESSION="ai-agent-session"

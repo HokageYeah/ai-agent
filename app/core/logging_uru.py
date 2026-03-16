@@ -17,6 +17,18 @@ class LoggingSettings(BaseModel):
 
 logging_settings = LoggingSettings()
 
+# NOTE: 第三方 HTTP/ASGI 库在 DEBUG 下会输出大量底层传输细节（如 callHandlers、httpcore trace），
+#       会淹没业务日志且放大 429 场景下的噪音。
+#       这里统一约束这些库最低为 WARNING，保留我们 app.* 的 DEBUG 可观测性。
+_NOISY_THIRD_PARTY_LOGGERS: tuple[str, ...] = (
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+    "httpx",
+    "httpcore",
+    "openai",
+)
+
 
 def setup_logging() -> None:
     """设置日志配置"""
@@ -75,22 +87,20 @@ def setup_logging() -> None:
         diagnose=True,
     )
     
-    # 设置第三方库的日志级别
-    # 这种方式不会覆盖之前的处理器，只是为特定模块设置日志级别
-    for module in ["uvicorn", "uvicorn.access", "uvicorn.error", "httpx", "httpcore"]:
-        try:
-            logger.level(module, logging.WARNING)  # 使用 logging.WARNING 整数常量而不是字符串
-        except TypeError:
-            # 级别已存在，跳过
-            pass
-    
-    # 日志初始化完成信息
-    logger.info("日志系统初始化完成 - 使用 loguru")
-    
     # 拦截标准库的日志
     # 这样通过 logging 模块记录的日志也会被 loguru 处理
     class InterceptHandler(logging.Handler):
         def emit(self, record):
+            # 第三方噪音降噪：丢弃低于 WARNING 的底层传输日志
+            if (
+                record.levelno < logging.WARNING
+                and any(
+                    record.name == noisy or record.name.startswith(f"{noisy}.")
+                    for noisy in _NOISY_THIRD_PARTY_LOGGERS
+                )
+            ):
+                return
+
             # 获取对应的 loguru 级别
             try:
                 level = logger.level(record.levelname).name
@@ -113,8 +123,19 @@ def setup_logging() -> None:
     
     # 替换所有已存在的日志处理器
     for name in logging.root.manager.loggerDict.keys():
-        logging.getLogger(name).handlers = []
-        logging.getLogger(name).propagate = True
+        current_logger = logging.getLogger(name)
+        current_logger.handlers = []
+        current_logger.propagate = True
+        # NOTE: 仅抑制第三方库的低级别噪音，不影响 app.* 自身 DEBUG 日志。
+        if any(name == noisy or name.startswith(f"{noisy}.") for noisy in _NOISY_THIRD_PARTY_LOGGERS):
+            current_logger.setLevel(logging.WARNING)
+
+    # 再次确保关键第三方父 logger 已被抬升到 WARNING。
+    for module in _NOISY_THIRD_PARTY_LOGGERS:
+        logging.getLogger(module).setLevel(logging.WARNING)
+    
+    # 日志初始化完成信息
+    logger.info("日志系统初始化完成 - 使用 loguru（第三方HTTP日志已降噪）")
 
 
 # 提供与标准日志库兼容的接口

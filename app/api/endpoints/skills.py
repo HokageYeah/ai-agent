@@ -158,16 +158,70 @@ async def execute_skill(
         logger.info(f"{Fore.CYAN}技能执行 - 已创建 InferenceEngine (带工具网关){Style.RESET_ALL}")
         
         # 获取工具定义列表（用于 LLM function calling）
-        tools = tool_hub.get_schemas()
-        logger.info(f"{Fore.CYAN}技能执行 - 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+        all_tools = tool_hub.get_schemas()
+        logger.info(f"{Fore.CYAN}技能执行 - 已注册 {len(all_tools)} 个工具定义{Style.RESET_ALL}")
 
-        # logger.info(f"{Fore.CYAN}技能执行 - 工具定义: {tools}{Style.RESET_ALL}")
+        # 与 ExecutionEngine 保持一致：优先按技能声明工具白名单过滤，降低无关工具循环
+        skill_required_tools = {
+            str(x).strip()
+            for x in (skill.required_tools or [])
+            if isinstance(x, str) and str(x).strip()
+        }
+        skill_optional_tools = {
+            str(x).strip()
+            for x in (skill.optional_tools or [])
+            if isinstance(x, str) and str(x).strip()
+        }
+        declared_skill_tools = skill_required_tools | skill_optional_tools
+
+        # 敏感工具不允许在技能内部隐式调用（需走 Agent 主链路确认机制）
+        sensitive_tools = {"file_write"}
+        filtered_tools = []
+        available_tool_names = set()
+        for schema in all_tools:
+            tool_name = (
+                schema.get("function", {}).get("name")
+                if isinstance(schema, dict)
+                else None
+            )
+            if not tool_name:
+                continue
+            available_tool_names.add(tool_name)
+            if tool_name in sensitive_tools:
+                continue
+            if declared_skill_tools and tool_name not in declared_skill_tools:
+                continue
+            filtered_tools.append(schema)
+
+        selected_tool_names = {
+            s.get("function", {}).get("name")
+            for s in filtered_tools
+            if isinstance(s, dict)
+        }
+        missing_required = sorted(
+            x for x in skill_required_tools if x not in selected_tool_names
+        )
+        if missing_required:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"技能 '{skill_id}' 缺失必需工具: {missing_required}。"
+                    f" 当前可用工具: {sorted(available_tool_names)}"
+                )
+            )
+
+        logger.info(
+            f"{Fore.CYAN}技能执行 - 工具过滤完成 | skill={skill_id} | "
+            f"required={sorted(skill_required_tools)} | optional={sorted(skill_optional_tools)} | "
+            f"selected={[s.get('function', {}).get('name') for s in filtered_tools]}{Style.RESET_ALL}"
+        )
+
         # 执行推理
         from app.llm_hub.inference import InferenceConfig
         config = InferenceConfig(**request.config) if request.config else InferenceConfig()
         
         # 将工具定义传入配置
-        config.tools = tools
+        config.tools = filtered_tools
         
         # 通过 SkillManager 运行时执行入口调用技能（动态加载 + Prompt 组装）
         user_request = request.parameters.get(

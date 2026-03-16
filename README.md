@@ -47,8 +47,9 @@
 │   ├── scripts/          # 用于不同环境下快捷切换 DB 与构建数据表的运维脚本
 │   ├── services/         # 面向外部的业务总线层接口服务
 │   ├── skills/           # 通过大语言模型做二次包装的高级技能库统筹 
-│   │   ├── library/     # 存放执行技能具体的 Python 适配驱动逻辑
-│   │   └── skills_md/   # 具有大模型特色的由 Prompt 定义的纯文档型技能包 (Markdown格式)
+│   │   ├── manager.py   # 动态技能管理器（扫描/路由元信息/懒加载）
+│   │   ├── skills_md/   # 技能包主目录（每个技能一个文件夹，含 SKILL.md/scripts/resources）
+│   │   └── library/     # 历史兼容目录（逐步迁移中）
 │   ├── tools/            # Python 硬编码底层能力库封装框架
 │   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
 │   ├── utils/            # 通用工具与辅助函数库（含提示词管理与路径解析）
@@ -103,7 +104,7 @@ graph TD
     %% 技能库与工具库
     subgraph CapabilityLayer ["智能载荷库 (app/tools, app/skills)"]
         ToolHub["Tool Hub (查时间/计算器等确定性逻辑)"]
-        SkillManager["Skill Library (经过Prompt精调的重组装大模型任务)"]
+        SkillManager["Skill Manager (Metadata 路由 + 懒加载执行)"]
     end
     
     %% 核心基础设施
@@ -120,6 +121,18 @@ graph TD
     AgentEngine -->|生成/推理| InfraLayer
     CapabilityLayer -->|依赖解析| InfraLayer
 ```
+
+## 🧠 技能系统重构（动态加载模式）
+
+当前技能系统已完成从“代码硬注册”向“文件系统动态加载”的升级，核心链路如下：
+
+1. **技能发现**：`SkillManager.discover_skills()` 扫描 `app/skills/skills_md/*/SKILL.md`，构建轻量元数据索引。  
+2. **技能路由**：`langgraph_executor._route_skills_by_metadata()` 根据任务文本、`when_to_use`、`tags`、`inputs` 对技能打分，只保留 Top-K 候选。  
+3. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文。  
+4. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
+5. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
+
+> 说明：详细重构方案见 [docs/skills_reload.md](docs/skills_reload.md)。
 
 
 ## 🛡️ 错误感知与自我纠错机制
@@ -272,7 +285,7 @@ sequenceDiagram
     ChatSvc->>Engine: 开始执行此次大任务目标!
     
     Note over Engine, LLM: 1. 任务规划阶段 (Planning Engine)
-    Engine->>LLM: 提供目前平台拥有的全部工具清单，要求拆解目标
+    Engine->>LLM: 提供当前可用工具清单 + 候选技能元信息，要求拆解目标
     LLM-->>Engine: 拆解为 [步骤1: 使用计算器Tool], [步骤2: 使用作诗Skill]
     
     Note over Engine, Tools: 2. 执行与流转阶段 (Execution Engine)
@@ -369,34 +382,35 @@ sequenceDiagram
 #### 三、 Skill 技能库接口
 有时不需要大模型复杂的 Planning（规划步骤），外部系统就是有一个明确的 “点击翻译此文” 按钮。可以通过此通道一键强制调用技能。
 
-7. **强制孤立技能调用**
+9. **强制孤立技能调用**
    - **请求端点**: `POST /api/v1/skills/{skill_id}/execute`
-   - **作用介绍**: 明确跳过思考层，直接强制使用例如翻译、总结等独立技能，极大缩短响应等待时间。
+   - **作用介绍**: 明确跳过 Agent 规划循环，直接触发指定技能的运行时执行（适合固定按钮型场景）。
+   - **执行约束**: 该入口同样会按技能 `required_tools/optional_tools` 过滤工具定义，并屏蔽敏感工具（如 `file_write`）的隐式调用。
    - **请求体示例** (以调用 `translation` 技能为例):
      ```json
      {
-       "params": {
+       "parameters": {
           "text": "Hello world",
           "target_language": "中文"
        }
      }
      ```
 
-8. **获取所有可用技能列表**
+10. **获取所有可用技能列表**
    - **请求端点**: `GET /api/v1/skills`
-   - **作用介绍**: 返回所有的组装技能定义模板，可用于丰富前端页面旁边的快捷工具箱栏目标签。
+   - **作用介绍**: 返回动态扫描后的可用技能清单（含参数元数据），可用于前端技能面板与参数填充。
 
 #### 四、 Tool 工具箱层接口
 底层无脑工具（例如仅包含纯 Python 代码的计算器、获取系统时间）。
 
-9. **获取所有硬编码原子工具列表**
+11. **获取所有硬编码原子工具列表**
    - **请求端点**: `GET /api/v1/tools`
    - **作用介绍**: 通常作为展示用途，看 LLM 具备哪些最底层的可调用原子长臂。
 
 #### 五、 Workflow 工作流接口
 具有固定模式、拓扑跳转和确定性步骤判断的工作流。
 
-10. **执行定式业务流**
+12. **执行定式业务流**
     - **请求端点**: `POST /api/v1/workflows/{workflow_id}/execute`
     - **作用介绍**: 根据已定义的蓝图模板开启一次执行。
     - **请求体示例**:
@@ -408,15 +422,15 @@ sequenceDiagram
       }
       ```
 
-11. **获取所有的工作流拓扑列表**
+13. **获取所有的工作流拓扑列表**
     - **请求端点**: `GET /api/v1/workflows`
 
 #### 六、 微信公众号爬虫接口 (历史扩展遗留与辅助)
 兼容旧版的文章结构与搜狗搜索功能能力。
 
-12. **搜索公众号文章**: `GET /api/v1/wx/search?query=关键词`
-13. **提交处理文章列表**: `POST /api/v1/wx/articles`
-14. **获取单篇文章详情**: `POST /api/v1/wx/article/detail`
+14. **搜索公众号文章**: `GET /api/v1/wx/search?query=关键词`
+15. **提交处理文章列表**: `POST /api/v1/wx/articles`
+16. **获取单篇文章详情**: `POST /api/v1/wx/article/detail`
 
 ## 🖥️ 前端 Web 管理界面
 
