@@ -15,6 +15,7 @@
 创建时间: 2026-02-12
 """
 
+import ast
 import json
 import asyncio
 from typing import Dict, List, Any, Optional, Callable
@@ -343,10 +344,14 @@ class ToolCallingGateway:
             openai_calls = message.get("tool_calls", [])
             
             for call in openai_calls:
+                tool_name = call.get("function", {}).get("name", "")
                 tool_call = ToolCall(
                     call_id=call.get("id", ""),
-                    tool_name=call.get("function", {}).get("name", ""),
-                    arguments=self._parse_arguments(call.get("function", {}).get("arguments", "{}")),
+                    tool_name=tool_name,
+                    arguments=self._parse_arguments(
+                        call.get("function", {}).get("arguments", "{}"),
+                        tool_name=tool_name,
+                    ),
                     raw_data=call
                 )
                 tool_calls.append(tool_call)
@@ -365,23 +370,134 @@ class ToolCallingGateway:
         
         return tool_calls
     
-    def _parse_arguments(self, arguments_str: str) -> Dict[str, Any]:
+    def _parse_arguments(self, arguments_str: Any, tool_name: str = "") -> Dict[str, Any]:
         """
         解析参数字符串
         
         Args:
             arguments_str: JSON 格式的参数字符串
+            tool_name: 工具名称（用于做工具特定容错）
             
         Returns:
             解析后的参数字典
         """
+        if isinstance(arguments_str, dict):
+            return arguments_str
+        if arguments_str is None:
+            return {}
+
+        if not isinstance(arguments_str, str):
+            arguments_str = str(arguments_str)
+
+        raw_text = arguments_str.strip()
+        if not raw_text:
+            return {}
+
         try:
-            return json.loads(arguments_str)
-        except json.JSONDecodeError:
+            return json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            # 兜底1：尝试使用 Python 字面量解析（部分模型会返回单引号风格 dict）
+            try:
+                parsed = ast.literal_eval(raw_text)
+                if isinstance(parsed, dict):
+                    logger.warning(
+                        f"{Fore.YELLOW}工具参数 JSON 解析失败，已通过 literal_eval 容错恢复: "
+                        f"tool={tool_name or 'unknown'}{Style.RESET_ALL}"
+                    )
+                    return parsed
+            except Exception:
+                pass
+
+            # 兜底2：针对 python_executor 的 code 参数做宽松提取
+            if tool_name == "python_executor":
+                recovered = self._recover_python_executor_args(raw_text)
+                if recovered is not None:
+                    logger.warning(
+                        f"{Fore.YELLOW}python_executor 参数 JSON 解析失败，"
+                        f"已通过宽松提取恢复 code 字段{Style.RESET_ALL}"
+                    )
+                    return recovered
+
             logger.warning(
-                f"{Fore.YELLOW}无法解析工具参数: {arguments_str[:100]}...{Style.RESET_ALL}"
+                f"{Fore.YELLOW}无法解析工具参数: tool={tool_name or 'unknown'}, "
+                f"error={exc}, payload={raw_text[:120]}...{Style.RESET_ALL}"
             )
             return {}
+
+    def _recover_python_executor_args(self, raw_text: str) -> Optional[Dict[str, Any]]:
+        """
+        从格式损坏的参数文本中恢复 python_executor 的 code 字段。
+
+        典型场景：
+        - LLM 生成了超长 tool arguments，字符串转义不完整导致 json.loads 失败；
+        - 但 payload 里仍包含 `"code": "..."` 片段，提取后可继续执行。
+        """
+        if not raw_text:
+            return None
+
+        # 情况1：模型只回了纯代码字符串（没有包裹 JSON 对象）
+        if not raw_text.lstrip().startswith("{"):
+            return {"code": raw_text}
+
+        marker = '"code"'
+        marker_idx = raw_text.find(marker)
+        if marker_idx < 0:
+            return None
+
+        colon_idx = raw_text.find(":", marker_idx + len(marker))
+        if colon_idx < 0:
+            return None
+
+        i = colon_idx + 1
+        while i < len(raw_text) and raw_text[i].isspace():
+            i += 1
+        if i >= len(raw_text):
+            return None
+
+        quote = raw_text[i]
+        if quote not in ('"', "'"):
+            return None
+        i += 1
+
+        chars: List[str] = []
+        escaped = False
+        while i < len(raw_text):
+            ch = raw_text[i]
+            if escaped:
+                chars.append(ch)
+                escaped = False
+                i += 1
+                continue
+            if ch == "\\":
+                chars.append(ch)
+                escaped = True
+                i += 1
+                continue
+            if ch == quote:
+                break
+            chars.append(ch)
+            i += 1
+
+        if not chars:
+            return None
+
+        code_escaped = "".join(chars)
+        try:
+            code = json.loads(f'"{code_escaped}"')
+        except Exception:
+            # 非严格兜底：尽量保留可读内容，避免完全丢参
+            code = (
+                code_escaped
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace('\\"', '"')
+                .replace("\\\\", "\\")
+            )
+
+        code = str(code).strip()
+        if not code:
+            return None
+        return {"code": code}
     
     async def _execute_single_call(
         self,

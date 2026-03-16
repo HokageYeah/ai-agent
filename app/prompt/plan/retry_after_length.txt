@@ -1,0 +1,10 @@
+上一轮规划输出因内容过长被截断，导致 JSON 解析失败。
+
+请重新输出一个“可直接解析、可直接执行”的短 JSON 计划，并严格遵守：
+1. 只返回 JSON，不要输出 markdown、解释、代码块标记。
+2. 禁止在 `params` 或 `task` 中粘贴大段原始数据（如完整 rows）或超长代码。
+3. 若需要 `python_executor`，`code` 仅保留核心逻辑，优先使用占位符（如 {% raw %}`{{last_tool_result}}`{% endraw %}）引用上游结果，不要把上游数据硬编码进代码。
+4. `steps` 保持最小必要步骤，单个字符串字段尽量简短（建议不超过 1200 字符）。
+5. 必须满足既有 action 规范：只允许 `tool` / `skill` / `delegate` / `final_answer`。
+
+请现在直接返回 JSON 计划。

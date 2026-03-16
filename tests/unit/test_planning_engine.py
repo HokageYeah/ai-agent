@@ -35,6 +35,32 @@ class MockTool(Tool):
         return {"result": "mocked"}
 
 
+class _StubInferenceResult:
+    """规划引擎单测用的简化推理结果对象。"""
+
+    def __init__(self, content: str, finish_reason: str = "stop"):
+        self.content = content
+        self.finish_reason = finish_reason
+
+
+class _SequenceLLMHub:
+    """
+    依次返回预设结果的 LLM Hub Stub。
+
+    说明：
+    - 用于验证 PlanningEngine 在首轮输出被截断时，是否会触发自动重试。
+    """
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.call_count = 0
+
+    async def infer(self, messages, config):
+        idx = min(self.call_count, len(self._responses) - 1)
+        self.call_count += 1
+        return self._responses[idx]
+
+
 @pytest.mark.asyncio
 async def test_plan_step_creation():
     """测试创建计划步骤"""
@@ -262,3 +288,47 @@ async def test_planning_engine_parse_invalid_json():
     # 应该返回一个包含错误信息的计划
     assert len(plan.steps) >= 1
     assert plan.steps[0].action == "final_answer"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_retry_when_truncated_output():
+    """测试：首轮输出截断导致 JSON 失败时，规划引擎会自动重试。"""
+    first_truncated = _StubInferenceResult(
+        content='{"steps":[{"action":"tool","tool_name":"python_executor","params":{"code":"print("',
+        finish_reason="length",
+    )
+    second_valid = _StubInferenceResult(
+        content="""
+{
+  "steps": [
+    {"action": "tool", "tool_name": "python_executor", "params": {"code": "print('ok')"}},
+    {"action": "final_answer", "content": "根据执行结果回答用户"}
+  ],
+  "reasoning": "重试后输出简短可解析计划"
+}
+""",
+        finish_reason="stop",
+    )
+    llm_hub = _SequenceLLMHub([first_truncated, second_valid])
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请分析订单并给出洞察",
+        available_tools=[MockTool()],
+        available_skills=[],
+    )
+
+    assert llm_hub.call_count == 2
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[1].action == "final_answer"
+    assert plan.reasoning == "重试后输出简短可解析计划"

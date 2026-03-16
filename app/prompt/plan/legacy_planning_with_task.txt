@@ -45,5 +45,9 @@
      * 使用 {{last_tool_result}} 表示最后一个工具的执行结果
      * 例如：http_request 工具的 url 参数应该写成 "url": "{{first_search_result_url}}"{% endraw %}
 7. 【重要】文件写入限制：如任务包含"写入本地"、"保存文件"等需求，必须明确规划使用 `file_write` 工具。其他生成类工具（如 `text_writing`、`code_generation`）仅负责生成内容（返回字符串），绝对不会自动将内容保存到文件中。必须组合使用：先调用生成工具/技能 -> 再调用 `file_write` 工具实际写入。
+8. 【长度与可解析性约束】为避免 JSON 被截断：
+   - 禁止在 `params` / `task` 中粘贴大段原始数据（如整表 rows）或超长脚本。
+   - 若使用 `python_executor`，`code` 只保留核心逻辑，优先使用占位符（如 {% raw %}`{{last_tool_result}}`{% endraw %}）引用上游结果，禁止硬编码整段数据。
+   - 保持计划精简，单个字符串字段建议不超过 1200 字符。
 
 请只返回 JSON，不要包含其他文本。

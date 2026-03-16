@@ -56,18 +56,31 @@ class BaseFileTool(Tool):
         max_file_size: 最大文件大小（字节）
     """
     
-    def __init__(self, allowed_base_dirs: List[str] = None, 
-                 max_file_size: int = 10 * 1024 * 1024):  # 默认 10MB
+    def __init__(
+        self,
+        allowed_base_dirs: List[str] = None,
+        max_file_size: int = 10 * 1024 * 1024,  # 默认 10MB
+        allow_full_paths: Optional[bool] = None,
+    ):
         """
         初始化 BaseFileTool
         
         Args:
             allowed_base_dirs: 允许访问的根目录列表，默认当前工作目录 + 系统临时目录
             max_file_size: 最大文件大小（字节）
+            allow_full_paths: 是否允许访问整机任意绝对路径。
+                - None: 从环境变量 FILE_TOOL_ALLOW_FULL_PATHS 读取（默认 True）
+                - True: 不做目录白名单限制，仅做路径规范化
+                - False: 启用 allowed_base_dirs 白名单限制
         """
-        # 设置允许访问的根目录
+        if allow_full_paths is None:
+            raw_flag = str(os.getenv("FILE_TOOL_ALLOW_FULL_PATHS", "true")).strip().lower()
+            self.allow_full_paths = raw_flag in ("1", "true", "yes", "y", "on")
+        else:
+            self.allow_full_paths = bool(allow_full_paths)
+
+        # 设置允许访问的根目录（仅在白名单模式生效）
         if allowed_base_dirs is None:
-            # 默认允许当前工作目录和系统临时目录
             import tempfile
             self.allowed_base_dirs = [os.getcwd(), tempfile.gettempdir()]
         else:
@@ -75,9 +88,15 @@ class BaseFileTool(Tool):
         
         self.max_file_size = max_file_size
         
-        logger.debug(
-            f"{Fore.CYAN}[BaseFileTool] 初始化完成，允许目录: {self.allowed_base_dirs}{Style.RESET_ALL}"
-        )
+        if self.allow_full_paths:
+            logger.debug(
+                f"{Fore.CYAN}[BaseFileTool] 初始化完成，已启用全路径模式："
+                f"允许访问本机任意绝对路径{Style.RESET_ALL}"
+            )
+        else:
+            logger.debug(
+                f"{Fore.CYAN}[BaseFileTool] 初始化完成，允许目录: {self.allowed_base_dirs}{Style.RESET_ALL}"
+            )
     
     def _validate_path(self, path: str) -> tuple[bool, str, str]:
         """
@@ -105,6 +124,10 @@ class BaseFileTool(Tool):
             
             # 规范化路径（处理 .. 和 .）
             resolved_path = Path(absolute_path).resolve()
+
+            # 全路径模式：仅做路径规范化，不做目录白名单限制
+            if self.allow_full_paths:
+                return True, str(resolved_path), ""
             
             # 检查路径是否在允许的目录内
             is_allowed = False
@@ -195,16 +218,25 @@ class FileReadTool(BaseFileTool):
         description: 工具描述
     """
     
-    def __init__(self, allowed_base_dirs: List[str] = None,
-                 max_file_size: int = 10 * 1024 * 1024):
+    def __init__(
+        self,
+        allowed_base_dirs: List[str] = None,
+        max_file_size: int = 10 * 1024 * 1024,
+        allow_full_paths: Optional[bool] = None,
+    ):
         """
         初始化 FileReadTool
         
         Args:
             allowed_base_dirs: 允许访问的根目录列表
             max_file_size: 最大文件大小（字节）
+            allow_full_paths: 是否允许访问整机任意绝对路径
         """
-        super().__init__(allowed_base_dirs, max_file_size)
+        super().__init__(
+            allowed_base_dirs=allowed_base_dirs,
+            max_file_size=max_file_size,
+            allow_full_paths=allow_full_paths,
+        )
         self._name = "file_read"
         self._description = "安全读取文件内容。支持文本文件和二进制文件读取，自动检测编码，返回文件元信息。"
         logger.info("[FileReadTool] 文件读取工具初始化完成")
@@ -489,16 +521,25 @@ class FileWriteTool(BaseFileTool):
         description: 工具描述
     """
     
-    def __init__(self, allowed_base_dirs: List[str] = None,
-                 max_file_size: int = 10 * 1024 * 1024):
+    def __init__(
+        self,
+        allowed_base_dirs: List[str] = None,
+        max_file_size: int = 10 * 1024 * 1024,
+        allow_full_paths: Optional[bool] = None,
+    ):
         """
         初始化 FileWriteTool
         
         Args:
             allowed_base_dirs: 允许访问的根目录列表
             max_file_size: 最大文件大小（字节）
+            allow_full_paths: 是否允许访问整机任意绝对路径
         """
-        super().__init__(allowed_base_dirs, max_file_size)
+        super().__init__(
+            allowed_base_dirs=allowed_base_dirs,
+            max_file_size=max_file_size,
+            allow_full_paths=allow_full_paths,
+        )
         self._name = "file_write"
         self._description = "安全写入文件内容。支持文本和二进制写入，自动创建父目录，可选择备份现有文件。"
         logger.info("[FileWriteTool] 文件写入工具初始化完成")
@@ -870,9 +911,14 @@ class FileEditTool(BaseFileTool):
     def __init__(
         self,
         allowed_base_dirs: List[str] = None,
-        max_file_size: int = 10 * 1024 * 1024
+        max_file_size: int = 10 * 1024 * 1024,
+        allow_full_paths: Optional[bool] = None,
     ):
-        super().__init__(allowed_base_dirs, max_file_size)
+        super().__init__(
+            allowed_base_dirs=allowed_base_dirs,
+            max_file_size=max_file_size,
+            allow_full_paths=allow_full_paths,
+        )
         self._name        = "file_edit"
         self._description = (
             "精准编辑文件内容：将文件中的 old_text 替换为 new_text。"
@@ -1090,9 +1136,14 @@ class FileListDirTool(BaseFileTool):
     def __init__(
         self,
         allowed_base_dirs: List[str] = None,
-        max_file_size: int = 10 * 1024 * 1024
+        max_file_size: int = 10 * 1024 * 1024,
+        allow_full_paths: Optional[bool] = None,
     ):
-        super().__init__(allowed_base_dirs, max_file_size)
+        super().__init__(
+            allowed_base_dirs=allowed_base_dirs,
+            max_file_size=max_file_size,
+            allow_full_paths=allow_full_paths,
+        )
         self._name        = "list_dir"
         self._description = "列出目录内容，显示文件和子目录列表，包含大小和条目数信息。"
         logger.info(
