@@ -12089,3 +12089,7 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 2026-03-16 10:03:57 | DEBUG    | app.api.endpoints.skills:list_skills:67 - [36m[技能列表] translation 包含 2 个参数元数据[0m
 2026-03-16 10:03:57 | DEBUG    | app.api.endpoints.skills:list_skills:67 - [36m[技能列表] weather 包含 4 个参数元数据[0m
 2026-03-16 10:03:57 | INFO     | app.api.endpoints.skills:list_skills:82 - [32m成功列出 10 个技能，参数元数据已携带[0m
+2026-03-16 20:19:20 | INFO     | app.main:lifespan:98 - [33m[关闭] AI Agent 服务正在关闭...[0m
+2026-03-16 20:19:20 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接已关闭
+2026-03-16 20:19:20 | INFO     | app.main:lifespan:101 - [33m[关闭] MySQL 数据库连接已释放[0m
+2026-03-16 20:19:20 | INFO     | app.main:lifespan:104 - [33m[关闭] 服务已安全退出[0m
