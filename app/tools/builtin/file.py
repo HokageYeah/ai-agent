@@ -84,7 +84,10 @@ class BaseFileTool(Tool):
             import tempfile
             self.allowed_base_dirs = [os.getcwd(), tempfile.gettempdir()]
         else:
-            self.allowed_base_dirs = [os.path.abspath(d) for d in allowed_base_dirs]
+            self.allowed_base_dirs = [
+                str(Path(self._expand_user_and_env(d)).resolve())
+                for d in allowed_base_dirs
+            ]
         
         self.max_file_size = max_file_size
         
@@ -97,6 +100,21 @@ class BaseFileTool(Tool):
             logger.debug(
                 f"{Fore.CYAN}[BaseFileTool] 初始化完成，允许目录: {self.allowed_base_dirs}{Style.RESET_ALL}"
             )
+
+    def _expand_user_and_env(self, raw_path: str) -> str:
+        """
+        展开用户路径与环境变量。
+
+        设计原因：
+        1. LLM 常生成 "~/Desktop/xxx.txt" 这类路径，不展开会被当作普通相对路径。
+        2. 部分场景会传 "$HOME/xxx"、"${HOME}/xxx"，也需要先还原为真实目录。
+        """
+        expanded_path = os.path.expanduser(os.path.expandvars(raw_path))
+        if expanded_path != raw_path:
+            logger.debug(
+                f"{Fore.CYAN}[BaseFileTool] 路径展开: '{raw_path}' -> '{expanded_path}'{Style.RESET_ALL}"
+            )
+        return expanded_path
     
     def _validate_path(self, path: str) -> tuple[bool, str, str]:
         """
@@ -119,8 +137,11 @@ class BaseFileTool(Tool):
             return False, "", "路径不能为空"
         
         try:
+            # 先展开 "~" 与环境变量，避免被当作普通目录名拼到当前工程路径下
+            expanded_path = self._expand_user_and_env(path)
+
             # 解析为绝对路径
-            absolute_path = os.path.abspath(path)
+            absolute_path = os.path.abspath(expanded_path)
             
             # 规范化路径（处理 .. 和 .）
             resolved_path = Path(absolute_path).resolve()

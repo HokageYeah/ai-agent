@@ -203,6 +203,107 @@ class LangGraphAgentExecutor:
         # 防止 token 过多导致打分开销过大
         return result[:120]
 
+    def _is_skill_inventory_query(self, task: str) -> bool:
+        """
+        判断是否为“技能清单/能力盘点”类问题。
+
+        设计原因：
+        - 这类问题的正确行为是：让模型基于“可用技能列表”直接回答。
+        - 若继续走 Top-K 路由，模型只会看到被筛出的少量技能，容易误答“只有一个技能”。
+        """
+        if not task:
+            return False
+
+        task_l = task.lower().strip()
+
+        # 显式创建/更新技能请求不应被识别为“清单查询”
+        create_skill_patterns = [
+            r"(创建|新建|生成|开发|实现|编写|修改|更新).{0,8}(技能|skill)",
+            r"(create|build|generate|scaffold|update).{0,20}skills?",
+        ]
+        if any(re.search(p, task_l) for p in create_skill_patterns):
+            return False
+
+        inventory_patterns = [
+            r"(列出|展示|查看|告诉我).*(所有|全部|可用)?.*(技能|skill)",
+            r"(有哪些|有什么|多少).*(技能|skill)",
+            r"(技能|skill).*(列表|list|清单)",
+            r"(all|available).*(skills?)",
+            r"what.*skills?",
+            r"list.*skills?",
+            r"show.*skills?",
+        ]
+        return any(re.search(p, task_l) for p in inventory_patterns)
+
+    def _is_explicit_skill_creator_request(self, task: str) -> bool:
+        """
+        判断是否为“明确创建/修改技能能力包”的请求。
+
+        设计原因：
+        - `skill-creator` 属于高影响技能（会改写技能库文件）。
+        - 用户在普通写作任务中出现“使用写作技能创建文档”这类表达时，
+          不能被误判为“创建技能包”意图。
+        """
+        if not task:
+            return False
+        task_l = task.lower().strip()
+
+        explicit_patterns = [
+            r"(创建|新建|生成|开发|编写|改造|修改|更新|定制|做).{0,10}(技能|skill|能力包|skill包)",
+            r"(skill[-_ ]?creator)",
+            r"\b(create|build|generate|update|modify)\b.{0,24}\b(skill|skills)\b",
+        ]
+        return any(re.search(p, task_l) for p in explicit_patterns)
+
+    def _is_explicit_dynamic_probe_request(self, task: str) -> bool:
+        """
+        判断是否为“明确要求 dynamic_probe 探针验证”的请求。
+        """
+        if not task:
+            return False
+        task_l = task.lower().strip()
+        probe_patterns = [
+            r"dynamic[_-]?probe",
+            r"探针自检",
+            r"可用性验证",
+            r"链路验证",
+            r"技能验证",
+        ]
+        return any(re.search(p, task_l) for p in probe_patterns)
+
+    def _filter_intent_restricted_skills(self, task: str, all_skills: List[Any]) -> List[Any]:
+        """
+        按意图过滤“受限技能”，避免普通任务误召回高影响技能。
+
+        当前受限规则：
+        - skill-creator：仅在明确创建/修改技能时暴露
+        - dynamic_probe：仅在明确探针验证时暴露
+        """
+        if not all_skills:
+            return []
+
+        allow_skill_creator = self._is_explicit_skill_creator_request(task)
+        allow_dynamic_probe = self._is_explicit_dynamic_probe_request(task)
+        filtered: List[Any] = []
+        blocked: List[str] = []
+
+        for skill in all_skills:
+            sid = str(getattr(skill, "skill_id", "")).strip()
+            if sid == "skill-creator" and not allow_skill_creator:
+                blocked.append("skill-creator")
+                continue
+            if sid == "dynamic_probe" and not allow_dynamic_probe:
+                blocked.append("dynamic_probe")
+                continue
+            filtered.append(skill)
+
+        if blocked:
+            logger.info(
+                f"{Fore.BLUE}[技能路由] 意图门禁已生效，已隐藏受限技能: "
+                f"{sorted(set(blocked))}{Style.RESET_ALL}"
+            )
+        return filtered
+
     def _route_skills_by_metadata(
         self,
         *,
@@ -338,9 +439,21 @@ class LangGraphAgentExecutor:
         if not all_skills:
             return []
 
+        # 技能清单查询：应向模型暴露“全部可用技能”以便直接列举，
+        # 避免 Top-K 路由把上下文缩成 1~2 个技能导致回答失真。
+        if self._is_skill_inventory_query(task):
+            logger.info(
+                f"{Fore.BLUE}[技能路由] 检测到技能清单查询意图，返回全部可用技能: "
+                f"{[s.skill_id for s in all_skills]}{Style.RESET_ALL}"
+            )
+            return all_skills
+
+        # 普通任务下启用受限技能门禁，避免误召回高影响技能。
+        routable_skills = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
+
         manual_ids = [x for x in (agent.available_skills or []) if isinstance(x, str) and x.strip()]
         if manual_ids:
-            selected = [s for s in all_skills if s.skill_id in manual_ids]
+            selected = [s for s in routable_skills if s.skill_id in manual_ids]
             logger.info(
                 f"{Fore.BLUE}[技能路由] Agent '{agent.name}' 使用手动技能白名单: "
                 f"{[s.skill_id for s in selected]}{Style.RESET_ALL}"
@@ -351,7 +464,7 @@ class LangGraphAgentExecutor:
         return self._route_skills_by_metadata(
             task=task,
             agent=agent,
-            all_skills=all_skills,
+            all_skills=routable_skills,
             top_k=3,
         )
     

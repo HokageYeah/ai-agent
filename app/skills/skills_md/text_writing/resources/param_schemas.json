@@ -1,7 +1,7 @@
 {
   "topic": {
     "label": "写作主题",
-    "description": "文章的核心主题或标题",
+    "description": "写作核心主题、任务目标或需要覆盖的问题",
     "examples": [
       "人工智能对职场未来的影响",
       "如何培养高效的时间管理习惯",
@@ -11,24 +11,26 @@
   },
   "content_type": {
     "label": "文本类型",
-    "description": "要写作的文本类型，决定整体结构和格式",
+    "description": "输出文本类型，决定结构框架和表达方式",
     "examples": [
       "博客文章",
       "产品介绍",
       "工作报告",
       "商业邮件",
-      "学术论文摘要"
+      "学术论文摘要",
+      "Markdown订单详情文档"
     ],
     "required": true
   },
   "style": {
     "label": "写作风格",
-    "description": "文章语气和风格",
+    "description": "整体写作风格（专业性、可读性、严谨度）",
     "examples": [
       "正式专业",
       "轻松易懂",
       "学术严谨",
-      "幽默风趣"
+      "幽默风趣",
+      "业务汇报风格"
     ],
     "required": true
   },
@@ -42,5 +44,95 @@
       "不限字数，内容完整即可"
     ],
     "required": true
+  },
+  "target_audience": {
+    "label": "目标读者",
+    "description": "内容面向的人群，影响术语深度和表达方式",
+    "examples": [
+      "公司管理层",
+      "普通消费者",
+      "技术研发团队",
+      "外部客户"
+    ],
+    "required": false
+  },
+  "language": {
+    "label": "输出语言",
+    "description": "最终输出语言或双语形式",
+    "examples": [
+      "简体中文",
+      "English",
+      "中英双语"
+    ],
+    "required": false
+  },
+  "tone": {
+    "label": "语气偏好",
+    "description": "语气和情绪导向",
+    "examples": [
+      "客观中立",
+      "鼓励型",
+      "销售导向",
+      "克制严谨"
+    ],
+    "required": false
+  },
+  "format": {
+    "label": "输出格式",
+    "description": "输出排版格式约束",
+    "examples": [
+      "Markdown",
+      "纯文本",
+      "Markdown（含标题和表格）"
+    ],
+    "required": false
+  },
+  "structure": {
+    "label": "结构要求",
+    "description": "内容组织框架",
+    "examples": [
+      "总-分-总",
+      "背景-问题-方案-风险",
+      "结论先行 + 分点展开"
+    ],
+    "required": false
+  },
+  "must_include": {
+    "label": "必含要点",
+    "description": "必须出现的关键点，可用分号分隔多项",
+    "examples": [
+      "订单号;客户信息;商品明细;配送状态",
+      "核心结论;风险提示;下一步计划"
+    ],
+    "required": false
+  },
+  "forbidden": {
+    "label": "禁用表达",
+    "description": "禁止出现的词汇或表达方式",
+    "examples": [
+      "绝对;100%保证",
+      "非常非常好;无脑推荐"
+    ],
+    "required": false
+  },
+  "output_mode": {
+    "label": "生成模式",
+    "description": "文本生成策略：new/rewrite/summary",
+    "examples": [
+      "new",
+      "rewrite",
+      "summary"
+    ],
+    "required": false
+  },
+  "quality_goal": {
+    "label": "质量目标",
+    "description": "优先优化方向（完整性/简洁性/可执行性）",
+    "examples": [
+      "信息完整优先",
+      "简洁高密度",
+      "可直接对外发布"
+    ],
+    "required": false
   }
 }

@@ -1,6 +1,8 @@
 ---
 name: github
 description: 使用 gh CLI 与 GitHub 交互，支持 Issue、PR、CI 运行查询与高级 API 调用。
+required_tools: ["shell_exec"]
+optional_tools: ["file_read"]
 ---
 
 # 何时使用 (When to use)

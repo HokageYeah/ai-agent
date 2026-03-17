@@ -1,6 +1,8 @@
 ---
 name: weather
 description: 查询实时天气与天气预报（无需 API Key）。
+required_tools: ["shell_exec"]
+optional_tools: ["http_request"]
 ---
 
 # 何时使用 (When to use)

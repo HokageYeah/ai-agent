@@ -1,32 +1,37 @@
 ---
 name: skill-creator
-description: 根据用户描述自动创建或更新技能包（SKILL.md + scripts + resources），适配本项目技能动态路由与懒加载架构。
+description: 根据用户描述自动创建或更新扩展能力包（目录、配置文件、scripts、resources），适配本项目动态路由与懒加载架构。仅在用户明确要求“创建/新建/生成/修改能力包”时使用。
 required_tools: ["shell_exec", "list_dir", "file_read", "file_edit"]
 optional_tools: ["python_executor", "search"]
-tags: ["skills", "generator", "dynamic-loading", "scaffold"]
+tags: ["capability-package", "generator", "dynamic-loading", "scaffold"]
 memory_include_short_term: true
 ---
 
 # 何时使用 (When to use)
-- 当用户明确提出“创建一个新技能”“按某个需求生成技能包”时
-- 当用户希望把自然语言需求转成可落地的 `app/skills/skills_md/<skill_name>/` 目录结构时
-- 当用户需要你在现有技能上快速迭代（补充脚本、资源、参数定义）时
+- 仅当用户明确提出“创建一个新能力包”“按某个需求生成能力包”时
+- 当用户希望把自然语言需求转成可落地的目录结构与文件骨架时
+- 当用户明确要求在现有能力包上做迭代（补充脚本、资源、参数定义）时
 
 # 输入参数 (Inputs)
-- brief: 用户对目标技能的自然语言描述（必填）
-- skill_name: 技能唯一 ID（可选，建议小写英文+连字符，例如 `order-reporter`）
-- target_dir: 技能根目录（可选，默认 `app/skills/skills_md`）
-- required_tools: 目标技能依赖工具（可选，逗号分隔，例如 `shell_exec,file_read`）
-- optional_tools: 目标技能可选工具（可选，逗号分隔）
-- tags: 目标技能标签（可选，逗号分隔）
+- brief: 用户对目标能力包的自然语言描述（必填）
+- skill_name: 目标包唯一 ID（可选，建议小写英文+连字符，例如 `order-reporter`）
+- target_dir: 目标包根目录（可选，默认 `app/skills/skills_md`）
+- required_tools: 目标包依赖工具（可选，逗号分隔，例如 `shell_exec,file_read`）
+- optional_tools: 目标包可选工具（可选，逗号分隔）
+- tags: 目标包标签（可选，逗号分隔）
 - include_script_template: 是否生成示例脚本（可选，`yes/no`，默认 `yes`）
 - include_param_schema: 是否生成 `resources/param_schemas.json`（可选，`yes/no`，默认 `yes`）
-- overwrite: 若同名技能已存在是否覆盖（可选，`yes/no`，默认 `no`）
+- overwrite: 若同名目标包已存在是否覆盖（可选，`yes/no`，默认 `no`）
 
 # 执行指令 (Instructions)
 你是“技能创建助手”。目标是把用户描述转换成**符合本项目动态技能规范**的技能包，并确保可立即被 `SkillManager` 发现。
 
 请严格按以下顺序执行：
+
+0. 触发前置判定（必须先执行）
+   - 仅当用户明确表达“请创建/新建/生成/改造一个能力包”时才继续执行后续步骤。
+   - 如果用户只是问“有哪些技能/能力”“某个技能不存在怎么办”“请调用某个不存在的技能”，但没有明确要求创建，禁止自动创建。
+   - 以上非触发场景必须直接返回说明：当前不应调用 skill-creator，应先由主模型回答或让用户明确创建意图。
 
 1. 解析参数  
    - 若未给出 `skill_name`，根据 `brief` 生成一个规范化 ID（小写、连字符、长度 <= 64）。  

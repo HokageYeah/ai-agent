@@ -228,8 +228,9 @@ def main() -> int:
     skill_dir = target_dir / skill_name
     overwrite = _normalize_value(args.overwrite) == "yes"
 
-    required_tools = _split_csv(_normalize_value(args.required_tools)) or ["shell_exec", "file_read"]
-    optional_tools = _split_csv(_normalize_value(args.optional_tools)) or ["list_dir"]
+    # 默认最小权限：未显式声明时不授予任何工具，避免新技能因工具过宽导致循环调用。
+    required_tools = _split_csv(_normalize_value(args.required_tools)) or []
+    optional_tools = _split_csv(_normalize_value(args.optional_tools)) or []
     tags = _split_csv(_normalize_value(args.tags)) or ["auto-generated", "skill"]
 
     if skill_dir.exists() and not overwrite:

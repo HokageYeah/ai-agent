@@ -386,6 +386,27 @@ class TestFileReadTool:
         result = await read_tool.execute({"path": temp_file, "encoding": "utf-8"})
         assert result["success"] is True
         assert result["encoding"] == "utf-8"
+
+    @pytest.mark.asyncio
+    async def test_read_expand_home_path(self, read_tool, monkeypatch):
+        """测试使用 ~ 路径读取文件（应正确展开到 HOME）"""
+        import shutil
+
+        fake_home = tempfile.mkdtemp()
+        monkeypatch.setenv("HOME", fake_home)
+        target_path = os.path.join(fake_home, "Desktop", "read_home_case.txt")
+
+        try:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write("HOME 路径读取测试")
+
+            result = await read_tool.execute({"path": "~/Desktop/read_home_case.txt"})
+            assert result["success"] is True
+            assert result["content"] == "HOME 路径读取测试"
+            assert result["path"] == str(Path(target_path).resolve())
+        finally:
+            shutil.rmtree(fake_home, ignore_errors=True)
     
     @pytest.mark.asyncio
     async def test_quick_read_function(self):
@@ -481,6 +502,31 @@ class TestFileWriteTool:
             "encoding": "utf-8"
         })
         assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_write_expand_home_path(self, write_tool, monkeypatch):
+        """测试使用 ~ 路径写入文件（应正确展开到 HOME）"""
+        import shutil
+
+        fake_home = tempfile.mkdtemp()
+        monkeypatch.setenv("HOME", fake_home)
+        target_path = os.path.join(fake_home, "Desktop", "write_home_case.txt")
+
+        try:
+            result = await write_tool.execute({
+                "path": "~/Desktop/write_home_case.txt",
+                "content": "HOME 路径写入测试",
+                "encoding": "utf-8",
+                "mode": "w",
+            })
+            assert result["success"] is True
+            assert result["path"] == str(Path(target_path).resolve())
+            assert os.path.exists(target_path)
+
+            with open(target_path, "r", encoding="utf-8") as f:
+                assert f.read() == "HOME 路径写入测试"
+        finally:
+            shutil.rmtree(fake_home, ignore_errors=True)
     
     @pytest.mark.asyncio
     async def test_write_with_create_dirs(self, write_tool):

@@ -6,6 +6,7 @@
 """
 
 import pytest
+from types import SimpleNamespace
 from app.agents.langgraph_executor import LangGraphAgentExecutor, AgentState
 from app.agents.base import Agent
 from app.agents.planning import Plan, PlanStep
@@ -16,6 +17,26 @@ from app.llm_hub.registry import ModelRegistry
 from app.memory.agent_run_memory import AgentRunMemory
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
+
+
+def _build_executor() -> LangGraphAgentExecutor:
+    """
+    构建用于单元测试的执行器实例。
+
+    说明：
+    - 统一初始化逻辑，避免每个测试重复样板代码。
+    - 使用 MockLLM，确保测试不依赖外部模型服务。
+    """
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    tool_hub = ToolHub()
+    skill_manager = SkillManager()
+    return LangGraphAgentExecutor(
+        llm_hub=inference_engine,
+        tool_hub=tool_hub,
+        skill_manager=skill_manager
+    )
 
 
 @pytest.mark.asyncio
@@ -300,3 +321,164 @@ async def test_execute_node_handles_none_error_in_failed_step(monkeypatch):
     ]
     assert step_error_events
     assert step_error_events[0]["data"].get("error") == "Unknown error"
+
+
+@pytest.mark.parametrize(
+    "task, expected",
+    [
+        ("列出你所有可用的技能", True),
+        ("你有哪些skill", True),
+        ("list all available skills", True),
+        ("what skills do you have", True),
+        ("请创建一个新的天气技能", False),
+        ("帮我生成一个 skill 模板", False),
+        ("把这段话翻译成英文", False),
+    ],
+)
+def test_is_skill_inventory_query(task: str, expected: bool):
+    """测试技能清单查询意图识别，避免误判到“创建技能”请求。"""
+    executor = _build_executor()
+    assert executor._is_skill_inventory_query(task) is expected
+
+
+def test_resolve_available_skills_inventory_query_should_return_all_and_skip_routing(monkeypatch):
+    """
+    测试技能清单查询时应直接返回全量技能，不应走 Top-K 路由裁剪。
+
+    设计目的：
+    - 防止“列技能”类问题被动态路由压缩上下文，导致模型误答“只有一个技能”。
+    """
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    fake_skills = [
+        SimpleNamespace(skill_id="dynamic_probe", name="动态探针", description="探针"),
+        SimpleNamespace(skill_id="translation", name="翻译", description="翻译文本"),
+        SimpleNamespace(skill_id="weather", name="天气", description="查询天气"),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    route_called = {"value": False}
+
+    def fake_route(**kwargs):
+        route_called["value"] = True
+        return [fake_skills[0]]
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+
+    selected = executor._resolve_available_skills(agent=agent, task="列出你所有可用的技能")
+    assert selected == fake_skills
+    assert route_called["value"] is False
+
+
+def test_resolve_available_skills_non_inventory_query_should_use_routing(monkeypatch):
+    """测试非技能清单问题仍保持动态路由行为。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    fake_skills = [
+        SimpleNamespace(skill_id="dynamic_probe", name="动态探针", description="探针"),
+        SimpleNamespace(skill_id="translation", name="翻译", description="翻译文本"),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    route_called = {"value": False}
+
+    def fake_route(**kwargs):
+        route_called["value"] = True
+        return [fake_skills[1]]
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+
+    selected = executor._resolve_available_skills(agent=agent, task="把这句话翻译成英文")
+    assert route_called["value"] is True
+    assert selected == [fake_skills[1]]
+
+
+@pytest.mark.parametrize(
+    "task, expected",
+    [
+        ("请创建一个新的订单分析技能", True),
+        ("帮我修改 weather 技能的输入参数", True),
+        ("use skill-creator to scaffold a new skill", True),
+        ("使用写作技能创建一份订单报告", False),
+        ("帮我写一封邮件", False),
+    ],
+)
+def test_is_explicit_skill_creator_request(task: str, expected: bool):
+    """测试 skill-creator 显式触发判定，避免“写作技能创建文档”误判。"""
+    executor = _build_executor()
+    assert executor._is_explicit_skill_creator_request(task) is expected
+
+
+def test_resolve_available_skills_should_hide_restricted_skills_for_normal_task(monkeypatch):
+    """
+    测试普通任务下，skill-creator/dynamic_probe 会在路由前被门禁隐藏。
+    """
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    fake_skills = [
+        SimpleNamespace(skill_id="skill-creator", name="技能创建", description="创建技能包"),
+        SimpleNamespace(skill_id="dynamic_probe", name="探针", description="探针验证"),
+        SimpleNamespace(skill_id="text_writing", name="写作", description="写作"),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    captured = {}
+
+    def fake_route(**kwargs):
+        captured["all_skills"] = kwargs.get("all_skills", [])
+        return kwargs.get("all_skills", [])
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+    selected = executor._resolve_available_skills(
+        agent=agent,
+        task="帮我写一份订单周报并保存为 md",
+    )
+    routed_ids = [s.skill_id for s in captured["all_skills"]]
+    selected_ids = [s.skill_id for s in selected]
+
+    assert routed_ids == ["text_writing"]
+    assert selected_ids == ["text_writing"]
+
+
+def test_resolve_available_skills_should_keep_skill_creator_for_explicit_request(monkeypatch):
+    """测试显式创建技能请求时，skill-creator 允许进入路由候选。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    fake_skills = [
+        SimpleNamespace(skill_id="skill-creator", name="技能创建", description="创建技能包"),
+        SimpleNamespace(skill_id="text_writing", name="写作", description="写作"),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    captured = {}
+
+    def fake_route(**kwargs):
+        captured["all_skills"] = kwargs.get("all_skills", [])
+        return kwargs.get("all_skills", [])
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+    selected = executor._resolve_available_skills(
+        agent=agent,
+        task="请创建一个用于订单分析的新技能，并生成初始能力包",
+    )
+    routed_ids = [s.skill_id for s in captured["all_skills"]]
+    selected_ids = [s.skill_id for s in selected]
+
+    assert "skill-creator" in routed_ids
+    assert "skill-creator" in selected_ids

@@ -1,6 +1,8 @@
 ---
 name: tmux
 description: 通过 tmux 会话控制交互式命令行，支持发送按键与抓取面板输出。
+required_tools: ["shell_exec"]
+optional_tools: ["file_read"]
 ---
 
 # 何时使用 (When to use)

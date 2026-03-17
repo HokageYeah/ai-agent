@@ -302,12 +302,33 @@ class ExecutionEngine:
         """
         对技能输出做轻量质量校验，避免“空泛话术”被误判为执行成功。
         """
-        if skill_id != "weather":
-            return True, ""
-
         text = (output_text or "").strip()
         if not text:
-            return False, "weather 技能返回空内容"
+            return False, f"{skill_id} 技能返回空内容"
+
+        # 通用拦截：避免“流程汇报口吻”冒充技能结果，污染后续 file_write/final_answer。
+        # 说明：这里使用“多信号命中”而非单关键词，尽量降低误杀。
+        process_report_exempt_skills = {"dynamic_probe", "skill-creator"}
+        if skill_id not in process_report_exempt_skills:
+            head_text = text[:420]
+            process_markers = [
+                "任务已完成",
+                "已成功完成",
+                "已为您完成",
+                "我已经成功",
+                "本次执行了",
+                "文件路径为",
+                "已保存到",
+            ]
+            marker_hits = sum(1 for marker in process_markers if marker in head_text)
+            has_action_list = bool(
+                re.search(r"^\s*\d+\.\s+\*\*?.{0,40}\*\*?[：:]", head_text, flags=re.MULTILINE)
+            )
+            if marker_hits >= 2 and has_action_list:
+                return False, f"{skill_id} 输出为执行过程说明，不是最终结果正文"
+
+        if skill_id != "weather":
+            return True, ""
 
         # 天气结果至少应包含若干核心要素之一
         weather_markers = [
@@ -334,6 +355,101 @@ class ExecutionEngine:
                 f"{Fore.CYAN}[执行引擎] weather 输出未显式包含 location 文本 | "
                 f"location={location}{Style.RESET_ALL}"
             )
+
+        return True, ""
+
+    def _extract_original_user_request(self, task_text: str) -> str:
+        """
+        从委派任务文本中提取“用户原始请求”。
+
+        背景：
+        - 委派链路会把原始请求追加到 task 中（用于防遗漏）。
+        - 受限技能门禁应优先依据“原始请求意图”判断，而不是被子任务改写后的措辞误导。
+        """
+        text = str(task_text or "").strip()
+        if not text:
+            return ""
+
+        match = re.search(r"用户原始请求[:：]\s*(.+?)(?:\n|$)", text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return text
+
+    def _is_explicit_skill_creator_request(self, text: str) -> bool:
+        """
+        判断文本是否“明确要求创建/修改技能能力包”。
+        """
+        text_l = str(text or "").lower().strip()
+        if not text_l:
+            return False
+        patterns = [
+            r"(创建|新建|生成|开发|编写|改造|修改|更新|定制|做).{0,10}(技能|skill|能力包|skill包)",
+            r"(skill[-_ ]?creator)",
+            r"\b(create|build|generate|update|modify)\b.{0,24}\b(skill|skills)\b",
+        ]
+        return any(re.search(p, text_l) for p in patterns)
+
+    def _is_explicit_dynamic_probe_request(self, text: str) -> bool:
+        """
+        判断文本是否“明确要求 dynamic_probe 探针验证”。
+        """
+        text_l = str(text or "").lower().strip()
+        if not text_l:
+            return False
+        patterns = [
+            r"dynamic[_-]?probe",
+            r"探针自检",
+            r"可用性验证",
+            r"链路验证",
+            r"技能验证",
+        ]
+        return any(re.search(p, text_l) for p in patterns)
+
+    def _check_restricted_skill_invocation(
+        self,
+        *,
+        skill_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+        params: Dict[str, Any],
+    ) -> tuple[bool, str]:
+        """
+        受限技能调用门禁（执行阶段兜底）。
+
+        目标：
+        - 即使规划阶段误选了受限技能，也在执行前阻断，避免副作用。
+        """
+        sid = str(skill_id or "").strip()
+        if sid not in {"skill-creator", "dynamic_probe"}:
+            return True, ""
+
+        task_text = str((context or {}).get("task", "") or "")
+        primary_task = self._extract_original_user_request(task_text)
+        brief_text = str((params or {}).get("brief", "") or "")
+
+        if sid == "skill-creator":
+            allow = (
+                self._is_explicit_skill_creator_request(primary_task)
+                or self._is_explicit_skill_creator_request(task_text)
+                or self._is_explicit_skill_creator_request(brief_text)
+            )
+            if not allow:
+                return (
+                    False,
+                    "skill-creator 仅在用户明确要求“创建/新建/修改技能或能力包”时允许调用；"
+                    "当前任务属于普通业务处理，应改用现有技能或工具完成。",
+                )
+
+        if sid == "dynamic_probe":
+            allow = (
+                self._is_explicit_dynamic_probe_request(primary_task)
+                or self._is_explicit_dynamic_probe_request(task_text)
+            )
+            if not allow:
+                return (
+                    False,
+                    "dynamic_probe 仅在用户明确要求“探针自检/可用性验证”时允许调用；"
+                    "当前任务不应触发该探针技能。",
+                )
 
         return True, ""
 
@@ -1507,6 +1623,24 @@ class ExecutionEngine:
         
         # ====== 【调试日志】显示技能调用前的参数 ======
         logger.info(f"{Fore.CYAN}调用技能: {skill_id}, 原始参数: {params}{Style.RESET_ALL}")
+
+        # 受限技能调用门禁（执行阶段兜底，防止误调用高影响技能）
+        allowed, denied_reason = self._check_restricted_skill_invocation(
+            skill_id=skill_id,
+            context=context,
+            params=params,
+        )
+        if not allowed:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 已拦截受限技能调用 | skill={skill_id} | "
+                f"reason={denied_reason}{Style.RESET_ALL}"
+            )
+            return {
+                "success": False,
+                "error": denied_reason,
+                "action": "skill",
+                "skill_id": skill_id
+            }
         
         # 获取技能
         skill = self.skill_manager.get_skill(skill_id)
@@ -1671,12 +1805,38 @@ class ExecutionEngine:
                 str(x).strip() for x in (skill.optional_tools or [])
                 if isinstance(x, str) and str(x).strip()
             }
-            declared_skill_tools = skill_required_tools | skill_optional_tools
-            if declared_skill_tools:
+
+            # 设计说明：
+            # - file_write 等敏感工具在技能内部被强制禁用（需由外层计划显式调用并触发确认）。
+            # - 因此，若技能在 required_tools 中声明了敏感工具，不应再按“缺失必需工具”报错，
+            #   否则会出现“明明是安全策略剔除，却提示 SKILL.md 配置错误”的误导性失败。
+            sensitive_required_tools = {
+                x for x in skill_required_tools if x in SENSITIVE_TOOLS
+            }
+            effective_required_tools = {
+                x for x in skill_required_tools if x not in SENSITIVE_TOOLS
+            }
+            if sensitive_required_tools:
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 技能 {skill_id} 在 required_tools 中声明了敏感工具: "
+                    f"{sorted(sensitive_required_tools)}。这些工具按安全策略不能在技能内部调用，"
+                    "将从必需校验中忽略；如确需执行，请在外层计划中显式规划该工具步骤。"
+                    f"{Style.RESET_ALL}"
+                )
+
+            declared_skill_tools = effective_required_tools | skill_optional_tools
+            has_declared_skill_tools = bool(declared_skill_tools)
+            if has_declared_skill_tools:
                 logger.info(
                     f"{Fore.CYAN}[执行引擎] 技能 {skill_id} 声明工具白名单: "
-                    f"required={sorted(skill_required_tools)} | "
+                    f"required={sorted(effective_required_tools)} | "
                     f"optional={sorted(skill_optional_tools)}{Style.RESET_ALL}"
+                )
+            else:
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 技能 {skill_id} 未在 SKILL.md 声明 required_tools/optional_tools，"
+                    "按最小权限策略，本次技能内部将禁用全部工具。"
+                    f"{Style.RESET_ALL}"
                 )
 
             registered_tool_names = set()
@@ -1694,7 +1854,12 @@ class ExecutionEngine:
                     continue
                 if t_name in user_rejected_set:
                     continue
-                if declared_skill_tools and t_name not in declared_skill_tools:
+                # 通用策略：技能内部默认最小授权
+                # - 声明了工具：仅允许声明工具（与 Agent 白名单/敏感工具策略求交集）
+                # - 未声明工具：不允许任何工具
+                if not has_declared_skill_tools:
+                    continue
+                if t_name not in declared_skill_tools:
                     continue
                 tools.append(t_schema)
             
@@ -1703,7 +1868,7 @@ class ExecutionEngine:
             ]
             tool_names_for_skill_set = set(tool_names_for_skill)
             missing_required_tools = sorted(
-                x for x in skill_required_tools if x not in tool_names_for_skill_set
+                x for x in effective_required_tools if x not in tool_names_for_skill_set
             )
             if missing_required_tools:
                 missing_detail = (
@@ -1711,6 +1876,7 @@ class ExecutionEngine:
                     f"{missing_required_tools}。"
                     f"可用工具={sorted(registered_tool_names)}，"
                     f"Agent授权工具={sorted(agent_allowed_tools) if agent_allowed_tools else 'ALL'}。"
+                    f"按安全策略剔除的敏感工具={sorted(SENSITIVE_TOOLS)}。"
                     "请检查 SKILL.md 的 required_tools 是否与工具注册名一致。"
                 )
                 logger.warning(
@@ -1739,6 +1905,13 @@ class ExecutionEngine:
                 f"- 建议工具调用上限: {tool_budget} 次\n"
                 "- 每次调用前先说明目标，禁止为同一统计目标重复调用多条等价命令。\n"
                 "- 工具结果足够时必须停止调用并直接给出结论。"
+            )
+            # 全技能通用输出约束：返回“结果本体”，不是“执行过程口播”。
+            prompt += (
+                "\n\n【输出格式硬约束】\n"
+                "1. 只输出最终结果内容本体，不要输出执行过程说明。\n"
+                "2. 禁止以“任务已完成/我已经成功/已保存到”等流程汇报开头。\n"
+                "3. 若任务需要落盘，当前步骤仅提供可写入内容，由后续 file_write 步骤处理。\n"
             )
             
             config = InferenceConfig(
