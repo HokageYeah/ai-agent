@@ -164,7 +164,8 @@ class PlanningEngine:
             config = InferenceConfig(
                 model=agent.agent_config.planning_model,
                 temperature=0.7,
-                max_tokens=2048,
+                # 规划阶段需要稳定输出可解析 JSON，适当提高上限，降低被截断风险。
+                max_tokens=3072,
                 tools=tools,
             )
 
@@ -208,6 +209,21 @@ class PlanningEngine:
             logger.info(f"{Fore.GREEN}{response.content[:800] if response.content else '（空响应）'}{Style.RESET_ALL}")
 
             plan = self._parse_plan(response.content)
+            # 若模型输出被截断（finish_reason=length）且 JSON 解析失败，
+            # 自动触发一次“短计划重试”，避免直接退化为 final_answer 错误分支。
+            if self._should_retry_plan_due_to_truncation(plan, response):
+                logger.warning(
+                    f"{Fore.YELLOW}[规划引擎] 检测到规划输出被截断且 JSON 解析失败，"
+                    f"将自动重试并强制模型输出短 JSON 计划。{Style.RESET_ALL}"
+                )
+                retry_plan = await self._retry_plan_after_truncation(
+                    agent=agent,
+                    messages=messages,
+                    tools=tools,
+                )
+                # 仅当重试解析成功时替换原计划，避免覆盖原始兜底结果。
+                if not self._is_json_parse_failed_plan(retry_plan):
+                    plan = retry_plan
 
             logger.info(f"{Fore.GREEN}计划创建成功，共 {len(plan.steps)} 个步骤{Style.RESET_ALL}")
             return plan
@@ -496,6 +512,105 @@ class PlanningEngine:
                     )
                 ],
                 reasoning="解析错误",
+            )
+
+    def _is_json_parse_failed_plan(self, plan: Plan) -> bool:
+        """
+        判断计划是否属于“JSON 解析失败兜底计划”。
+
+        说明：
+        - _parse_plan 解析失败时会返回固定兜底格式：
+          单步 final_answer + reasoning='JSON 解析失败'。
+        - 这里集中封装判断逻辑，便于 create_plan 里做重试决策。
+        """
+        if not isinstance(plan, Plan):
+            return False
+        if plan.reasoning != "JSON 解析失败":
+            return False
+        if len(plan.steps) != 1:
+            return False
+        step = plan.steps[0]
+        if step.action != "final_answer":
+            return False
+        content = str(step.params.get("content", ""))
+        return "解析计划失败" in content
+
+    def _should_retry_plan_due_to_truncation(self, plan: Plan, response: Any) -> bool:
+        """
+        判断是否需要触发“截断重试”。
+
+        触发条件：
+        1. 当前计划是 JSON 解析失败兜底；
+        2. 模型 finish_reason 明确为 length（输出被截断）。
+        """
+        finish_reason = str(getattr(response, "finish_reason", "") or "").lower()
+        return self._is_json_parse_failed_plan(plan) and finish_reason == "length"
+
+    async def _retry_plan_after_truncation(
+        self,
+        agent: Agent,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+    ) -> Plan:
+        """
+        在首次规划输出被截断时，追加“短 JSON 计划”约束并重试一次。
+
+        设计目标：
+        - 防止模型在 params 中塞入超长代码/原始数据，导致 JSON 再次被截断；
+        - 优先恢复可执行计划，减少进入反思-重规划死循环的概率。
+        """
+        try:
+            from app.llm_hub.inference import InferenceConfig
+
+            retry_prompt = self.prompt_manager.render_prompt("retry_after_length")
+            retry_messages = list(messages) + [{"role": "user", "content": retry_prompt}]
+            retry_config = InferenceConfig(
+                model=agent.agent_config.planning_model,
+                temperature=0.2,
+                # 重试阶段主打“短输出+可解析”，输出上限适中即可。
+                max_tokens=1536,
+                tools=tools,
+            )
+            logger.info(
+                f"{Fore.BLUE}[规划引擎] 触发截断重试：追加短计划约束，"
+                f"messages条数={len(retry_messages)}{Style.RESET_ALL}"
+            )
+            retry_response = await self.llm_hub.infer(messages=retry_messages, config=retry_config)
+            logger.info(
+                f"{Fore.GREEN}[规划引擎] 截断重试返回内容预览:"
+                f"{Style.RESET_ALL}"
+            )
+            logger.info(
+                f"{Fore.GREEN}"
+                f"{retry_response.content[:800] if retry_response.content else '（空响应）'}"
+                f"{Style.RESET_ALL}"
+            )
+
+            retry_plan = self._parse_plan(retry_response.content)
+            if self._is_json_parse_failed_plan(retry_plan):
+                logger.error(
+                    f"{Fore.RED}[规划引擎] 截断重试后仍为 JSON 解析失败，"
+                    f"保留兜底计划。{Style.RESET_ALL}"
+                )
+            else:
+                logger.info(
+                    f"{Fore.GREEN}[规划引擎] 截断重试成功，解析到 {len(retry_plan.steps)} 个步骤。"
+                    f"{Style.RESET_ALL}"
+                )
+            return retry_plan
+        except Exception as exc:
+            logger.error(
+                f"{Fore.RED}[规划引擎] 截断重试发生异常: {exc}"
+                f"{Style.RESET_ALL}"
+            )
+            return Plan(
+                steps=[
+                    PlanStep(
+                        action="final_answer",
+                        content="解析计划失败，且重试生成短计划时发生异常",
+                    )
+                ],
+                reasoning="JSON 解析失败",
             )
 
 

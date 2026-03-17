@@ -472,6 +472,23 @@ class TestToolCallingGateway:
         result = gateway._parse_arguments("无效的 JSON")
         
         assert result == {}
+
+    def test_parse_arguments_python_executor_recover_code(self):
+        """
+        测试 python_executor 参数容错恢复
+
+        场景：
+        - LLM 返回的 arguments 不是严格 JSON（字符串被截断/转义不完整）
+        - 网关仍可提取 code 字段，避免直接走“缺少必需参数”分支
+        """
+        gateway = ToolCallingGateway()
+
+        malformed = '{"code": "print(\\"hello\\")\\nfor i in range(3):\\n    print(i)'
+        result = gateway._parse_arguments(malformed, tool_name="python_executor")
+
+        assert isinstance(result, dict)
+        assert "code" in result
+        assert "print" in result["code"]
     
     def test_validate_arguments_success(self):
         """
