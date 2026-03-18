@@ -38,6 +38,25 @@ class TestTool(Tool):
         return "tool result"
 
 
+class PayloadFailTool(Tool):
+    """返回业务失败 payload 的测试工具"""
+
+    @property
+    def name(self) -> str:
+        return "payload_fail_tool"
+
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name="payload_fail_tool",
+            description="A payload fail test tool",
+            parameters={"type": "object", "properties": {}}
+        )
+
+    async def execute(self, params: dict):
+        return {"success": False, "error": "业务失败示例"}
+
+
 @pytest.mark.asyncio
 async def test_execution_result_creation():
     """测试创建执行结果"""
@@ -199,6 +218,43 @@ async def test_execution_engine_nonexistent_tool():
 
 
 @pytest.mark.asyncio
+async def test_execution_engine_should_propagate_tool_payload_failure():
+    """测试工具 payload 中 success=false 时，步骤应标记失败"""
+    tool_hub = ToolHub()
+    tool_hub.register_tool(PayloadFailTool())
+    skill_manager = SkillManager()
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role"
+    )
+
+    plan = Plan(
+        steps=[
+            PlanStep(action="tool", tool_name="payload_fail_tool", params={}),
+            PlanStep(action="final_answer", content="Done")
+        ]
+    )
+
+    result = await execution_engine.execute_plan(agent, plan)
+
+    assert result.success is True
+    assert result.step_results[0]["success"] is False
+    assert "业务失败示例" in result.step_results[0]["error"]
+
+
+@pytest.mark.asyncio
 async def test_execution_engine_empty_plan():
     """测试执行空计划"""
     tool_hub = ToolHub()
@@ -229,3 +285,44 @@ async def test_execution_engine_empty_plan():
     # 验证结果
     assert result.success is True
     assert len(result.step_results) == 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_step_placeholders_supports_dotted_last_tool_result():
+    """测试占位符解析支持点路径（如 {{last_tool_result.content}}）"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager()
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    step = PlanStep(
+        action="tool",
+        tool_name="archive_extract",
+        params={
+            "archive_path": "{{last_tool_result.content}}",
+            "output_dir": "app/skills/skills_md/find-skills"
+        }
+    )
+    prev_results = [
+        {
+            "success": True,
+            "action": "tool",
+            "tool_name": "http_request",
+            "result": {
+                "content": "/tmp/find-skills.zip",
+                "status_code": 200
+            }
+        }
+    ]
+
+    resolved = execution_engine._resolve_step_placeholders(step, prev_results)
+
+    assert step.params["params"]["archive_path"] == "{{last_tool_result.content}}"
+    assert resolved.params["params"]["archive_path"] == "/tmp/find-skills.zip"

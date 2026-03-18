@@ -32,7 +32,9 @@ import html
 import json
 import re
 import time
+import tempfile
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -364,6 +366,86 @@ class HTTPRequestTool(Tool):
             }
         )
 
+    def _is_binary_response(self, content_type: str, raw_bytes: bytes) -> bool:
+        """
+        判断响应是否应按二进制处理并落地文件。
+
+        设计原因：
+        - 安装技能等场景常返回 ZIP 二进制；
+        - 旧实现直接走 response.text，会把二进制误当文本，导致后续解压失败。
+        """
+        if not raw_bytes:
+            return False
+
+        ctype = (content_type or "").split(";")[0].strip().lower()
+        if not ctype:
+            # Content-Type 缺失时做启发式判断：优先识别明显二进制特征
+            if b"\x00" in raw_bytes[:1024]:
+                return True
+            try:
+                raw_bytes[:2048].decode("utf-8")
+                return False
+            except UnicodeDecodeError:
+                return True
+
+        if ctype.startswith("text/"):
+            return False
+
+        textual_types = {
+            "application/json",
+            "application/xml",
+            "application/xhtml+xml",
+            "application/javascript",
+            "application/x-javascript",
+            "application/x-www-form-urlencoded",
+        }
+        if ctype in textual_types:
+            return False
+
+        # 其余 application/*（如 zip/pdf/octet-stream）默认按二进制处理
+        if ctype.startswith("application/"):
+            return True
+
+        return False
+
+    def _guess_binary_suffix(self, content_type: str, final_url: str) -> str:
+        """根据 Content-Type / URL 推断落地文件后缀。"""
+        ctype = (content_type or "").lower()
+        if "zip" in ctype:
+            return ".zip"
+        if "pdf" in ctype:
+            return ".pdf"
+        if "gzip" in ctype or "x-gzip" in ctype:
+            return ".gz"
+        if "octet-stream" in ctype:
+            # 尝试从 URL 推断更精确后缀
+            parsed_path = Path(urlparse(final_url).path)
+            if parsed_path.suffix and len(parsed_path.suffix) <= 10:
+                return parsed_path.suffix
+            return ".bin"
+
+        parsed_path = Path(urlparse(final_url).path)
+        if parsed_path.suffix and len(parsed_path.suffix) <= 10:
+            return parsed_path.suffix
+        return ".bin"
+
+    def _persist_binary_response(self, raw_bytes: bytes, content_type: str, final_url: str) -> str:
+        """
+        将二进制响应落地到临时文件并返回路径。
+
+        注意：文件由调用方决定何时清理。这里保留文件以便后续工具（如 archive_extract）直接消费。
+        """
+        suffix = self._guess_binary_suffix(content_type, final_url)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            delete=False,
+            suffix=suffix,
+            prefix="http_request_",
+        ) as tmp:
+            tmp.write(raw_bytes)
+            saved_path = tmp.name
+        return saved_path
+
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行 HTTP 请求
@@ -477,11 +559,27 @@ class HTTPRequestTool(Tool):
             # ═══════════════ 响应解析阶段 ═══════════════
             response_time_ms = int((time.time() - start_time) * 1000)
             resp_content_type = response.headers.get("Content-Type", "")
+            raw_bytes = response.content
             raw_text = response.text
             truncated = False
+            is_binary = False
+            download_path = None
 
             # 根据 Content-Type 分支解析响应内容
-            if "application/json" in resp_content_type:
+            if self._is_binary_response(resp_content_type, raw_bytes):
+                is_binary = True
+                download_path = self._persist_binary_response(
+                    raw_bytes=raw_bytes,
+                    content_type=resp_content_type,
+                    final_url=str(response.url),
+                )
+                content = download_path
+                raw_text = f"<二进制响应，字节数={len(raw_bytes)}，已保存到 {download_path}>"
+                logger.info(
+                    f"{Fore.GREEN}[HTTPRequestTool] 检测到二进制响应，已自动落地文件 "
+                    f"| size={len(raw_bytes)} bytes | path={download_path}{Style.RESET_ALL}"
+                )
+            elif "application/json" in resp_content_type:
                 # JSON 响应：直接反序列化
                 try:
                     parsed_content = response.json()
@@ -543,6 +641,9 @@ class HTTPRequestTool(Tool):
                 "response_time_ms": response_time_ms,
                 "url":              str(response.url),   # 重定向后的最终 URL
                 "truncated":        truncated,
+                "is_binary":        is_binary,
+                "binary_size":      len(raw_bytes) if is_binary else 0,
+                "download_path":    download_path,
                 "metadata": {
                     "method":       method,
                     "original_url": url,

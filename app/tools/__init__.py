@@ -14,6 +14,8 @@
 - file_write: 文件写入工具
 - file_edit: 文件精准编辑工具
 - list_dir: 目录列表工具
+- archive_compress: ZIP 压缩工具
+- archive_extract: ZIP 解压工具
 - shell_exec: Shell 命令执行工具
 - spawn_agent: 子 Agent 任务委派工具（需 ChildAgentManager 注入）
 - send_message: 消息发送工具（实时向用户反馈进度）
@@ -48,6 +50,8 @@ from app.tools.builtin import (
     FileWriteTool,
     FileEditTool,
     FileListDirTool,
+    ArchiveCompressTool,
+    ArchiveExtractTool,
     ShellExecutorTool,
     SpawnAgentTool,
     MessageAgentTool,
@@ -73,6 +77,8 @@ __all__ = [
     "FileWriteTool",
     "FileEditTool",
     "FileListDirTool",
+    "ArchiveCompressTool",
+    "ArchiveExtractTool",
     "ShellExecutorTool",
     "SpawnAgentTool",   # 需运行时手动注入 ChildAgentManager
     "DatabaseQueryTool",

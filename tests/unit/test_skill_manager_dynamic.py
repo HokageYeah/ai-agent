@@ -5,8 +5,8 @@ import pytest
 from app.skills.manager import SkillManager
 
 
-def _write_demo_skill(tmp_path):
-    skill_dir = tmp_path / "demo_skill"
+def _write_demo_skill(tmp_path, skill_name: str = "demo_skill"):
+    skill_dir = tmp_path / skill_name
     resource_dir = skill_dir / "resources"
     resource_dir.mkdir(parents=True, exist_ok=True)
 
@@ -27,8 +27,8 @@ def _write_demo_skill(tmp_path):
     )
 
     (skill_dir / "SKILL.md").write_text(
-        """---
-name: demo_skill
+        f"""---
+name: {skill_name}
 description: 用于测试动态加载能力。
 ---
 # 何时使用 (When to use)
@@ -39,7 +39,7 @@ description: 用于测试动态加载能力。
 
 # 执行指令 (Instructions)
 请处理以下输入文本：
-{input_text}
+{{input_text}}
 
 # 脚本 (Scripts)
 - 无
@@ -49,6 +49,7 @@ description: 用于测试动态加载能力。
 """,
         encoding="utf-8",
     )
+    return skill_dir
 
 
 def test_discover_and_lazy_load_skill(tmp_path):
@@ -110,3 +111,36 @@ async def test_execute_skill_runtime(tmp_path):
     assert llm.last_messages is not None
     assert "你正在执行技能：demo_skill" in llm.last_messages[0]["content"]
     assert "hello" in llm.last_messages[0]["content"]
+
+
+def test_auto_reload_on_skill_added(tmp_path):
+    _write_demo_skill(tmp_path, "demo_skill")
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+
+    initial_ids = {item["skill_id"] for item in manager.list_skill_metadata()}
+    assert initial_ids == {"demo_skill"}
+
+    # 新增技能目录后，不手动 reload，调用 list_skill_metadata 应自动检测变化并重载
+    _write_demo_skill(tmp_path, "new_skill")
+    updated_ids = {item["skill_id"] for item in manager.list_skill_metadata()}
+    assert updated_ids == {"demo_skill", "new_skill"}
+
+
+def test_auto_reload_on_skill_deleted(tmp_path):
+    _write_demo_skill(tmp_path, "demo_skill")
+    removed_dir = _write_demo_skill(tmp_path, "to_be_deleted")
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+
+    initial_ids = {item["skill_id"] for item in manager.list_skill_metadata()}
+    assert initial_ids == {"demo_skill", "to_be_deleted"}
+
+    # 删除技能目录后，不手动 reload，调用 list_skill_metadata 应自动剔除
+    for p in sorted(removed_dir.rglob("*"), reverse=True):
+        if p.is_file():
+            p.unlink()
+        elif p.is_dir():
+            p.rmdir()
+    removed_dir.rmdir()
+
+    updated_ids = {item["skill_id"] for item in manager.list_skill_metadata()}
+    assert updated_ids == {"demo_skill"}

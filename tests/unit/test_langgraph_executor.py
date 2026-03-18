@@ -330,6 +330,7 @@ async def test_execute_node_handles_none_error_in_failed_step(monkeypatch):
         ("你有哪些skill", True),
         ("list all available skills", True),
         ("what skills do you have", True),
+        ("请先检查是否已安装 SkillHub 商店，若未安装请安装 find-skills 技能", False),
         ("请创建一个新的天气技能", False),
         ("帮我生成一个 skill 模板", False),
         ("把这段话翻译成英文", False),
@@ -341,12 +342,13 @@ def test_is_skill_inventory_query(task: str, expected: bool):
     assert executor._is_skill_inventory_query(task) is expected
 
 
-def test_resolve_available_skills_inventory_query_should_return_all_and_skip_routing(monkeypatch):
+def test_resolve_available_skills_inventory_query_should_return_gated_all_and_skip_routing(monkeypatch):
     """
-    测试技能清单查询时应直接返回全量技能，不应走 Top-K 路由裁剪。
+    测试技能清单查询时应直接返回“门禁后的全量技能”，不应走 Top-K 路由裁剪。
 
     设计目的：
     - 防止“列技能”类问题被动态路由压缩上下文，导致模型误答“只有一个技能”。
+    - 同时确保受限技能（skill-creator/dynamic_probe）不会在普通盘点意图下暴露。
     """
     executor = _build_executor()
     agent = Agent(
@@ -356,6 +358,7 @@ def test_resolve_available_skills_inventory_query_should_return_all_and_skip_rou
         role="Test role",
     )
     fake_skills = [
+        SimpleNamespace(skill_id="skill-creator", name="技能创建", description="创建技能包"),
         SimpleNamespace(skill_id="dynamic_probe", name="动态探针", description="探针"),
         SimpleNamespace(skill_id="translation", name="翻译", description="翻译文本"),
         SimpleNamespace(skill_id="weather", name="天气", description="查询天气"),
@@ -370,7 +373,8 @@ def test_resolve_available_skills_inventory_query_should_return_all_and_skip_rou
     monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
 
     selected = executor._resolve_available_skills(agent=agent, task="列出你所有可用的技能")
-    assert selected == fake_skills
+    selected_ids = [s.skill_id for s in selected]
+    assert selected_ids == ["translation", "weather"]
     assert route_called["value"] is False
 
 
@@ -399,6 +403,42 @@ def test_resolve_available_skills_non_inventory_query_should_use_routing(monkeyp
     selected = executor._resolve_available_skills(agent=agent, task="把这句话翻译成英文")
     assert route_called["value"] is True
     assert selected == [fake_skills[1]]
+
+
+def test_resolve_available_skills_install_task_should_not_be_treated_as_inventory(monkeypatch):
+    """安装任务不应命中“技能清单查询”分支，且应在路由前隐藏受限技能。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    fake_skills = [
+        SimpleNamespace(skill_id="skill-creator", name="技能创建", description="创建技能包"),
+        SimpleNamespace(skill_id="text_writing", name="写作", description="写作"),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    route_called = {"value": False}
+    captured = {}
+
+    def fake_route(**kwargs):
+        route_called["value"] = True
+        captured["all_skills"] = kwargs.get("all_skills", [])
+        return kwargs.get("all_skills", [])
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+
+    selected = executor._resolve_available_skills(
+        agent=agent,
+        task="请先检查是否已安装 SkillHub，若未安装就安装，再安装 find-skills 技能",
+    )
+    selected_ids = [s.skill_id for s in selected]
+    routed_ids = [s.skill_id for s in captured.get("all_skills", [])]
+
+    assert route_called["value"] is True
+    assert "skill-creator" not in routed_ids
+    assert selected_ids == ["text_writing"]
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,9 @@ import pytest
 import tempfile
 import os
 import sys
+import shutil
+import io
+import zipfile
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
@@ -128,6 +131,59 @@ class TestHTTPRequestTool:
         assert callable(http_post)
         assert callable(http_put)
         assert callable(http_delete)
+
+    @pytest.mark.asyncio
+    async def test_binary_zip_response_should_save_temp_file(self, http_tool, monkeypatch):
+        """测试二进制 ZIP 响应会自动落地为临时文件，供后续解压工具直接使用"""
+        import httpx
+        import app.tools.builtin.http as http_module
+
+        # 构造一个最小可解压 ZIP 二进制
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("SKILL.md", "# find-skills\n")
+        zip_bytes = zip_buffer.getvalue()
+
+        class _MockAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, **kwargs):
+                req = httpx.Request(method, kwargs.get("url"))
+                return httpx.Response(
+                    status_code=200,
+                    headers={"Content-Type": "application/zip"},
+                    content=zip_bytes,
+                    request=req,
+                )
+
+        monkeypatch.setattr(http_module.httpx, "AsyncClient", _MockAsyncClient)
+
+        result = await http_tool.execute({
+            "method": "GET",
+            "url": "https://example.com/find-skills.zip",
+        })
+
+        assert result["success"] is True
+        assert result["is_binary"] is True
+        assert result["download_path"] == result["content"]
+        assert result["binary_size"] == len(zip_bytes)
+
+        saved_path = result["download_path"]
+        assert saved_path and os.path.exists(saved_path)
+
+        try:
+            with zipfile.ZipFile(saved_path, "r") as zf:
+                assert "SKILL.md" in zf.namelist()
+        finally:
+            if saved_path and os.path.exists(saved_path):
+                os.remove(saved_path)
 
 
 class TestPythonExecutorTool:
@@ -575,6 +631,96 @@ class TestFileWriteTool:
         """测试便捷写入函数"""
         from app.tools.builtin.file import quick_write
         assert callable(quick_write)
+
+
+class TestArchiveTools:
+    """ArchiveCompressTool / ArchiveExtractTool 测试类"""
+
+    @pytest.fixture
+    def compress_tool(self):
+        """创建 ArchiveCompressTool 实例"""
+        from app.tools.builtin.archive import ArchiveCompressTool
+        return ArchiveCompressTool()
+
+    @pytest.fixture
+    def extract_tool(self):
+        """创建 ArchiveExtractTool 实例"""
+        from app.tools.builtin.archive import ArchiveExtractTool
+        return ArchiveExtractTool()
+
+    def test_archive_tool_names(self, compress_tool, extract_tool):
+        """测试工具名称"""
+        assert compress_tool.name == "archive_compress"
+        assert extract_tool.name == "archive_extract"
+
+    def test_archive_schema_required(self, compress_tool, extract_tool):
+        """测试工具 Schema 必填参数"""
+        c_schema = compress_tool.schema
+        e_schema = extract_tool.schema
+        assert c_schema.name == "archive_compress"
+        assert "output_path" in c_schema.parameters["required"]
+        assert e_schema.name == "archive_extract"
+        assert "archive_path" in e_schema.parameters["required"]
+
+    @pytest.mark.asyncio
+    async def test_compress_and_extract_round_trip(self, compress_tool, extract_tool):
+        """测试 ZIP 压缩 + 解压闭环流程"""
+        temp_root = tempfile.mkdtemp()
+        try:
+            source_dir = Path(temp_root) / "find-skills"
+            scripts_dir = source_dir / "scripts"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "SKILL.md").write_text("# find-skills\n", encoding="utf-8")
+            (scripts_dir / "install.sh").write_text("echo install\n", encoding="utf-8")
+
+            zip_path = Path(temp_root) / "find-skills.zip"
+            compressed = await compress_tool.execute(
+                {
+                    "source_path": str(source_dir),
+                    "output_path": str(zip_path),
+                    "include_root": True,
+                    "overwrite": True,
+                }
+            )
+            assert compressed["success"] is True
+            assert zip_path.exists()
+
+            output_dir = Path(temp_root) / "skills_md"
+            extracted = await extract_tool.execute(
+                {
+                    "archive_path": str(zip_path),
+                    "output_dir": str(output_dir),
+                    "overwrite": True,
+                }
+            )
+            assert extracted["success"] is True
+            assert (output_dir / "find-skills" / "SKILL.md").exists()
+            assert (output_dir / "find-skills" / "scripts" / "install.sh").exists()
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_extract_should_block_zip_slip(self, extract_tool):
+        """测试解压阶段会拦截路径穿越（Zip Slip）"""
+        temp_root = tempfile.mkdtemp()
+        try:
+            zip_path = Path(temp_root) / "evil.zip"
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("../evil.txt", "hacked")
+
+            output_dir = Path(temp_root) / "out"
+            result = await extract_tool.execute(
+                {
+                    "archive_path": str(zip_path),
+                    "output_dir": str(output_dir),
+                }
+            )
+            assert result["success"] is False
+            assert "路径穿越" in result.get("error", "") or "越界" in result.get("error", "")
+            assert not (Path(temp_root).parent / "evil.txt").exists()
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
 
 class TestFormatFunctions:

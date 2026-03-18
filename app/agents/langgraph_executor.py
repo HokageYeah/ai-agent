@@ -371,14 +371,24 @@ class LangGraphAgentExecutor:
         if any(re.search(p, task_l) for p in create_skill_patterns):
             return False
 
+        # 安装/配置类任务（如 install skillhub / 安装技能）不是“技能清单查询”。
+        # 特别注意：避免把 "install" 里的 "list" 子串误判成 list 意图。
+        install_patterns = [
+            r"(若未安装|如果未安装|未安装|安装后|先安装)",
+            r"(安装|install|upgrade|更新).{0,24}(skillhub|skills?|技能|能力包)",
+            r"skillhub\s+install",
+        ]
+        if any(re.search(p, task_l) for p in install_patterns):
+            return False
+
         inventory_patterns = [
-            r"(列出|展示|查看|告诉我).*(所有|全部|可用)?.*(技能|skill)",
-            r"(有哪些|有什么|多少).*(技能|skill)",
-            r"(技能|skill).*(列表|list|清单)",
-            r"(all|available).*(skills?)",
-            r"what.*skills?",
-            r"list.*skills?",
-            r"show.*skills?",
+            r"(列出|展示|查看|告诉我).{0,12}(所有|全部|可用)?.{0,12}(技能|能力包|skills?)",
+            r"(有哪些|有什么|多少).{0,12}(技能|能力包|skills?)",
+            r"(技能|能力包).{0,8}(列表|清单)",
+            r"\b(all|available)\b.{0,24}\bskills?\b",
+            r"\bwhat\b.{0,24}\bskills?\b",
+            r"\blist\b.{0,24}\bskills?\b",
+            r"\bshow\b.{0,24}\bskills?\b",
         ]
         return any(re.search(p, task_l) for p in inventory_patterns)
 
@@ -628,17 +638,18 @@ class LangGraphAgentExecutor:
         if not all_skills:
             return []
 
+        # 普通任务下启用受限技能门禁，避免误召回高影响技能。
+        # NOTE: 清单查询也应用门禁，保证“当前意图下可用技能”口径一致。
+        routable_skills = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
+
         # 技能清单查询：应向模型暴露“全部可用技能”以便直接列举，
         # 避免 Top-K 路由把上下文缩成 1~2 个技能导致回答失真。
         if self._is_skill_inventory_query(task):
             logger.info(
-                f"{Fore.BLUE}[技能路由] 检测到技能清单查询意图，返回全部可用技能: "
-                f"{[s.skill_id for s in all_skills]}{Style.RESET_ALL}"
+                f"{Fore.BLUE}[技能路由] 检测到技能清单查询意图，返回门禁后的可用技能: "
+                f"{[s.skill_id for s in routable_skills]}{Style.RESET_ALL}"
             )
-            return all_skills
-
-        # 普通任务下启用受限技能门禁，避免误召回高影响技能。
-        routable_skills = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
+            return routable_skills
 
         manual_ids = [x for x in (agent.available_skills or []) if isinstance(x, str) and x.strip()]
         if manual_ids:

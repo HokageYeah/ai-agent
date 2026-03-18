@@ -882,6 +882,111 @@ class ExecutionEngine:
             )
             return "抱歉，我无法根据历史记录找到相关信息，请重新描述您的问题。"
 
+    def _extract_value_by_path(self, data: Any, path_expr: str) -> Any:
+        """
+        按点路径提取嵌套值（如 "content.url"、"results.0.title"）。
+
+        设计目的：
+        - 兼容 LLM 在计划中生成 `{{last_tool_result.content}}` 这类占位符；
+        - 避免仅支持扁平 key，导致占位符无法替换而把字面量传给工具。
+        """
+        if data is None:
+            return None
+        if not path_expr:
+            return data
+
+        current = data
+        for segment in str(path_expr).split("."):
+            seg = segment.strip()
+            if not seg:
+                return None
+
+            if isinstance(current, dict):
+                if seg not in current:
+                    return None
+                current = current.get(seg)
+                continue
+
+            if isinstance(current, list):
+                if not seg.isdigit():
+                    return None
+                idx = int(seg)
+                if idx < 0 or idx >= len(current):
+                    return None
+                current = current[idx]
+                continue
+
+            if hasattr(current, seg):
+                current = getattr(current, seg)
+                continue
+
+            return None
+
+        return current
+
+    def _resolve_placeholder_value(
+        self,
+        expression: str,
+        placeholder_context: Dict[str, Any],
+    ) -> tuple[bool, Any]:
+        """
+        解析单个占位符表达式。
+
+        返回 (found, value)：
+        - found=False: 表达式不在已知上下文中，保持原占位符不变
+        - found=True: 识别到表达式，value 允许为 None（会替换为空字符串）
+        """
+        expr = str(expression or "").strip()
+        if not expr:
+            return False, None
+
+        if expr in placeholder_context:
+            return True, placeholder_context.get(expr)
+
+        if "." in expr:
+            root, nested = expr.split(".", 1)
+            if root in placeholder_context:
+                base_value = placeholder_context.get(root)
+                return True, self._extract_value_by_path(base_value, nested)
+
+        return False, None
+
+    def _replace_placeholders_in_text(
+        self,
+        text: str,
+        placeholder_context: Dict[str, Any],
+    ) -> str:
+        """
+        替换文本中的占位符，支持以下格式：
+        - {{last_tool_result}}
+        - {{last_tool_result.content}}
+        - {last_tool_result}
+        - {last_tool_result.content}
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        pattern = re.compile(
+            r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}"
+            r"|\{([a-zA-Z_][a-zA-Z0-9_\.]*)\}"
+        )
+
+        def _replace(match: re.Match) -> str:
+            expr = match.group(1) or match.group(2) or ""
+            found, value = self._resolve_placeholder_value(expr, placeholder_context)
+            if not found:
+                return match.group(0)
+            if value is None:
+                return ""
+            if isinstance(value, (dict, list)):
+                try:
+                    return _json.dumps(value, ensure_ascii=False, default=str)
+                except Exception:
+                    return str(value)
+            return str(value)
+
+        return pattern.sub(_replace, text)
+
     def _resolve_step_placeholders(
         self,
         step: PlanStep,
@@ -907,7 +1012,6 @@ class ExecutionEngine:
         Returns:
             PlanStep: 替换占位符后的步骤（副本）
         """
-        import re
         import copy
         
         # 创建步骤的深拷贝，避免修改原始计划
@@ -946,40 +1050,28 @@ class ExecutionEngine:
             if isinstance(last_tool_result, dict):
                 search_result_url = last_tool_result.get("url") or last_tool_result.get("first_url")
         
-        # 定义替换映射（支持两种格式：{{...}} 和 {...}）
-        replacements = [
-            # 格式一：双花括号 {{...}}
-            ("{{first_search_result_url}}", search_result_url or ""),
-            ("{{first_search_result_title}}", search_result_title or ""),
-            ("{{first_search_result_snippet}}", search_result_snippet or ""),
-            ("{{first_search_result}}", str({
-                "url": search_result_url,
-                "title": search_result_title,
-                "snippet": search_result_snippet
-            }) if search_result_url else ""),
-            ("{{last_tool_result}}", str(last_tool_result) if last_tool_result else ""),
-            ("{{last_tool_result_url}}", search_result_url or ""),
-            # 格式二：单花括号 {...}
-            ("{first_search_result_url}", search_result_url or ""),
-            ("{first_search_result_title}", search_result_title or ""),
-            ("{first_search_result_snippet}", search_result_snippet or ""),
-            ("{first_search_result}", str({
-                "url": search_result_url,
-                "title": search_result_title,
-                "snippet": search_result_snippet
-            }) if search_result_url else ""),
-            ("{last_tool_result}", str(last_tool_result) if last_tool_result else ""),
-            ("{last_tool_result_url}", search_result_url or ""),
-        ]
+        first_search_result = {
+            "url": search_result_url,
+            "title": search_result_title,
+            "snippet": search_result_snippet
+        } if search_result_url else None
+
+        # 占位符上下文（支持扁平 key + 点路径扩展）
+        placeholder_context = {
+            "first_search_result_url": search_result_url or "",
+            "first_search_result_title": search_result_title or "",
+            "first_search_result_snippet": search_result_snippet or "",
+            "first_search_result": first_search_result,
+            "last_tool_result": last_tool_result,
+            "last_tool_result_url": search_result_url or "",
+        }
         
         # 对 params 中的每个参数进行占位符替换
         if hasattr(resolved_step, 'params') and resolved_step.params:
             for key, value in resolved_step.params.items():
                 if isinstance(value, str):
                     original_value = value
-                    for placeholder, replacement in replacements:
-                        if placeholder in value:
-                            value = value.replace(placeholder, replacement)
+                    value = self._replace_placeholders_in_text(value, placeholder_context)
                     
                     # 只有值发生变化时才记录日志
                     if original_value != value:
@@ -991,7 +1083,10 @@ class ExecutionEngine:
                     resolved_step.params[key] = value
                 elif isinstance(value, dict):
                     # 递归处理字典类型的参数值
-                    resolved_step.params[key] = self._resolve_dict_placeholders(value, dict(replacements))
+                    resolved_step.params[key] = self._resolve_dict_placeholders(
+                        value,
+                        placeholder_context
+                    )
         
         return resolved_step
 
@@ -1005,31 +1100,36 @@ class ExecutionEngine:
         
         Args:
             data: 需要处理的数据（可能是 dict, list, str 等）
-            replacements: 占位符替换映射（可以是 dict 或 list of tuples）
+            replacements: 占位符上下文（dict）或旧版替换对（list of tuples）
             
         Returns:
             处理后的数据
         """
-        import copy
-        
-        # 统一转换为 list 格式
+        # 兼容旧参数格式：[( "{{last_tool_result}}", "xxx"), ...]
         if isinstance(replacements, dict):
-            replacements_list = list(replacements.items())
+            placeholder_context = dict(replacements)
         else:
-            replacements_list = replacements
+            placeholder_context = {}
+            for item in replacements or []:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    continue
+                raw_key, raw_value = item[0], item[1]
+                key = str(raw_key or "").strip()
+                m = re.fullmatch(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}", key)
+                if not m:
+                    m = re.fullmatch(r"\{([a-zA-Z_][a-zA-Z0-9_\.]*)\}", key)
+                if m:
+                    placeholder_context[m.group(1)] = raw_value
         
         if isinstance(data, dict):
             result = {}
             for key, value in data.items():
-                result[key] = self._resolve_dict_placeholders(value, replacements_list)
+                result[key] = self._resolve_dict_placeholders(value, placeholder_context)
             return result
         elif isinstance(data, list):
-            return [self._resolve_dict_placeholders(item, replacements_list) for item in data]
+            return [self._resolve_dict_placeholders(item, placeholder_context) for item in data]
         elif isinstance(data, str):
-            for placeholder, replacement in replacements_list:
-                if placeholder in data:
-                    data = data.replace(placeholder, replacement)
-            return data
+            return self._replace_placeholders_in_text(data, placeholder_context)
         else:
             return data
 
@@ -1256,6 +1356,21 @@ class ExecutionEngine:
                     # ── 检测工具是否需要用户输入 ────────────────────────────────
                     # 检查工具返回结果中是否包含 "needs_user_input" 标记
                     result = gateway_result.result
+                    # 业务级失败透传：工具正常返回，但 payload 标记 success=false（如 file_write/base64 失败）
+                    if isinstance(result, dict) and result.get("success") is False:
+                        business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行工具-网关路径] 工具 {tool_name} 业务失败: "
+                            f"{business_error}{Style.RESET_ALL}"
+                        )
+                        return {
+                            "success": False,
+                            "error": business_error,
+                            "result": result,
+                            "action": "tool",
+                            "tool_name": tool_name,
+                            "execution_time_ms": gateway_result.execution_time_ms
+                        }
                     if result and isinstance(result, dict) and result.get("needs_user_input"):
                         logger.info(
                             f"{Fore.CYAN}[执行工具-网关路径] 工具 {tool_name} 需要用户额外输入，"
@@ -1301,9 +1416,20 @@ class ExecutionEngine:
                             )
                             
                             if retry_result.status == ToolCallStatus.SUCCESS:
+                                retry_payload = retry_result.result
+                                if isinstance(retry_payload, dict) and retry_payload.get("success") is False:
+                                    business_error = retry_payload.get("error") or f"工具 {tool_name} 返回 success=false"
+                                    return {
+                                        "success": False,
+                                        "error": business_error,
+                                        "result": retry_payload,
+                                        "action": "tool",
+                                        "tool_name": tool_name,
+                                        "execution_time_ms": retry_result.execution_time_ms
+                                    }
                                 return {
                                     "success": True,
-                                    "result": retry_result.result,
+                                    "result": retry_payload,
                                     "action": "tool",
                                     "tool_name": tool_name,
                                     "user_inputs_provided": user_inputs,
@@ -1378,6 +1504,20 @@ class ExecutionEngine:
         try:
             result = await tool.execute(params)
             logger.info(f"{Fore.GREEN}工具 {tool_name} 执行成功{Style.RESET_ALL}")
+            # 业务级失败透传：避免“调用成功”掩盖工具真实失败
+            if isinstance(result, dict) and result.get("success") is False:
+                business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                logger.warning(
+                    f"{Fore.YELLOW}[执行工具] 工具 {tool_name} 业务失败: "
+                    f"{business_error}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": business_error,
+                    "result": result,
+                    "action": "tool",
+                    "tool_name": tool_name
+                }
             
             # ── 检测工具是否需要用户输入 ────────────────────────────────
             # 检查工具返回结果中是否包含 "needs_user_input" 标记
@@ -1420,6 +1560,15 @@ class ExecutionEngine:
                         logger.info(
                             f"{Fore.GREEN}工具 {tool_name} 重新执行成功{Style.RESET_ALL}"
                         )
+                        if isinstance(result, dict) and result.get("success") is False:
+                            business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                            return {
+                                "success": False,
+                                "error": business_error,
+                                "result": result,
+                                "action": "tool",
+                                "tool_name": tool_name
+                            }
                         return {
                             "success": True,
                             "result": result,
