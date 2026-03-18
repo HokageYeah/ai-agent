@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.5
-- **最后更新**: 2026-03-16
+- **版本号**: v1.6
+- **最后更新**: 2026-03-19
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -88,7 +88,7 @@ LLM Hub (统一推理)
 用户任务
   ↓
 [技能发现] SkillManager.discover_skills()
-  └─ 扫描 app/skills/skills_md/*/SKILL.md，建立轻量元数据索引
+  └─ 扫描 Agent 工作区中的 */SKILL.md（默认 app/skills/skills_md，可由 AGENT_WORKSPACE_DIR 配置覆盖），建立轻量元数据索引
   ↓
 [技能路由] _route_skills_by_metadata()
   └─ 第一阶段（规则预筛）：
@@ -104,6 +104,25 @@ LLM Hub (统一推理)
   └─ 按技能声明工具白名单过滤，执行局部推理
   ↓
 返回技能结果 / 继续执行后续步骤（如 file_write、final_answer）
+```
+
+### 2.4 技能安装数据流（已落地）
+
+```
+用户任务：安装某个技能
+  ↓
+[规划] PlanningEngine 优先选择 skill_install（而不是裸 shell_exec）
+  ↓
+[执行] SkillInstallTool.execute()
+  ↓
+[服务] SkillInstallerService
+  ├─ 兼容历史命令：npx skills install ... -> npx skills add ...
+  ├─ 使用临时 CODEX_HOME/skills 隔离 Skills CLI 安装目录
+  └─ 将安装结果复制到 Agent 工作区（默认 app/skills/skills_md）
+  ↓
+[发现] SkillManager 在后续 list/load 时自动检测目录变化并重载
+  ↓
+技能进入 discover -> route -> lazy load 主链路
 ```
 
 ---
@@ -354,6 +373,36 @@ class FileWriteTool(Tool):
     """文件写入工具"""
     pass
 
+# ZIP 解压工具
+class ArchiveExtractTool(Tool):
+    """ZIP 解压工具"""
+    pass
+
+# ZIP 压缩工具
+class ArchiveCompressTool(Tool):
+    """ZIP 压缩工具"""
+    pass
+
+# 技能安装工具
+class SkillInstallTool(Tool):
+    """将 Skills CLI 技能包安装到 Agent 工作区"""
+    pass
+
+# Shell 命令工具
+class ShellExecutorTool(Tool):
+    """Shell 命令执行工具（保留为通用兜底，不再作为技能安装首选）"""
+    pass
+
+# 子 Agent 委派工具
+class SpawnAgentTool(Tool):
+    """统一的子 Agent 委派工具"""
+    pass
+
+# 消息交互工具
+class MessageAgentTool(Tool):
+    """输入收集 / 确认授权 / 中间消息推送工具"""
+    pass
+
 # 计算器工具
 class CalculatorTool(Tool):
     """数学计算工具"""
@@ -412,8 +461,11 @@ class ToolHub:
 1. 决策阶段只暴露轻量元信息（Metadata），不把所有技能正文塞进 Prompt  
 2. 执行阶段按需懒加载（Lazy Loading）目标技能全文、脚本与资源  
 3. 技能执行时按技能声明做工具白名单收敛，防止无关工具循环  
+4. 技能安装统一通过 `skill_install` + Agent 工作区落地，避免 LLM 直接拼接安装命令  
 
 ### 6.1 技能包目录规范
+
+> 说明：以下目录是默认工作区形态。实际扫描根目录由 `.env` 中的 `AGENT_WORKSPACE_DIR` 控制，默认值为 `app/skills/skills_md`。
 
 ```
 app/skills/skills_md/
@@ -498,7 +550,7 @@ class Skill(BaseModel):
 ```python
 class SkillManager:
     def discover_skills(force_reload=False, include_unavailable=False):
-        # 扫描 skills_md/*/SKILL.md，解析 frontmatter + 标准章节
+        # 扫描 Agent 工作区中的 */SKILL.md，解析 frontmatter + 标准章节
         ...
 
     def list_skill_metadata(include_unavailable=False):
@@ -545,7 +597,28 @@ class SkillManager:
    - 缺失必需工具会快速返回错误，防止“带病运行”  
    - 敏感工具（如 `file_write`）默认不允许在技能内部隐式触发
 
-### 6.6 技能动态加载时序（主路径）
+### 6.6 技能安装与 Agent 工作区
+
+1. **统一配置入口**  
+   - `.env` 新增 `AGENT_WORKSPACE_DIR`
+   - 默认值为 `app/skills/skills_md`
+   - 该目录当前承载技能安装结果，后续本地记忆等持久化资产也可以复用该工作区
+
+2. **结构化安装优先**  
+   - 规划阶段遇到“安装技能”任务时，优先规划 `skill_install`
+   - 不再建议直接规划 `shell_exec("npx skills ...")`
+   - 若历史上下文出现 `npx skills install ...`，运行时会自动规范化为 `npx skills add ...`
+
+3. **落地策略**  
+   - `SkillInstallerService` 先使用临时 `CODEX_HOME/skills` 执行 Skills CLI 安装
+   - 成功后再复制到 Agent 工作区
+   - 这样既兼容 Skills CLI 约定，又保证本项目技能扫描目录稳定可控
+
+4. **与动态加载衔接**  
+   - 技能复制进工作区后，`SkillManager` 无需手动注册
+   - 后续 `list_skill_metadata()` / `load_skill()` 会自动检测目录变化并刷新索引
+
+### 6.7 技能动态加载时序（主路径）
 
 ```mermaid
 flowchart TD
@@ -1568,11 +1641,14 @@ app/
 │   ├── hub.py           # 工具中心
 │   └── builtin/         # 内置工具
 │       ├── __init__.py
+│       ├── archive.py
 │       ├── search.py
 │       ├── http.py
 │       ├── database.py
 │       ├── file.py
 │       ├── executor.py
+│       ├── shell.py
+│       ├── skill.py
 │       ├── calculator.py
 │       └── datetime.py
 │
@@ -1583,9 +1659,10 @@ app/
 ├── skills/
 │   ├── __init__.py
 │   ├── base.py         # 技能基类
+│   ├── installer.py    # 技能安装服务（Skills CLI -> 工作区）
 │   ├── manager.py      # 技能管理器
 │   ├── skills.py       # 兼容层/辅助加载器
-│   ├── skills_md/      # 主技能仓库（动态技能包）
+│   ├── skills_md/      # 默认技能工作区（可由 AGENT_WORKSPACE_DIR 覆盖）
 │   │   └── <skill_name>/
 │   │       ├── SKILL.md
 │   │       ├── scripts/

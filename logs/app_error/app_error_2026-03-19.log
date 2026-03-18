@@ -1,0 +1,272 @@
+2026-03-19 00:31:43 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/skills-ecosystem/wechat-official-account-helper.git
+[?25h[?25l│
+[1D[0K◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..│
+■  Failed to clone repository
+│
+│  Authentication failed for https://github.com/skills-ecosystem/wechat-official-account-helper.git.
+│
+│    - For private repos, ensure you have access
+│
+│    - For SSH: Check your keys with 'ssh -T git@github.com'
+│
+│    - For HTTPS: Run 'gh auth login' or configure git credentials
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+[999D[J■  Canceled
+[?25h[0m
+2026-03-19 00:32:05 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/skills-ecosystem/wechat-official-account-helper.git
+[?25h[?25l│
+◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository..│
+■  Failed to clone repository
+│
+│  Authentication failed for https://github.com/skills-ecosystem/wechat-official-account-helper.git.
+│
+│    - For private repos, ensure you have access
+│
+│    - For SSH: Check your keys with 'ssh -T git@github.com'
+│
+│    - For HTTPS: Run 'gh auth login' or configure git credentials
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+[999D[J■  Canceled
+[?25h[0m
+2026-03-19 00:32:27 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/skills-ecosystem/wechat-miniprogram-dev.git
+[?25h[?25l│
+◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..│
+■  Failed to clone repository
+│
+│  Authentication failed for https://github.com/skills-ecosystem/wechat-miniprogram-dev.git.
+│
+│    - For private repos, ensure you have access
+│
+│    - For SSH: Check your keys with 'ssh -T git@github.com'
+│
+│    - For HTTPS: Run 'gh auth login' or configure git credentials
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+[999D[J■  Canceled
+[?25h[0m
+2026-03-19 00:35:09 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: wechat-official-account-helper
+[?25h[?25l│
+│
+■  Failed to clone repository
+│
+│  Failed to clone wechat-official-account-helper: fatal: repository 'wechat-official-account-helper' does not exist
+│
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+■  Canceled
+[?25h[0m
+2026-03-19 00:40:38 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:634 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-19 00:47:08 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:634 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-19 00:52:27 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:634 - [31m工具调用超时: send_message (>300.0s)[0m
+2026-03-19 00:53:02 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: wechaty-puppet-official-account
+[?25h[?25l│
+│
+■  Failed to clone repository
+│
+│  Failed to clone wechaty-puppet-official-account: fatal: repository 'wechaty-puppet-official-account' does not exist
+│
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+■  Canceled
+[?25h[0m
+2026-03-19 00:53:31 | ERROR    | app.skills.installer:install:154 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: npm install wechaty-puppet-official-account
+[?25h[?25l│
+│
+■  Failed to clone repository
+│
+│  Failed to clone npm install wechaty-puppet-official-account: fatal: repository 'npm install wechaty-puppet-official-account' does not exist
+│
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+■  Canceled
+[?25h[0m
+2026-03-19 01:01:23 | ERROR    | app.skills.installer:install:214 - [31m[SkillInstallerService] Skills CLI 命令执行成功，但未在临时目录 /private/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T/ai-agent-skill-home-ab00arxq/skills 中找到包含 SKILL.md 的技能包[0m
+2026-03-19 01:02:13 | ERROR    | app.skills.installer:install:214 - [31m[SkillInstallerService] Skills CLI 命令执行成功，但未在临时目录 /private/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T/ai-agent-skill-home-4h8gfedw/skills 中找到包含 SKILL.md 的技能包[0m
+2026-03-19 01:02:55 | ERROR    | app.skills.installer:install:187 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/owner/repo.git @skill
+[?25h[?25l│
+◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository...[999D[J◐  Cloning repository...[999D[J◓  Cloning repository...│
+■  Failed to clone repository
+│
+│  Authentication failed for https://github.com/owner/repo.git.
+│
+│    - For private repos, ensure you have access
+│
+│    - For SSH: Check your keys with 'ssh -T git@github.com'
+│
+│    - For HTTPS: Run 'gh auth login' or configure git credentials
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+[999D[J■  Canceled
+[?25h 系统判断当前仓库可能是私有仓库，或当前环境缺少访问凭据。 系统已基于真实 `npx skills find` 找到其他候选，可改试：145mvercel-labs/skills@find-skills, 145manthropics/skills@skill-creator, 145mvercel-labs/agent-skills@vercel-react-native-skills。[0m
+2026-03-19 01:03:09 | ERROR    | app.skills.installer:install:187 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/owner/repo.git @skill
+[?25h[?25l│
+◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..│
+■  Failed to clone repository
+│
+│  Authentication failed for https://github.com/owner/repo.git.
+│
+│    - For private repos, ensure you have access
+│
+│    - For SSH: Check your keys with 'ssh -T git@github.com'
+│
+│    - For HTTPS: Run 'gh auth login' or configure git credentials
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+[999D[J■  Canceled
+[?25h 系统判断当前仓库可能是私有仓库，或当前环境缺少访问凭据。 系统已基于真实 `npx skills find` 找到其他候选，可改试：145mvercel-labs/skills@find-skills, 145manthropics/skills@skill-creator, 145mvercel-labs/agent-skills@vercel-react-native-skills。[0m
+2026-03-19 01:04:18 | ERROR    | app.skills.installer:install:214 - [31m[SkillInstallerService] Skills CLI 命令执行成功，但未在临时目录 /private/var/folders/f7/zp9xpl9s3w36m__3b3nsklr80000gn/T/ai-agent-skill-home-ep429ihr/skills 中找到包含 SKILL.md 的技能包[0m
+2026-03-19 01:04:21 | ERROR    | app.skills.installer:install:187 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: skills.volces.com@wechat-article-search
+[?25h[?25l│
+│
+■  Failed to clone repository
+│
+│  Failed to clone skills.volces.com@wechat-article-search: fatal: repository 'skills.volces.com@wechat-article-search' does not exist
+│
+│
+│  Tip: use the --yes (-y) and --global (-g) flags to install without prompts.
+│
+└  Installation failed
+
+■  Canceled
+[?25h[0m
+2026-03-19 01:04:26 | ERROR    | app.skills.installer:install:187 - [31m[SkillInstallerService] Skills CLI 安装失败: Skills CLI 安装失败：[38;5;250m███████╗██╗  ██╗██╗██╗     ██╗     ███████╗[0m
+[38;5;248m██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝[0m
+[38;5;245m███████╗█████╔╝ ██║██║     ██║     ███████╗[0m
+[38;5;243m╚════██║██╔═██╗ ██║██║     ██║     ╚════██║[0m
+[38;5;240m███████║██║  ██╗██║███████╗███████╗███████║[0m
+[38;5;238m╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝[0m
+
+┌   skills 
+[?25l│
+◇  Source: https://github.com/httprunner/skills.git @wechat-search-collector
+[?25h[?25l│
+◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository[999D[J◐  Cloning repository[999D[J◓  Cloning repository[999D[J◑  Cloning repository[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository.[999D[J◐  Cloning repository.[999D[J◓  Cloning repository.[999D[J◑  Cloning repository.[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository..[999D[J◐  Cloning repository..[999D[J◓  Cloning repository..[999D[J◑  Cloning repository..[999D[J◒  Cloning repository...[999D[J◐  Cloning repository...[999D[J◓  Cloning repository...[999D[J◑  Cloning repository...[999D[J◒  Cloning repository...[999D[J◐  Cloning repository...[999D[J◓  Cloning repository...[999D[J◑  Cloning repository...[999D[J◒  Cloning repository...[999D[J◇  Repository cloned
+[?25h[?25l│
+[999D[J◇  Found 8 skills
+[?25h│
+■  No matching skills found for: wechat-search-collector
+│
+●  Available skills:
+│
+│    - ai-vision
+│
+│    - android-adb
+│
+│    - feishu-bitable-task-manager
+│
+│    - go-installer
+│
+│    - harmony-hdc
+│
+│    - resolve-kwai-cdn-url
+│
+│    - result-bitable-reporter
+│
+│    - result-supabase-reporter[0m

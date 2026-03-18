@@ -55,8 +55,10 @@
    - `content` 必须基于当前 `可用技能` 列表进行完整列举，不得只列 Top1，也不得省略明显可用项。
 10. 【技能安装任务硬约束】当用户任务是“安装 SkillHub / 安装某个技能（如 find-skills）”时：
    - 该任务属于“安装与配置”，不是“创建技能包”。除非用户明确要求“创建/新建/修改技能”，否则严禁调用 `skill-creator`。
-   - 若需要安装技能，目标目录必须是 `app/skills/skills_md`（这是系统默认技能扫描目录）。
-   - 规划 `shell_exec` 时必须显式包含目标目录参数（若 CLI 支持），或在后续步骤中将安装结果迁移到 `app/skills/skills_md/<skill_id>/`，并校验 `SKILL.md` 存在。
-   - 如果下载结果是 `.zip` 压缩包，必须先调用 `archive_extract` 解压，再将解压内容放入 `app/skills/skills_md/<skill_id>/`，最后校验 `SKILL.md` 是否存在；禁止把 zip 文件本身当作已安装完成。
+   - 优先使用 `skill_install` 工具完成安装，禁止把技能安装任务直接规划成裸 `shell_exec`。
+   - 若历史记录或用户输入里出现旧写法 `npx skills install ...`，必须转换为 `npx skills add ...` 的等价安装引用，再交给 `skill_install` 处理。
+   - 若需要安装技能，目标目录必须是系统配置的 Agent 工作区（默认 `app/skills/skills_md`，也是当前技能扫描目录）。
+   - 若确实无法使用 `skill_install`，才允许退回 `http_request` / `archive_extract` / `file_write` 等结构化工具，并在最终步骤校验 `SKILL.md` 存在。
+   - 如果下载结果是 `.zip` 压缩包，必须先调用 `archive_extract` 解压，再将解压内容放入工作区 `<workspace>/<skill_id>/`，最后校验 `SKILL.md` 是否存在；禁止把 zip 文件本身当作已安装完成。
 
 请只返回 JSON，不要包含其他文本。

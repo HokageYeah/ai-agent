@@ -641,6 +641,10 @@ class LangGraphAgentExecutor:
         # 普通任务下启用受限技能门禁，避免误召回高影响技能。
         # NOTE: 清单查询也应用门禁，保证“当前意图下可用技能”口径一致。
         routable_skills = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
+        routable_skills = self._filter_tool_incompatible_skills(
+            agent=agent,
+            all_skills=routable_skills,
+        )
 
         # 技能清单查询：应向模型暴露“全部可用技能”以便直接列举，
         # 避免 Top-K 路由把上下文缩成 1~2 个技能导致回答失真。
@@ -667,6 +671,63 @@ class LangGraphAgentExecutor:
             all_skills=routable_skills,
             top_k=3,
         )
+
+    def _filter_tool_incompatible_skills(
+        self,
+        agent: Agent,
+        all_skills: List[Any],
+    ) -> List[Any]:
+        """
+        过滤掉当前 Agent 无法满足必需工具的技能。
+
+        设计原因：
+        - 某些技能（如 find-skills）必须依赖 `shell_exec` 才能返回真实结果；
+        - 若把这类技能暴露给只负责委派、没有对应工具的 Agent，
+          很容易出现“工具为空却继续生成内容”的假执行结果。
+        """
+        if not all_skills:
+            return []
+
+        agent_allowed_tools = {
+            str(tool_name).strip()
+            for tool_name in (agent.available_tools or [])
+            if isinstance(tool_name, str) and str(tool_name).strip()
+        }
+        if not agent_allowed_tools:
+            return all_skills
+
+        # 与执行引擎保持一致：敏感工具不会因为在 required_tools 中声明就阻断技能路由。
+        sensitive_required_tools = {"file_write"}
+        compatible_skills: List[Any] = []
+        hidden_skills: List[str] = []
+
+        for skill in all_skills:
+            declared_required_tools = {
+                str(tool_name).strip()
+                for tool_name in (getattr(skill, "required_tools", []) or [])
+                if isinstance(tool_name, str) and str(tool_name).strip()
+            }
+            effective_required_tools = {
+                tool_name
+                for tool_name in declared_required_tools
+                if tool_name not in sensitive_required_tools
+            }
+            if effective_required_tools and not effective_required_tools.issubset(
+                agent_allowed_tools
+            ):
+                missing_tools = sorted(effective_required_tools - agent_allowed_tools)
+                hidden_skills.append(
+                    f"{getattr(skill, 'skill_id', 'unknown')}缺少{missing_tools}"
+                )
+                continue
+            compatible_skills.append(skill)
+
+        if hidden_skills:
+            logger.info(
+                f"{Fore.BLUE}[技能路由] 已按工具可达性隐藏技能: {hidden_skills}{Style.RESET_ALL}"
+            )
+
+        return compatible_skills
     
     def _create_stream_event(
         self,

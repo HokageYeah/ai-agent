@@ -1,11 +1,16 @@
-from typing import Optional
 import os
+from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
+from app.utils.resource_path import get_project_root
+
 OPENAI_DEFAULT_MODEL_FALLBACK = "gpt-5.3-codex"
 ANTHROPIC_DEFAULT_MODEL_FALLBACK = "claude-3-haiku-20240307"
+DEFAULT_AGENT_WORKSPACE_DIR = "app/skills/skills_md"
 
 # 获取当前环境
 ENV = os.getenv("ENV", "development")
@@ -62,6 +67,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_BASE_URL: Optional[str] = None
     DEFAULT_ANTHROPIC_MODEL: Optional[str] = ANTHROPIC_DEFAULT_MODEL_FALLBACK
+    AGENT_WORKSPACE_DIR: Optional[str] = DEFAULT_AGENT_WORKSPACE_DIR
     
     # 其他第三方服务配置
     N8N_WEBHOOK_URL: Optional[str] = None
@@ -88,6 +94,26 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def resolve_agent_workspace_dir(raw_dir: Optional[str] = None) -> Path:
+    """
+    解析 Agent 工作区目录。
+
+    设计原因：
+    1. 统一收敛“技能安装目录 / 后续本地记忆目录”等工作区配置入口。
+    2. 允许 .env 中填写相对路径，运行时自动相对项目根目录解析，避免受启动目录影响。
+    """
+    candidate = (raw_dir or settings.AGENT_WORKSPACE_DIR or DEFAULT_AGENT_WORKSPACE_DIR).strip()
+    expanded = Path(os.path.expandvars(os.path.expanduser(candidate)))
+    if not expanded.is_absolute():
+        expanded = get_project_root() / expanded
+    return expanded.resolve()
+
+
+def get_agent_workspace_dir() -> Path:
+    """获取当前生效的 Agent 工作区绝对路径。"""
+    return resolve_agent_workspace_dir()
 
 
 def get_default_model(provider: str = "openai") -> str:

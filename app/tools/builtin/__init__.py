@@ -11,6 +11,7 @@
 - FileListDirTool: 目录列表工具
 - ArchiveCompressTool: ZIP 压缩工具
 - ArchiveExtractTool: ZIP 解压工具
+- SkillInstallTool: 技能安装工具
 - ShellExecutorTool: Shell 命令执行工具
 - SpawnAgentTool: 子 Agent 任务委派工具
 - MessageAgentTool: 消息发送工具（需运行时注入 stream_callback）
@@ -26,6 +27,7 @@ from app.tools.builtin.http import HTTPRequestTool
 from app.tools.builtin.executor import PythonExecutorTool
 from app.tools.builtin.file import FileReadTool, FileWriteTool, FileEditTool, FileListDirTool
 from app.tools.builtin.archive import ArchiveCompressTool, ArchiveExtractTool
+from app.tools.builtin.skill import SkillInstallTool
 from app.tools.builtin.shell import ShellExecutorTool
 # NOTE: SpawnAgentTool 和 MessageAgentTool 需要运行时注入依赖，不参与自动批量注册
 from app.tools.builtin.spawn import SpawnAgentTool
@@ -45,6 +47,7 @@ __all__ = [
     "FileListDirTool",
     "ArchiveCompressTool",
     "ArchiveExtractTool",
+    "SkillInstallTool",
     "ShellExecutorTool",
     # NOTE: SpawnAgentTool 和 MessageAgentTool 不加入 register_all_builtin_tools
     "SpawnAgentTool",
@@ -91,6 +94,7 @@ def register_all_builtin_tools(tool_hub, seed_order_data: bool = True) -> None:
         FileListDirTool(),
         ArchiveCompressTool(),
         ArchiveExtractTool(),
+        SkillInstallTool(),    # 技能安装工具，优先替代 shell_exec 执行 skills CLI
         ShellExecutorTool(),    # Shell 命令执行工具
         db_tool,        # 复用已创建的实例，确保种子数据注入到同一连接
         CalculatorTool(),

@@ -16,6 +16,7 @@
 - list_dir: 目录列表工具
 - archive_compress: ZIP 压缩工具
 - archive_extract: ZIP 解压工具
+- skill_install: 技能安装工具
 - shell_exec: Shell 命令执行工具
 - spawn_agent: 子 Agent 任务委派工具（需 ChildAgentManager 注入）
 - send_message: 消息发送工具（实时向用户反馈进度）
@@ -52,6 +53,7 @@ from app.tools.builtin import (
     FileListDirTool,
     ArchiveCompressTool,
     ArchiveExtractTool,
+    SkillInstallTool,
     ShellExecutorTool,
     SpawnAgentTool,
     MessageAgentTool,
@@ -79,6 +81,7 @@ __all__ = [
     "FileListDirTool",
     "ArchiveCompressTool",
     "ArchiveExtractTool",
+    "SkillInstallTool",
     "ShellExecutorTool",
     "SpawnAgentTool",   # 需运行时手动注入 ChildAgentManager
     "DatabaseQueryTool",

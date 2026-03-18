@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from colorama import Fore, Style
 from loguru import logger
 
+from app.core.config import get_agent_workspace_dir
 from app.skills.base import MemoryStrategy, ParamSchema, Skill, SkillMetadata
 
 
@@ -43,7 +44,7 @@ class SkillManager:
         self.skills_root = (
             Path(skills_root)
             if skills_root
-            else Path(__file__).resolve().parent / "skills_md"
+            else get_agent_workspace_dir()
         )
         self.auto_discover = auto_discover
         self._metadata: Dict[str, SkillMetadata] = {}

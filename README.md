@@ -47,8 +47,9 @@
 │   ├── scripts/          # 用于不同环境下快捷切换 DB 与构建数据表的运维脚本
 │   ├── services/         # 面向外部的业务总线层接口服务
 │   ├── skills/           # 通过大语言模型做二次包装的高级技能库统筹 
+│   │   ├── installer.py # 技能安装服务（统一处理 Skills CLI 安装与工作区落地）
 │   │   ├── manager.py   # 动态技能管理器（扫描/路由元信息/懒加载）
-│   │   ├── skills_md/   # 技能包主目录（每个技能一个文件夹，含 SKILL.md/scripts/resources）
+│   │   ├── skills_md/   # 默认技能工作区（可由 AGENT_WORKSPACE_DIR 配置覆盖）
 │   │   └── library/     # 历史兼容目录（逐步迁移中）
 │   ├── tools/            # Python 硬编码底层能力库封装框架
 │   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
@@ -126,14 +127,33 @@ graph TD
 
 当前技能系统已完成从“代码硬注册”向“文件系统动态加载”的升级，核心链路如下：
 
-1. **技能发现**：`SkillManager.discover_skills()` 扫描 `app/skills/skills_md/*/SKILL.md`，构建轻量元数据索引。  
+1. **技能发现**：`SkillManager.discover_skills()` 扫描 Agent 工作区中的 `*/SKILL.md`，默认目录为 `app/skills/skills_md`，也可通过 `.env` 中的 `AGENT_WORKSPACE_DIR` 覆盖，构建轻量元数据索引。  
 2. **混合路由（规则预筛 + LLM 决策）**：`langgraph_executor._route_skills_by_metadata()` 先做规则打分筛选 Top-K，再由 LLM 在候选集中做最终技能决策。  
 3. **动态加权规则**：`skill_boost_rules` 不再写死；系统基于 `skill_id/name/tags/inputs/when_to_use/description` 自动构建关键词加权规则，并对跨技能高频通用词做抑制。  
 4. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文；LLM 决定是否调用技能、调用哪个技能及参数。  
 5. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
 6. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
+7. **安装闭环**：当任务目标是“安装技能”时，系统优先使用内置 `skill_install` 工具，经 `SkillInstallerService` 调用 Skills CLI，将安装结果先落到临时 `CODEX_HOME/skills`，再复制到 Agent 工作区；后续 `SkillManager` 在下一次访问时会自动检测目录变化并重载索引。
 
 > 说明：详细重构方案见 [docs/skills_reload.md](docs/skills_reload.md)。
+
+### 技能安装与工作区
+
+- **统一工作区入口**：`.env` 中新增 `AGENT_WORKSPACE_DIR`，当前默认值为 `app/skills/skills_md`。这个目录不仅承载技能安装结果，后续本地记忆或其它可持久化运行时资产也可以统一收敛到这里。
+- **安装优先走结构化工具**：安装技能时不再推荐让 LLM 自由拼接 `shell_exec` 命令，而是优先使用 `skill_install` 工具。
+- **兼容历史命令**：若历史记忆或用户输入中仍出现 `npx skills install ...`，安装服务会自动规范化为 `npx skills add ...` 后再执行。
+- **与动态加载衔接**：技能被复制到工作区后，不需要手动改代码；`SkillManager` 会在下一次 `list_skill_metadata()` / `load_skill()` 时自动感知目录变化并刷新索引。
+
+```mermaid
+flowchart TD
+    A[用户要求安装技能] --> B[PlanningEngine 规划安装步骤]
+    B --> C[skill_install 工具]
+    C --> D[SkillInstallerService]
+    D --> E[npx skills add ...\n安装到临时 CODEX_HOME/skills]
+    E --> F[复制到 Agent 工作区\n默认 app/skills/skills_md]
+    F --> G[后续 SkillManager 自动检测目录变化]
+    G --> H[技能进入 discover / route / lazy load 主链路]
+```
 
 
 ## 🛡️ 错误感知与自我纠错机制
@@ -237,7 +257,7 @@ interface AgentState {
 
 - **通用助手（`general_agent`）**
   - 职责：处理搜索、文件写入、代码执行、翻译等通用任务；常被 `order_agent` / `refund_agent` 委派完成“写入本地”“搜索参数”等衍生需求。
-  - 工具权限：授权 `search`、`http_request`、`python_executor`、`file_read`/`file_write`/`file_edit`、`list_dir`、`shell_exec`、`calculator`、`datetime`、`send_message` 等，无 `spawn_agent`。
+  - 工具权限：授权 `search`、`http_request`、`python_executor`、`file_read`/`file_write`/`file_edit`、`list_dir`、`archive_extract`/`archive_compress`、`skill_install`、`shell_exec`、`calculator`、`datetime`、`send_message` 等，无 `spawn_agent`。
 
 - **内存订单数据库 + `DatabaseQueryTool`**
   - 启动时自动构建 SQLite 内存库，包含 `customers / products / orders / order_items / refunds` 等表，并注入 1001–1010 号订单等测试数据。
@@ -551,6 +571,9 @@ OPENAI_API_KEY=sk-xxxxxxx
 OPENAI_BASE_URL='https://apis.iflow.cn/v1'
 DEFAULT_MODEL='deepseek-v3.2'
 
+# Agent 工作区（默认技能安装目录）
+AGENT_WORKSPACE_DIR='app/skills/skills_md'
+
 # 数据库等配置按需修改 (如果你要用到涉及 DB 的额外组件)
 DB_DRIVER=mysql+mysqlconnector
 DB_HOST=localhost
@@ -558,6 +581,10 @@ DB_PORT=3306
 DB_NAME=wx_public_dev
 # ...
 ```
+
+说明：
+- 修改 `AGENT_WORKSPACE_DIR` 后，技能扫描目录和技能安装落地点会一起切换。
+- 若你调整了 `.env` 中的模型代理地址或工作区路径，请重启服务以确保新配置生效。
 
 ### 3. 主项目启动
 一切配置完成后，在虚拟环境中通过 Uvicorn 的包装脚本拉起 FastAPI 服务进程：

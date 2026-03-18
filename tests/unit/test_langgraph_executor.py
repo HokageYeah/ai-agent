@@ -522,3 +522,49 @@ def test_resolve_available_skills_should_keep_skill_creator_for_explicit_request
 
     assert "skill-creator" in routed_ids
     assert "skill-creator" in selected_ids
+
+
+def test_resolve_available_skills_should_hide_tool_incompatible_skills(monkeypatch):
+    """缺少必需工具时，技能应在路由前被隐藏，避免无工具假执行。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+        available_tools=["datetime"],
+    )
+    fake_skills = [
+        SimpleNamespace(
+            skill_id="find-skills",
+            name="找技能",
+            description="真实搜索技能包",
+            required_tools=["shell_exec"],
+            optional_tools=[],
+        ),
+        SimpleNamespace(
+            skill_id="text_writing",
+            name="写作",
+            description="写作",
+            required_tools=[],
+            optional_tools=[],
+        ),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    captured = {}
+
+    def fake_route(**kwargs):
+        captured["all_skills"] = kwargs.get("all_skills", [])
+        return kwargs.get("all_skills", [])
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+    selected = executor._resolve_available_skills(
+        agent=agent,
+        task="帮我找一个微信公众号相关的技能",
+    )
+    routed_ids = [s.skill_id for s in captured["all_skills"]]
+    selected_ids = [s.skill_id for s in selected]
+
+    assert "find-skills" not in routed_ids
+    assert routed_ids == ["text_writing"]
+    assert selected_ids == ["text_writing"]
