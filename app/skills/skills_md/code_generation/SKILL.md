@@ -1,6 +1,10 @@
 ---
 name: code_generation
-description: 根据需求生成高质量代码，支持多种语言和框架。
+description: 根据需求生成高质量代码，支持多种编程语言和框架。当用户明确要求"生成代码""实现功能""补全模块""写一个程序"时使用，产出包含边界处理和可运行示例的工程化代码。
+required_tools: ["python_executor"]
+optional_tools: ["file_write", "shell_exec"]
+tags: ["code", "programming", "development", "python", "typescript", "generation"]
+memory_include_short_term: true
 ---
 # 何时使用 (When to use)
 - 当用户明确要求“生成代码”“实现功能”“补全模块”时

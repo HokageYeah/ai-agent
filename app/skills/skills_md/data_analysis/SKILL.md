@@ -1,6 +1,10 @@
 ---
 name: data_analysis
-description: 分析数据并生成洞察，识别趋势、发现异常值并提供建议。
+description: 分析数据并生成洞察报告，识别趋势、发现异常值并提供可执行建议。当用户要求分析 CSV/JSON/表格数据、提取统计规律、生成数据报告或做数据驱动决策时使用。
+required_tools: ["python_executor"]
+optional_tools: ["file_read", "shell_exec"]
+tags: ["data", "analysis", "statistics", "trend", "report", "csv", "json"]
+memory_include_short_term: true
 ---
 # 何时使用 (When to use)
 - 当用户要求分析 CSV、JSON、表格文本或数字序列时
