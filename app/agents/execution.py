@@ -24,6 +24,7 @@ from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.planning import Plan, PlanStep
+from app.core.config import get_default_model
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
 from app.utils.prompt_manager import PromptManager
@@ -1943,7 +1944,7 @@ class ExecutionEngine:
             from app.llm_hub.inference import InferenceConfig
             
             # 优先使用 agent 配置的模型，否则回退到默认
-            model = "gpt-3.5-turbo"
+            model = get_default_model("openai")
             if agent and agent.agent_config:
                 model = agent.agent_config.execution_model
             

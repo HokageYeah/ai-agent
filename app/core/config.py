@@ -1,8 +1,11 @@
-from typing import Any, Dict, Optional
+from typing import Optional
 import os
 from dotenv import load_dotenv
-from pydantic import field_validator, ConfigDict
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
+
+OPENAI_DEFAULT_MODEL_FALLBACK = "gpt-5.3-codex"
+ANTHROPIC_DEFAULT_MODEL_FALLBACK = "claude-3-haiku-20240307"
 
 # 获取当前环境
 ENV = os.getenv("ENV", "development")
@@ -55,10 +58,10 @@ class Settings(BaseSettings):
     # LLM 相关配置
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: Optional[str] = None
-    DEFAULT_MODEL: Optional[str] = "qwen3-max"
+    DEFAULT_MODEL: Optional[str] = OPENAI_DEFAULT_MODEL_FALLBACK
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_BASE_URL: Optional[str] = None
-    DEFAULT_ANTHROPIC_MODEL: Optional[str] = "claude-3-sonnet-20240229"
+    DEFAULT_ANTHROPIC_MODEL: Optional[str] = ANTHROPIC_DEFAULT_MODEL_FALLBACK
     
     # 其他第三方服务配置
     N8N_WEBHOOK_URL: Optional[str] = None
@@ -85,3 +88,27 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_default_model(provider: str = "openai") -> str:
+    """
+    统一获取项目默认模型，避免各层维护不一致的硬编码兜底值。
+    """
+    normalized_provider = (provider or "openai").strip().lower()
+    if normalized_provider == "anthropic":
+        return (settings.DEFAULT_ANTHROPIC_MODEL or ANTHROPIC_DEFAULT_MODEL_FALLBACK).strip()
+    return (settings.DEFAULT_MODEL or OPENAI_DEFAULT_MODEL_FALLBACK).strip()
+
+
+def infer_provider_from_model(model_name: Optional[str]) -> str:
+    """
+    根据模型名称推断供应商。
+
+    当前项目主要接入两类模型：
+    - `claude-*` 归类为 Anthropic
+    - 其余模型默认走 OpenAI 兼容接口
+    """
+    normalized_model_name = (model_name or "").strip().lower()
+    if normalized_model_name.startswith("claude"):
+        return "anthropic"
+    return "openai"

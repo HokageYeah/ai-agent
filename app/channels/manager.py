@@ -21,6 +21,7 @@ Channel Manager (渠道管理器)
 from typing import Dict, Any, Optional
 from loguru import logger
 from colorama import Fore, Style
+from app.core.config import get_default_model
 from app.channels.base import ChannelAdapter, ChannelMessage
 
 
@@ -238,7 +239,7 @@ class ChannelManager:
         # 从 metadata 中提取可选参数
         conversation_id = message.metadata.get("conversation_id", message.sender_id)
         system_prompt = message.metadata.get("system_prompt")
-        model = message.metadata.get("model", "qwen3-max")
+        model = message.metadata.get("model") or get_default_model("openai")
         temperature = message.metadata.get("temperature", 0.7)
         max_tokens = message.metadata.get("max_tokens", 2048)
 

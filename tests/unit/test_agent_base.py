@@ -1,10 +1,11 @@
 import pytest
+from app.core.config import get_default_model
 from app.agents.base import Agent, AgentConfig
 
 def test_agent_config_defaults():
     """测试 AgentConfig 默认值"""
     config = AgentConfig()
-    assert config.planning_model == "gpt-4"
+    assert config.planning_model == get_default_model("openai")
     assert config.max_iterations == 10
 
 def test_agent_model_creation():
@@ -17,7 +18,7 @@ def test_agent_model_creation():
     )
     
     assert agent.agent_id == "test_agent"
-    assert agent.agent_config.execution_model == "gpt-3.5-turbo"
+    assert agent.agent_config.execution_model == get_default_model("openai")
     assert len(agent.available_tools) == 0
 
 def test_agent_custom_config():

@@ -18,6 +18,7 @@ AI Agent API Schema 定义
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
 from enum import Enum
+from app.core.config import get_default_model
 
 
 # =============================================================================
@@ -29,7 +30,7 @@ class ChatRequest(BaseModel):
     conversation_id: str = Field(..., description="会话 ID")
     message: str = Field(..., description="用户消息内容")
     system_prompt: Optional[str] = Field(None, description="系统提示词（可选）")
-    model: Optional[str] = Field("qwen3-max", description="使用的模型")
+    model: Optional[str] = Field(default_factory=lambda: get_default_model("openai"), description="使用的模型")
     temperature: Optional[float] = Field(0.7, description="温度参数")
     max_tokens: Optional[int] = Field(2048, description="最大生成 tokens")
 

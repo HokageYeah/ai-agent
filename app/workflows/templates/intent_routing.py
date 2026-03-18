@@ -17,6 +17,7 @@
 
 from loguru import logger
 from colorama import Fore, Style
+from app.core.config import get_default_model
 from app.workflows.nodes import Workflow, WorkflowNode, NodeType
 
 # 意图路由工作流定义
@@ -39,7 +40,7 @@ INTENT_ROUTING_WORKFLOW = Workflow(
 
 请只返回分类结果，格式为: data_analysis 或 code_generation 或 translation 或 general_chat
 """,
-                "model": "gpt-3.5-turbo",
+                "model": get_default_model("openai"),
                 "temperature": 0.1  # 低温度确保分类稳定性
             },
             inputs=[],

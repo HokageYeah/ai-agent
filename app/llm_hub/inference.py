@@ -21,6 +21,7 @@ from colorama import Fore, Style, Back
 from datetime import datetime
 
 # 导入 LLM Hub 内部模块
+from app.core.config import get_default_model, infer_provider_from_model
 from app.llm_hub.providers.base import LLMProvider, ModelMetadata
 from app.llm_hub.prompt_builder import PromptBuilder
 from app.llm_hub.streaming import StreamingManager, StreamChunk
@@ -35,7 +36,7 @@ class InferenceConfig:
     
     def __init__(
         self,
-        model: str = "qwen3-max",
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         stream: bool = False,
@@ -57,7 +58,10 @@ class InferenceConfig:
             tools: 可用工具定义
             provider: 强制指定供应商 (可选)
         """
-        self.model = model
+        resolved_provider = (provider or "").strip().lower()
+        self.model = model or get_default_model(
+            "anthropic" if resolved_provider == "anthropic" else "openai"
+        )
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.stream = stream
@@ -67,7 +71,7 @@ class InferenceConfig:
         self.provider = provider
         
         logger.info(
-            f"{Fore.BLUE}创建推理配置: model={model}, stream={stream}, "
+            f"{Fore.BLUE}创建推理配置: model={self.model}, stream={stream}, "
             f"temperature={temperature}{Style.RESET_ALL}"
         )
 
@@ -621,22 +625,35 @@ class InferenceEngine:
                 provider = self._provider
         else:
             provider = self._provider
-        
-        print('模型引擎选择模型config.model:', config.model)
+
+        resolved_provider_name = (
+            config.provider.lower()
+            if config.provider
+            else type(provider).__name__.replace("Provider", "").lower()
+        )
+        logger.debug(
+            f"{Fore.CYAN}模型选择开始 | config.model={config.model} | "
+            f"provider={resolved_provider_name}{Style.RESET_ALL}"
+        )
         # 获取模型元数据
         model_metadata = self._model_registry.get_model(config.model)
-        print('模型引擎选择模型model_metadata:', model_metadata)
+        logger.debug(f"{Fore.CYAN}模型注册信息: {model_metadata}{Style.RESET_ALL}")
         if model_metadata is None:
             logger.warning(
-                f"{Fore.YELLOW}模型 {config.model} 未在注册中心找到，使用默认模型{Style.RESET_ALL}"
+                f"{Fore.YELLOW}模型 {config.model} 未在注册中心找到，"
+                f"将按供应商规则动态补齐元数据{Style.RESET_ALL}"
             )
             # 返回一个默认的模型元数据
             model_metadata = ModelMetadata(
                 model_id=config.model,
-                provider=type(provider).__name__.lower(),
+                provider=(
+                    config.provider.lower()
+                    if config.provider
+                    else infer_provider_from_model(config.model)
+                ),
                 model_name=config.model,
-                capabilities=["chat"],
-                context_window=4096,
+                capabilities=["chat", "tool_use", "vision"] if resolved_provider_name == "anthropic" else ["chat", "function_call"],
+                context_window=200000 if resolved_provider_name == "anthropic" else 128000,
                 max_output_tokens=4096
             )
         
@@ -1109,7 +1126,7 @@ if __name__ == "__main__":
     
     # 测试配置
     config = InferenceConfig(
-        model="qwen3-max",
+        model=get_default_model("openai"),
         temperature=0.7,
         system_prompt="你是一个有帮助的助手"
     )
@@ -1119,7 +1136,7 @@ if __name__ == "__main__":
     result = InferenceResult(
         content="这是一个测试回复",
         raw_response={},
-        model="qwen3-max",
+        model=get_default_model("openai"),
         provider="openai",
         usage={"prompt_tokens": 10, "completion_tokens": 5},
         finish_reason="stop"

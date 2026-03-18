@@ -17,6 +17,7 @@ Inference Engine 单元测试
 import pytest
 import pytest_asyncio
 from unittest.mock import Mock, AsyncMock, patch
+from app.core.config import get_default_model
 from app.llm_hub.inference import InferenceConfig, InferenceResult, InferenceEngine
 from app.llm_hub.prompt_builder import PromptBuilder
 from app.llm_hub.streaming import StreamingManager
@@ -33,7 +34,7 @@ class TestInferenceConfig:
         """
         config = InferenceConfig()
         
-        assert config.model == "gpt-3.5-turbo"
+        assert config.model == get_default_model("openai")
         assert config.temperature == 0.7
         assert config.max_tokens == 4096
         assert config.stream is False

@@ -32,6 +32,7 @@ from typing import AsyncIterator
 from loguru import logger
 from colorama import Fore, Style
 
+from app.core.config import get_default_model
 from app.schemas.agent_data import ChatRequest, ChatResponse
 from app.schemas.common_data import ApiResponseData, PlatformEnum
 from app.services.chat_service import ChatService
@@ -90,7 +91,7 @@ async def chat(
                     "service_type": "chat",             # 路由目标：对话服务
                     "conversation_id": request.conversation_id,
                     "system_prompt": request.system_prompt,
-                    "model": request.model or "qwen3-max",
+                    "model": request.model or get_default_model("openai"),
                     "temperature": request.temperature or 0.7,
                     "max_tokens": request.max_tokens or 2048,
                 }

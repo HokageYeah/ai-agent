@@ -194,3 +194,178 @@ ValueError: string argument should contain only ASCII characters
 2026-03-18 19:54:14 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000004] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348551612182e1024', 'requestId': '627b2e077c97adaf6318620d25e14b1c'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
 2026-03-18 19:54:14 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348551612182e1024', 'requestId': '627b2e077c97adaf6318620d25e14b1c'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
 2026-03-18 20:03:41 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:665 - [31m工具调用失败: archive_extract, [Errno 63] File name too long: '/Users/yuye/YeahWork/AIAgent项目/ai-agent/{"success": true, "status_code": 200, "status_text": "OK", "headers": {"content-type": "application/zip", "content-length": "2301", "connection": "keep-alive", "accept-ranges": "bytes", "content-disposition": "attachment", "date": "Wed, 18 Mar 2026 12:03:41 GMT", "etag": "\\"d54d840678ce77345e7bea41fb63b94a\\"", "last-modified": "Thu, 05 Mar 2026 04:25:15 GMT", "server": "tencent-cos", "x-cos-force-download": "true", "x-cos-hash-crc64ecma": "15169433022769300726", "x-cos-request-id": "NjliYTk0OWRfODRjOTQ1MWVfYWRkN18yNTY0YWMy", "x-cos-storage-class": "MAZ_STANDARD", "x-cos-version-id": "null", "x-cosindex-replication-status": "Complete"}, "content": "/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip", "raw_content": "<二进制响应，字节数=2301，已保存到 /var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip>", "content_type": "application/zip", "response_time_ms": 4643, "url": "https:/skillhub-1388575217.cos.accelerate.myqcloud.com/skills/find-skills/0.1.0.zip", "truncated": false, "is_binary": true, "binary_size": 2301, "download_path": "/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip", "metadata": {"method": "GET", "original_url": "https:/lightmake.site/api/v1/download?slug=find-skills", "redirected": true}}'[0m
+2026-03-18 22:55:58 | ERROR    | app.tools.builtin.file:execute:813 - [FileWriteTool] 写入文件发生未知错误: string argument should contain only ASCII characters
+Traceback (most recent call last):
+
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 37, in _bytes_from_decode_data
+    return s.encode('ascii')
+
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 895-903: ordinal not in range(128)
+
+
+During handling of the above exception, another exception occurred:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2042, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/langgraph_executor.py", line 854, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/langgraph_executor.py", line 1490, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 518, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 1167, in _execute_step
+    return await self._execute_tool(step, agent, context)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 1344, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/llm_hub/tool_gateway.py", line 809, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/tools/builtin/file.py", line 773, in execute
+    content = base64.b64decode(content)
+
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 83, in b64decode
+    s = _bytes_from_decode_data(s)
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 39, in _bytes_from_decode_data
+    raise ValueError('string argument should contain only ASCII characters')
+
+ValueError: string argument should contain only ASCII characters
+2026-03-18 22:59:48 | ERROR    | app.tools.builtin.archive:execute:269 - [31m[ArchiveExtractTool] 非法 ZIP 文件: /Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/wechat-article-crawler.zip[0m
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2042, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-l-2V1XLg-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/langgraph_executor.py", line 854, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/langgraph_executor.py", line 1490, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 518, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 1205, in _execute_step
+    return await self._execute_tool(step, agent, context)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/agents/execution.py", line 1344, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/llm_hub/tool_gateway.py", line 809, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/Python项目/AI_Agent智能体/ai-agent/app/tools/builtin/archive.py", line 187, in execute
+    with zipfile.ZipFile(archive_path, "r") as zf:
+
+  File "/Users/yuye/miniconda3/lib/python3.13/zipfile/__init__.py", line 1385, in __init__
+    self._RealGetContents()
+  File "/Users/yuye/miniconda3/lib/python3.13/zipfile/__init__.py", line 1452, in _RealGetContents
+    raise BadZipFile("File is not a zip file")
+
+zipfile.BadZipFile: File is not a zip file
+2026-03-18 23:00:05 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212b740217738460057762332e0e96', 'requestId': 'a951edf03f7e4bd85696a8daa375f962'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 155df20c-fdf0-435d-8c70-aac56c43bb02'}[0m
+2026-03-18 23:00:05 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000030] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212b740217738460057762332e0e96', 'requestId': 'a951edf03f7e4bd85696a8daa375f962'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 155df20c-fdf0-435d-8c70-aac56c43bb02'}[0m
+2026-03-18 23:00:05 | ERROR    | app.agents.planning:create_plan:232 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '212b740217738460057762332e0e96', 'requestId': 'a951edf03f7e4bd85696a8daa375f962'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 155df20c-fdf0-435d-8c70-aac56c43bb02'}[0m
+2026-03-18 23:02:11 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '212ba22917738461315306025e0f3e', 'requestId': 'e9decf605cc2509e682b47d9a45b1732'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 64e409e1-8cf6-47c5-99b9-6eb6b345e364'}[0m
+2026-03-18 23:02:11 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000043] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '212ba22917738461315306025e0f3e', 'requestId': 'e9decf605cc2509e682b47d9a45b1732'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 64e409e1-8cf6-47c5-99b9-6eb6b345e364'}[0m
+2026-03-18 23:02:11 | ERROR    | app.agents.execution:_synthesize_answer:791 - [31m[执行引擎] LLM 答案合成失败，回退到原始数据拼接: Error code: 429 - {'extend_fields': {'traceId': '212ba22917738461315306025e0f3e', 'requestId': 'e9decf605cc2509e682b47d9a45b1732'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 64e409e1-8cf6-47c5-99b9-6eb6b345e364'}[0m
+2026-03-18 23:19:37 | ERROR    | app.llm_hub.providers.openai:stream:309 - [31mOpenAI 流式请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:19:37 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:19:37 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000001] 流式推理请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:19:37 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:19:37 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:21:20 | ERROR    | app.llm_hub.providers.openai:stream:309 - [31mOpenAI 流式请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:21:20 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:21:20 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000001] 流式推理请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:21:20 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:21:20 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:26:55 | ERROR    | app.llm_hub.providers.openai:stream:309 - [31mOpenAI 流式请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:26:55 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:26:55 | ERROR    | app.llm_hub.inference:infer_stream:404 - [31m[req-000001] 流式推理请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:26:55 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:26:55 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:37:59 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:37:59 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:37:59 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:37:59 | ERROR    | app.services.chat_service:stream_chat:217 - [31m流式对话处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:37:59 | ERROR    | app.api.endpoints.chat:generate_stream:179 - [31m【对话接口】流式对话请求处理失败: Error code: 502 - {'error': {'message': 'unknown provider for model qwen3-max', 'type': 'server_error', 'code': 'internal_server_error'}}[0m
+2026-03-18 23:41:04 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 997, 'reset_time': '16m36s'}}[0m
+2026-03-18 23:41:04 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 997, 'reset_time': '16m36s'}}[0m
+2026-03-18 23:41:04 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 997, 'reset_time': '16m36s'}}[0m
+2026-03-18 23:41:04 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 997, 'reset_time': '16m36s'}}[0m
+2026-03-18 23:41:04 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 997, 'reset_time': '16m36s'}}[0m
+2026-03-18 23:45:19 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 741, 'reset_time': '12m21s'}}[0m
+2026-03-18 23:45:19 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 741, 'reset_time': '12m21s'}}[0m
+2026-03-18 23:45:19 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 741, 'reset_time': '12m21s'}}[0m
+2026-03-18 23:45:19 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 741, 'reset_time': '12m21s'}}[0m
+2026-03-18 23:45:19 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Error code: 429 - {'error': {'code': 'model_cooldown', 'message': 'All credentials for model gpt-5.3-codex are cooling down', 'model': 'gpt-5.3-codex', 'reset_seconds': 741, 'reset_time': '12m21s'}}[0m

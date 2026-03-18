@@ -29,6 +29,7 @@ from typing import AsyncIterator, List, Dict, Any, Optional
 from anthropic import AsyncAnthropic
 from loguru import logger
 from colorama import Fore, Style
+from app.core.config import get_default_model
 from app.llm_hub.providers.base import LLMProvider
 
 
@@ -132,7 +133,8 @@ class AnthropicProvider(LLMProvider):
         config = config or {}
         
         # 从配置中获取模型，默认为 Claude-3 Opus
-        model = config.get("model", "claude-3-opus-20240229")
+        # 从项目统一配置中读取默认 Anthropic 模型，避免 Provider 层继续持有旧兜底值
+        model = config.get("model") or get_default_model("anthropic")
         # 获取温度参数
         temperature = config.get("temperature", 0.7)
         # 获取最大输出 token 数
@@ -237,7 +239,7 @@ class AnthropicProvider(LLMProvider):
         config = config or {}
         
         # 获取配置参数
-        model = config.get("model", "claude-3-opus-20240229")
+        model = config.get("model") or get_default_model("anthropic")
         temperature = config.get("temperature", 0.7)
         max_tokens = config.get("max_tokens", 4096)
         

@@ -1,7 +1,6 @@
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
-from enum import Enum
-import os
+from app.core.config import get_default_model
 
 
 class AgentExample(BaseModel):
@@ -23,11 +22,11 @@ class AgentConfig(BaseModel):
     默认模型配置从环境变量 DEFAULT_MODEL 读取
     """
     planning_model: str = Field(
-        default_factory=lambda: os.getenv("DEFAULT_MODEL", "gpt-3.5-turbo"),
+        default_factory=lambda: get_default_model("openai"),
         description="规划使用的模型"
     )
     execution_model: str = Field(
-        default_factory=lambda: os.getenv("DEFAULT_MODEL", "gpt-3.5-turbo"),
+        default_factory=lambda: get_default_model("openai"),
         description="执行使用的模型"
     )
     max_iterations: int = Field(10, description="最大反思迭代次数")

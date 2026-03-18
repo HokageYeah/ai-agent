@@ -18,6 +18,7 @@ from typing import Dict, List, Any, Optional, AsyncIterator
 from loguru import logger
 from colorama import Fore, Style
 
+from app.core.config import get_default_model
 from app.memory.short_term import ShortTermMemory
 
 
@@ -100,7 +101,7 @@ class ChatService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=config_kwargs.get("model", "qwen3-max"),
+                model=config_kwargs.get("model") or get_default_model("openai"),
                 temperature=config_kwargs.get("temperature", 0.7),
                 max_tokens=config_kwargs.get("max_tokens", 2048)
             )
@@ -184,7 +185,7 @@ class ChatService:
             from app.llm_hub.inference import InferenceConfig
             
             config = InferenceConfig(
-                model=config_kwargs.get("model", "qwen3-max"),
+                model=config_kwargs.get("model") or get_default_model("openai"),
                 temperature=config_kwargs.get("temperature", 0.7),
                 max_tokens=config_kwargs.get("max_tokens", 2048),
                 stream=True

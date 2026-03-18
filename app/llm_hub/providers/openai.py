@@ -28,6 +28,7 @@ import httpx
 from openai import AsyncOpenAI
 from loguru import logger
 from colorama import Fore, Style
+from app.core.config import get_default_model
 from app.llm_hub.providers.base import LLMProvider
 
 # NOTE: 429 限流自动重试配置
@@ -128,8 +129,8 @@ class OpenAIProvider(LLMProvider):
         """
         config = config or {}
         
-        # 从配置中获取模型，默认为 gpt-3.5-turbo
-        model = config.get("model", "qwen3-max")
+        # 从项目统一配置中获取默认模型，避免 Provider 层继续保留历史硬编码值
+        model = config.get("model") or get_default_model("openai")
         # 获取温度参数，控制输出的随机性
         temperature = config.get("temperature", 0.7)
         
@@ -250,7 +251,7 @@ class OpenAIProvider(LLMProvider):
         config = config or {}
         
         # 获取配置参数
-        model = config.get("model", "qwen3-max")
+        model = config.get("model") or get_default_model("openai")
         temperature = config.get("temperature", 0.7)
         
         logger.info(
