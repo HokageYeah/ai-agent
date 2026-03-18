@@ -1,0 +1,196 @@
+2026-03-18 18:02:53 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '213fe9de17738281739153572e0cb5', 'requestId': '4aad9b6a19239e1b2780105bcbf0c0fa'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2cb94186-ada0-450a-86fa-f1adf7862f76'}[0m
+2026-03-18 18:02:53 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000039] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '213fe9de17738281739153572e0cb5', 'requestId': '4aad9b6a19239e1b2780105bcbf0c0fa'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2cb94186-ada0-450a-86fa-f1adf7862f76'}[0m
+2026-03-18 18:02:53 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Error code: 429 - {'extend_fields': {'traceId': '213fe9de17738281739153572e0cb5', 'requestId': '4aad9b6a19239e1b2780105bcbf0c0fa'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: 2cb94186-ada0-450a-86fa-f1adf7862f76'}[0m
+2026-03-18 18:43:52 | ERROR    | logging:callHandlers:1736 - Traceback (most recent call last):
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+    ~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 70, in serve
+    with self.capture_signals():
+         ~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/yuye/miniconda3/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 331, in capture_signals
+    signal.raise_signal(captured_signal)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 157, in _on_sigint
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/starlette/routing.py", line 701, in lifespan
+    await receive()
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+2026-03-18 19:22:45 | ERROR    | app.tools.builtin.file:execute:813 - [FileWriteTool] 写入文件发生未知错误: Invalid base64-encoded string: number of data characters (21) cannot be 1 more than a multiple of 4
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 854, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1490, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 518, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1067, in _execute_step
+    return await self._execute_tool(step, agent, context)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1244, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 809, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/file.py", line 773, in execute
+    content = base64.b64decode(content)
+
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 88, in b64decode
+    return binascii.a2b_base64(s, strict_mode=validate)
+
+binascii.Error: Invalid base64-encoded string: number of data characters (21) cannot be 1 more than a multiple of 4
+2026-03-18 19:26:30 | ERROR    | app.tools.builtin.file:execute:813 - [FileWriteTool] 写入文件发生未知错误: string argument should contain only ASCII characters
+Traceback (most recent call last):
+
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 37, in _bytes_from_decode_data
+    return s.encode('ascii')
+
+UnicodeEncodeError: 'ascii' codec can't encode character '\u040a' in position 54: ordinal not in range(128)
+
+
+During handling of the above exception, another exception occurred:
+
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=42)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 854, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1490, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 518, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1067, in _execute_step
+    return await self._execute_tool(step, agent, context)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1244, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 809, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+> File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/file.py", line 773, in execute
+    content = base64.b64decode(content)
+
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 83, in b64decode
+    s = _bytes_from_decode_data(s)
+  File "/Users/yuye/miniconda3/lib/python3.13/base64.py", line 39, in _bytes_from_decode_data
+    raise ValueError('string argument should contain only ASCII characters')
+
+ValueError: string argument should contain only ASCII characters
+2026-03-18 19:28:04 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '2104cabb17738332851555861e0d6a', 'requestId': 'c76e0b79b5784144a0fb708a7ff9c222'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e57c385d-f9b9-4c19-a0f7-c1e5fcb7c5a0'}[0m
+2026-03-18 19:28:04 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000041] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2104cabb17738332851555861e0d6a', 'requestId': 'c76e0b79b5784144a0fb708a7ff9c222'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e57c385d-f9b9-4c19-a0f7-c1e5fcb7c5a0'}[0m
+2026-03-18 19:28:04 | ERROR    | app.agents.planning:create_plan:232 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '2104cabb17738332851555861e0d6a', 'requestId': 'c76e0b79b5784144a0fb708a7ff9c222'}, 'error_code': 429, 'message': 'Throttling: Throttling.AllocationQuota: Allocated quota exceeded, please increase your quota limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#token-limit, dash_request_id: e57c385d-f9b9-4c19-a0f7-c1e5fcb7c5a0'}[0m
+2026-03-18 19:54:13 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348537452150e1024', 'requestId': '83f61264941b0cdd006d5489785c38e6'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 19:54:13 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000003] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348537452150e1024', 'requestId': '83f61264941b0cdd006d5489785c38e6'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 19:54:13 | ERROR    | app.agents.planning:create_plan:232 - [31m创建计划失败: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348537452150e1024', 'requestId': '83f61264941b0cdd006d5489785c38e6'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 19:54:14 | ERROR    | app.llm_hub.providers.openai:chat:216 - [31mOpenAI 对话请求失败: RateLimitError: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348551612182e1024', 'requestId': '627b2e077c97adaf6318620d25e14b1c'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 19:54:14 | ERROR    | app.llm_hub.inference:infer:334 - [31m[req-000004] 推理请求失败: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348551612182e1024', 'requestId': '627b2e077c97adaf6318620d25e14b1c'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 19:54:14 | ERROR    | app.agents.reflection:reflect:223 - [31m反思失败（LLM 调用异常）: Error code: 429 - {'extend_fields': {'traceId': '2141676817738348551612182e1024', 'requestId': '627b2e077c97adaf6318620d25e14b1c'}, 'error_code': 429, 'message': 'Throttling: TPM'}[0m
+2026-03-18 20:03:41 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:665 - [31m工具调用失败: archive_extract, [Errno 63] File name too long: '/Users/yuye/YeahWork/AIAgent项目/ai-agent/{"success": true, "status_code": 200, "status_text": "OK", "headers": {"content-type": "application/zip", "content-length": "2301", "connection": "keep-alive", "accept-ranges": "bytes", "content-disposition": "attachment", "date": "Wed, 18 Mar 2026 12:03:41 GMT", "etag": "\\"d54d840678ce77345e7bea41fb63b94a\\"", "last-modified": "Thu, 05 Mar 2026 04:25:15 GMT", "server": "tencent-cos", "x-cos-force-download": "true", "x-cos-hash-crc64ecma": "15169433022769300726", "x-cos-request-id": "NjliYTk0OWRfODRjOTQ1MWVfYWRkN18yNTY0YWMy", "x-cos-storage-class": "MAZ_STANDARD", "x-cos-version-id": "null", "x-cosindex-replication-status": "Complete"}, "content": "/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip", "raw_content": "<二进制响应，字节数=2301，已保存到 /var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip>", "content_type": "application/zip", "response_time_ms": 4643, "url": "https:/skillhub-1388575217.cos.accelerate.myqcloud.com/skills/find-skills/0.1.0.zip", "truncated": false, "is_binary": true, "binary_size": 2301, "download_path": "/var/folders/5g/kp9q3m_n0ts8n_5sv5hb07g40000gn/T/http_request_hbimpoza.zip", "metadata": {"method": "GET", "original_url": "https:/lightmake.site/api/v1/download?slug=find-skills", "redirected": true}}'[0m

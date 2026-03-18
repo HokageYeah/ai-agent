@@ -62,6 +62,15 @@ class Skill(BaseModel):
     # scripts/resources: 技能包中声明的脚本与资源路径（相对技能目录）
     scripts: List[str] = Field(default_factory=list, description="技能脚本路径列表")
     resources: List[str] = Field(default_factory=list, description="技能资源路径列表")
+    # NOTE: 声明式输出校验规则列表。每条规则为一个字典，示例：
+    #   {"type": "must_contain_any", "markers": ["°C", "温度"], "error": "未返回天气数据"}
+    #   {"type": "must_not_contain_any", "markers": ["请告诉我"], "error": "返回了引导话术"}
+    # 由 SKILL.md frontmatter 中的 output_validators 字段声明，执行引擎统一解释执行。
+    # 这样新增技能时无需修改 Python 代码即可定义个性化的输出校验逻辑。
+    output_validators: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="声明式输出校验规则列表，由 SKILL.md frontmatter 定义"
+    )
     
     model_config = ConfigDict(
         json_schema_extra={
@@ -103,3 +112,8 @@ class SkillMetadata(BaseModel):
     memory_include_short_term: bool = Field(True, description="是否包含短期记忆")
     scripts: List[str] = Field(default_factory=list, description="脚本路径列表")
     resources: List[str] = Field(default_factory=list, description="资源路径列表")
+    # NOTE: 声明式输出校验规则（与 Skill 模型同步），用于发现阶段透传到执行阶段
+    output_validators: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="声明式输出校验规则列表"
+    )

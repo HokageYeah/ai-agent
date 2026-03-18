@@ -91,9 +91,13 @@ LLM Hub (统一推理)
   └─ 扫描 app/skills/skills_md/*/SKILL.md，建立轻量元数据索引
   ↓
 [技能路由] _route_skills_by_metadata()
-  └─ 按任务文本 + when_to_use + tags + inputs 打分筛选 Top-K
+  └─ 第一阶段（规则预筛）：
+     - 基于任务文本 + 技能 metadata（when_to_use/tags/inputs/description）打分
+     - `skill_boost_rules` 由 metadata 动态构建（非写死技能映射），并做通用词抑制
+     - 输出 Top-K 候选技能
   ↓
 [规划] PlanningEngine 仅看到“已筛选技能”的轻量信息（非全文 Prompt）
+  └─ 第二阶段（LLM 决策）：由 LLM 在候选技能中决定是否调用技能、调用哪个技能及参数
   ↓
 [执行] ExecutionEngine._execute_skill()
   └─ skill_manager.get_skill() 按需懒加载完整技能正文与资源
@@ -518,8 +522,12 @@ class SkillManager:
 
 1. **规划前路由**（`langgraph_executor.py`）  
    - `list_skills()` 获取候选技能轻量视图  
-   - `_route_skills_by_metadata()` 基于任务文本、`when_to_use`、`tags`、`inputs` 打分  
+   - `_route_skills_by_metadata()` 采用“规则预筛 + LLM 决策”的混合模式：  
+     - 规则预筛：基于任务文本、`when_to_use`、`tags`、`inputs`、`description` 打分  
+     - `skill_boost_rules` 由 `_build_dynamic_skill_boost_rules()` 基于技能 metadata 动态构建，不再写死具体技能映射  
+     - 对跨技能高频通用词做抑制、对低频区分词做增强，降低误召回  
    - 仅 Top-K 技能进入 Planning Prompt，降低噪声和 token 成本
+   - LLM 规划阶段在候选集中做最终决策：是否调用技能、调用哪个技能、参数如何填写
 
 2. **执行时懒加载**（`execution.py`）  
    - `_execute_skill()` 调用 `skill_manager.get_skill(skill_id)` 触发懒加载  
@@ -543,8 +551,8 @@ class SkillManager:
 flowchart TD
     A[用户任务] --> B[SkillManager.discover_skills]
     B --> C[list_skill_metadata]
-    C --> D[_route_skills_by_metadata Top-K]
-    D --> E[PlanningEngine 仅看到候选技能元信息]
+    C --> D[_route_skills_by_metadata 规则预筛 Top-K]
+    D --> E[PlanningEngine: LLM 在候选集中做最终技能决策]
     E --> F[ExecutionEngine _execute_skill]
     F --> G[load_skill(skill_id) 懒加载完整技能]
     G --> H[按技能工具白名单过滤可用工具]

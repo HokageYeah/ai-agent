@@ -127,10 +127,11 @@ graph TD
 当前技能系统已完成从“代码硬注册”向“文件系统动态加载”的升级，核心链路如下：
 
 1. **技能发现**：`SkillManager.discover_skills()` 扫描 `app/skills/skills_md/*/SKILL.md`，构建轻量元数据索引。  
-2. **技能路由**：`langgraph_executor._route_skills_by_metadata()` 根据任务文本、`when_to_use`、`tags`、`inputs` 对技能打分，只保留 Top-K 候选。  
-3. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文。  
-4. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
-5. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
+2. **混合路由（规则预筛 + LLM 决策）**：`langgraph_executor._route_skills_by_metadata()` 先做规则打分筛选 Top-K，再由 LLM 在候选集中做最终技能决策。  
+3. **动态加权规则**：`skill_boost_rules` 不再写死；系统基于 `skill_id/name/tags/inputs/when_to_use/description` 自动构建关键词加权规则，并对跨技能高频通用词做抑制。  
+4. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文；LLM 决定是否调用技能、调用哪个技能及参数。  
+5. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
+6. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
 
 > 说明：详细重构方案见 [docs/skills_reload.md](docs/skills_reload.md)。
 

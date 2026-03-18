@@ -297,7 +297,8 @@ class ExecutionEngine:
         *,
         skill_id: str,
         output_text: str,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
+        validators: Optional[List[Dict[str, Any]]] = None
     ) -> tuple[bool, str]:
         """
         对技能输出做轻量质量校验，避免“空泛话术”被误判为执行成功。
@@ -327,34 +328,29 @@ class ExecutionEngine:
             if marker_hits >= 2 and has_action_list:
                 return False, f"{skill_id} 输出为执行过程说明，不是最终结果正文"
 
-        if skill_id != "weather":
-            return True, ""
+        # 声明式校验：遍历 SKILL.md 中定义的 output_validators 规则
+        # 每条规则包含 type（校验类型）、markers（标记词列表）、error（失败提示）
+        for rule in (validators or []):
+            rule_type = str(rule.get("type", "")).strip()
+            markers = rule.get("markers", [])
+            error_msg = str(rule.get("error", f"{skill_id} 声明式校验失败"))
 
-        # 天气结果至少应包含若干核心要素之一
-        weather_markers = [
-            "°C", "温度", "湿度", "风速", "天气", "体感", "降水", "能见度", "air quality", "humidity"
-        ]
-        has_weather_fact = any(marker in text for marker in weather_markers)
-        if not has_weather_fact:
-            return False, "weather 技能未返回可识别的天气事实字段"
+            if rule_type == "must_contain_any":
+                # 输出必须包含至少一个标记词（如天气技能要求含"温度"等关键词）
+                if not any(m in text for m in markers):
+                    return False, error_msg
 
-        # 命中典型“引导话术”时判定为未真正执行查询
-        guidance_markers = [
-            "请告诉我您要查询的城市",
-            "您可以直接说例如",
-            "我将作为天气查询助手",
-            "我会：",
-        ]
-        if any(marker in text for marker in guidance_markers):
-            return False, "weather 技能返回引导话术，未直接给出查询结果"
+            elif rule_type == "must_not_contain_any":
+                # 输出不得包含任何标记词（如拦截"引导话术"式回复）
+                if any(m in text for m in markers):
+                    return False, error_msg
 
-        # location 已给定时，鼓励输出中携带地点信息（不做硬失败，只做日志提示）
-        location = str(params.get("location", "")).strip()
-        if location and location not in text:
-            logger.debug(
-                f"{Fore.CYAN}[执行引擎] weather 输出未显式包含 location 文本 | "
-                f"location={location}{Style.RESET_ALL}"
-            )
+            else:
+                # 未知校验类型仅记录日志，不阻断执行，确保向前兼容
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 未知 output_validator 类型: {rule_type} | "
+                    f"skill={skill_id}{Style.RESET_ALL}"
+                )
 
         return True, ""
 
@@ -513,8 +509,16 @@ class ExecutionEngine:
                     )
                     await on_step_start(step, i, step_total)
                 
-                # 执行步骤（把已完成步骤结果传入，供 skill 等使用）
-                step_result = await self._execute_step(agent, step, context, step_results)
+                # ===============================================================
+                # 【执行步骤】传入当前步骤所在计划及索引
+                # NOTE: plan 和 step_index 用于让 _delegate_to_agent 感知父计划的
+                #       后续步骤，避免需求检查盲目注入已被后续步骤覆盖的需求。
+                #       step_index 为 0-based 索引（i 为 1-based 展示用）。
+                # ===============================================================
+                step_result = await self._execute_step(
+                    agent, step, context, step_results,
+                    parent_plan=plan, step_index=i - 1
+                )
                 
                 # NOTE: 防御性保护 ── _execute_step 理论上始终返回 dict，
                 #   但在极端情况（如工具内部未处理的异常）下可能返回 None，
@@ -878,6 +882,111 @@ class ExecutionEngine:
             )
             return "抱歉，我无法根据历史记录找到相关信息，请重新描述您的问题。"
 
+    def _extract_value_by_path(self, data: Any, path_expr: str) -> Any:
+        """
+        按点路径提取嵌套值（如 "content.url"、"results.0.title"）。
+
+        设计目的：
+        - 兼容 LLM 在计划中生成 `{{last_tool_result.content}}` 这类占位符；
+        - 避免仅支持扁平 key，导致占位符无法替换而把字面量传给工具。
+        """
+        if data is None:
+            return None
+        if not path_expr:
+            return data
+
+        current = data
+        for segment in str(path_expr).split("."):
+            seg = segment.strip()
+            if not seg:
+                return None
+
+            if isinstance(current, dict):
+                if seg not in current:
+                    return None
+                current = current.get(seg)
+                continue
+
+            if isinstance(current, list):
+                if not seg.isdigit():
+                    return None
+                idx = int(seg)
+                if idx < 0 or idx >= len(current):
+                    return None
+                current = current[idx]
+                continue
+
+            if hasattr(current, seg):
+                current = getattr(current, seg)
+                continue
+
+            return None
+
+        return current
+
+    def _resolve_placeholder_value(
+        self,
+        expression: str,
+        placeholder_context: Dict[str, Any],
+    ) -> tuple[bool, Any]:
+        """
+        解析单个占位符表达式。
+
+        返回 (found, value)：
+        - found=False: 表达式不在已知上下文中，保持原占位符不变
+        - found=True: 识别到表达式，value 允许为 None（会替换为空字符串）
+        """
+        expr = str(expression or "").strip()
+        if not expr:
+            return False, None
+
+        if expr in placeholder_context:
+            return True, placeholder_context.get(expr)
+
+        if "." in expr:
+            root, nested = expr.split(".", 1)
+            if root in placeholder_context:
+                base_value = placeholder_context.get(root)
+                return True, self._extract_value_by_path(base_value, nested)
+
+        return False, None
+
+    def _replace_placeholders_in_text(
+        self,
+        text: str,
+        placeholder_context: Dict[str, Any],
+    ) -> str:
+        """
+        替换文本中的占位符，支持以下格式：
+        - {{last_tool_result}}
+        - {{last_tool_result.content}}
+        - {last_tool_result}
+        - {last_tool_result.content}
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        pattern = re.compile(
+            r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}"
+            r"|\{([a-zA-Z_][a-zA-Z0-9_\.]*)\}"
+        )
+
+        def _replace(match: re.Match) -> str:
+            expr = match.group(1) or match.group(2) or ""
+            found, value = self._resolve_placeholder_value(expr, placeholder_context)
+            if not found:
+                return match.group(0)
+            if value is None:
+                return ""
+            if isinstance(value, (dict, list)):
+                try:
+                    return _json.dumps(value, ensure_ascii=False, default=str)
+                except Exception:
+                    return str(value)
+            return str(value)
+
+        return pattern.sub(_replace, text)
+
     def _resolve_step_placeholders(
         self,
         step: PlanStep,
@@ -903,7 +1012,6 @@ class ExecutionEngine:
         Returns:
             PlanStep: 替换占位符后的步骤（副本）
         """
-        import re
         import copy
         
         # 创建步骤的深拷贝，避免修改原始计划
@@ -942,40 +1050,28 @@ class ExecutionEngine:
             if isinstance(last_tool_result, dict):
                 search_result_url = last_tool_result.get("url") or last_tool_result.get("first_url")
         
-        # 定义替换映射（支持两种格式：{{...}} 和 {...}）
-        replacements = [
-            # 格式一：双花括号 {{...}}
-            ("{{first_search_result_url}}", search_result_url or ""),
-            ("{{first_search_result_title}}", search_result_title or ""),
-            ("{{first_search_result_snippet}}", search_result_snippet or ""),
-            ("{{first_search_result}}", str({
-                "url": search_result_url,
-                "title": search_result_title,
-                "snippet": search_result_snippet
-            }) if search_result_url else ""),
-            ("{{last_tool_result}}", str(last_tool_result) if last_tool_result else ""),
-            ("{{last_tool_result_url}}", search_result_url or ""),
-            # 格式二：单花括号 {...}
-            ("{first_search_result_url}", search_result_url or ""),
-            ("{first_search_result_title}", search_result_title or ""),
-            ("{first_search_result_snippet}", search_result_snippet or ""),
-            ("{first_search_result}", str({
-                "url": search_result_url,
-                "title": search_result_title,
-                "snippet": search_result_snippet
-            }) if search_result_url else ""),
-            ("{last_tool_result}", str(last_tool_result) if last_tool_result else ""),
-            ("{last_tool_result_url}", search_result_url or ""),
-        ]
+        first_search_result = {
+            "url": search_result_url,
+            "title": search_result_title,
+            "snippet": search_result_snippet
+        } if search_result_url else None
+
+        # 占位符上下文（支持扁平 key + 点路径扩展）
+        placeholder_context = {
+            "first_search_result_url": search_result_url or "",
+            "first_search_result_title": search_result_title or "",
+            "first_search_result_snippet": search_result_snippet or "",
+            "first_search_result": first_search_result,
+            "last_tool_result": last_tool_result,
+            "last_tool_result_url": search_result_url or "",
+        }
         
         # 对 params 中的每个参数进行占位符替换
         if hasattr(resolved_step, 'params') and resolved_step.params:
             for key, value in resolved_step.params.items():
                 if isinstance(value, str):
                     original_value = value
-                    for placeholder, replacement in replacements:
-                        if placeholder in value:
-                            value = value.replace(placeholder, replacement)
+                    value = self._replace_placeholders_in_text(value, placeholder_context)
                     
                     # 只有值发生变化时才记录日志
                     if original_value != value:
@@ -987,7 +1083,10 @@ class ExecutionEngine:
                     resolved_step.params[key] = value
                 elif isinstance(value, dict):
                     # 递归处理字典类型的参数值
-                    resolved_step.params[key] = self._resolve_dict_placeholders(value, dict(replacements))
+                    resolved_step.params[key] = self._resolve_dict_placeholders(
+                        value,
+                        placeholder_context
+                    )
         
         return resolved_step
 
@@ -1001,31 +1100,36 @@ class ExecutionEngine:
         
         Args:
             data: 需要处理的数据（可能是 dict, list, str 等）
-            replacements: 占位符替换映射（可以是 dict 或 list of tuples）
+            replacements: 占位符上下文（dict）或旧版替换对（list of tuples）
             
         Returns:
             处理后的数据
         """
-        import copy
-        
-        # 统一转换为 list 格式
+        # 兼容旧参数格式：[( "{{last_tool_result}}", "xxx"), ...]
         if isinstance(replacements, dict):
-            replacements_list = list(replacements.items())
+            placeholder_context = dict(replacements)
         else:
-            replacements_list = replacements
+            placeholder_context = {}
+            for item in replacements or []:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    continue
+                raw_key, raw_value = item[0], item[1]
+                key = str(raw_key or "").strip()
+                m = re.fullmatch(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}", key)
+                if not m:
+                    m = re.fullmatch(r"\{([a-zA-Z_][a-zA-Z0-9_\.]*)\}", key)
+                if m:
+                    placeholder_context[m.group(1)] = raw_value
         
         if isinstance(data, dict):
             result = {}
             for key, value in data.items():
-                result[key] = self._resolve_dict_placeholders(value, replacements_list)
+                result[key] = self._resolve_dict_placeholders(value, placeholder_context)
             return result
         elif isinstance(data, list):
-            return [self._resolve_dict_placeholders(item, replacements_list) for item in data]
+            return [self._resolve_dict_placeholders(item, placeholder_context) for item in data]
         elif isinstance(data, str):
-            for placeholder, replacement in replacements_list:
-                if placeholder in data:
-                    data = data.replace(placeholder, replacement)
-            return data
+            return self._replace_placeholders_in_text(data, placeholder_context)
         else:
             return data
 
@@ -1034,7 +1138,9 @@ class ExecutionEngine:
         agent: Agent,
         step: PlanStep,
         context: Optional[Dict[str, Any]] = None,
-        prev_results: Optional[List[Dict[str, Any]]] = None
+        prev_results: Optional[List[Dict[str, Any]]] = None,
+        parent_plan: Optional[Any] = None,
+        step_index: int = 0
     ) -> Dict[str, Any]:
         """
         执行单个步骤
@@ -1044,6 +1150,11 @@ class ExecutionEngine:
             step: 计划步骤
             context: 执行上下文
             prev_results: 本轮已完成步骤的结果列表，供 skill 等引用真实数据
+            parent_plan: 当前步骤所属的父计划对象（含 steps 列表），
+                         用于让 delegate 步骤感知后续步骤以实现「计划感知」需求检查。
+                         设计上以 Optional[Any] 类型接收，兼容不同 Plan 实现。
+            step_index: 当前步骤在 parent_plan.steps 中的 0-based 索引，
+                        用于计算剩余步骤列表 (remaining_steps = plan.steps[step_index+1:])
 
         Returns:
             Dict[str, Any]: 步骤执行结果
@@ -1057,8 +1168,20 @@ class ExecutionEngine:
             elif step.action == "skill":
                 return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
-                # 把 context 也传给委派方法，以便透传 stream_callback / pending_confirmations
-                return await self._delegate_to_agent(step, context, prev_results)
+                # ── 计算当前步骤之后的剩余步骤（不含当前步骤） ────────────────
+                # 目的：让 _delegate_to_agent 的需求完整性检查能「感知」父计划
+                #       后续步骤已覆盖的能力，避免越权注入导致子 Agent 执行范围膨胀。
+                # 通用设计：remaining_steps 携带的是完整 PlanStep 对象列表，
+                #          _delegate_to_agent 内部的检查方法可以自由访问 action/params。
+                remaining_steps = []
+                if parent_plan and hasattr(parent_plan, 'steps'):
+                    remaining_steps = parent_plan.steps[step_index + 1:]
+                    if remaining_steps:
+                        logger.debug(
+                            f"{Fore.BLUE}[执行引擎] delegate 步骤后还有 {len(remaining_steps)} "
+                            f"个后续步骤，将传递给需求完整性检查以避免越权注入{Style.RESET_ALL}"
+                        )
+                return await self._delegate_to_agent(step, context, prev_results, remaining_steps)
             elif step.action == "final_answer":
                 return {
                     "success": True,
@@ -1233,6 +1356,21 @@ class ExecutionEngine:
                     # ── 检测工具是否需要用户输入 ────────────────────────────────
                     # 检查工具返回结果中是否包含 "needs_user_input" 标记
                     result = gateway_result.result
+                    # 业务级失败透传：工具正常返回，但 payload 标记 success=false（如 file_write/base64 失败）
+                    if isinstance(result, dict) and result.get("success") is False:
+                        business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行工具-网关路径] 工具 {tool_name} 业务失败: "
+                            f"{business_error}{Style.RESET_ALL}"
+                        )
+                        return {
+                            "success": False,
+                            "error": business_error,
+                            "result": result,
+                            "action": "tool",
+                            "tool_name": tool_name,
+                            "execution_time_ms": gateway_result.execution_time_ms
+                        }
                     if result and isinstance(result, dict) and result.get("needs_user_input"):
                         logger.info(
                             f"{Fore.CYAN}[执行工具-网关路径] 工具 {tool_name} 需要用户额外输入，"
@@ -1278,9 +1416,20 @@ class ExecutionEngine:
                             )
                             
                             if retry_result.status == ToolCallStatus.SUCCESS:
+                                retry_payload = retry_result.result
+                                if isinstance(retry_payload, dict) and retry_payload.get("success") is False:
+                                    business_error = retry_payload.get("error") or f"工具 {tool_name} 返回 success=false"
+                                    return {
+                                        "success": False,
+                                        "error": business_error,
+                                        "result": retry_payload,
+                                        "action": "tool",
+                                        "tool_name": tool_name,
+                                        "execution_time_ms": retry_result.execution_time_ms
+                                    }
                                 return {
                                     "success": True,
-                                    "result": retry_result.result,
+                                    "result": retry_payload,
                                     "action": "tool",
                                     "tool_name": tool_name,
                                     "user_inputs_provided": user_inputs,
@@ -1355,6 +1504,20 @@ class ExecutionEngine:
         try:
             result = await tool.execute(params)
             logger.info(f"{Fore.GREEN}工具 {tool_name} 执行成功{Style.RESET_ALL}")
+            # 业务级失败透传：避免“调用成功”掩盖工具真实失败
+            if isinstance(result, dict) and result.get("success") is False:
+                business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                logger.warning(
+                    f"{Fore.YELLOW}[执行工具] 工具 {tool_name} 业务失败: "
+                    f"{business_error}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": business_error,
+                    "result": result,
+                    "action": "tool",
+                    "tool_name": tool_name
+                }
             
             # ── 检测工具是否需要用户输入 ────────────────────────────────
             # 检查工具返回结果中是否包含 "needs_user_input" 标记
@@ -1397,6 +1560,15 @@ class ExecutionEngine:
                         logger.info(
                             f"{Fore.GREEN}工具 {tool_name} 重新执行成功{Style.RESET_ALL}"
                         )
+                        if isinstance(result, dict) and result.get("success") is False:
+                            business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                            return {
+                                "success": False,
+                                "error": business_error,
+                                "result": result,
+                                "action": "tool",
+                                "tool_name": tool_name
+                            }
                         return {
                             "success": True,
                             "result": result,
@@ -1926,10 +2098,13 @@ class ExecutionEngine:
             )
 
             # 技能输出质量校验（避免无效话术污染后续 file_write / final_answer）
+            # NOTE: validators 来自 SKILL.md 的 output_validators 声明，实现声明式校验，
+            #       新增技能时只需编辑 SKILL.md 即可自定义校验逻辑，无需修改执行引擎代码。
             is_valid, invalid_reason = self._validate_skill_output(
                 skill_id=skill_id,
                 output_text=response.content or "",
                 params=safe_params,
+                validators=getattr(skill, "output_validators", None),
             )
             if not is_valid:
                 logger.warning(
@@ -1965,7 +2140,8 @@ class ExecutionEngine:
         self,
         step: PlanStep,
         context: Optional[Dict[str, Any]] = None,
-        prev_results: Optional[List[Dict[str, Any]]] = None
+        prev_results: Optional[List[Dict[str, Any]]] = None,
+        remaining_steps: Optional[List] = None
     ) -> Dict[str, Any]:
         """
         委派给子 Agent
@@ -1975,14 +2151,20 @@ class ExecutionEngine:
             context: 执行上下文（透传 stream_callback / pending_confirmations 以便
                      子 Agent 也能推送 user_confirm_required 事件并共享确认映射表）
             prev_results: 本轮已完成步骤结果，用于把上游真实数据注入子 Agent 任务
+            remaining_steps: 父计划中当前 delegate 步骤之后的剩余步骤列表（PlanStep 对象）。
+                             用于「计划感知」需求完整性检查——当后续步骤已覆盖某项能力时，
+                             跳过对该能力关键词的注入，避免子 Agent 越权执行。
+                             设计上支持任意 action 类型和关键词规则的扩展。
 
         Returns:
             Dict[str, Any]: 执行结果
 
-        NOTE: 此方法包含防御性"需求完整性检查"：
-              若规划阶段的 LLM 在生成 delegate task 时省略了原始用户需求中的
-              文件写入、搜索等附加操作，此处会检测并发出 WARNING，
-              并在子 Agent 的 task 末尾补充原始用户任务作为补救上下文。
+        NOTE: 此方法包含防御性"需求完整性检查"，采用「计划感知」模式：
+              1. 检查规划阶段 LLM 生成的 delegate task 是否遗漏了原始用户需求；
+              2. 但在注入前，先扫描父计划的 remaining_steps，
+                 如果后续步骤已覆盖该需求（如后续有 text_writing 或 file_write），
+                 则跳过注入，避免子 Agent 越权执行本应由父计划处理的任务。
+              3. CAPABILITY_KEYWORDS 映射表是通用扩展点，新场景只需添加条目。
         """
         agent_id = step.params.get("agent_id")
         task = step.params.get("task")
@@ -2007,24 +2189,77 @@ class ExecutionEngine:
                 f"{Fore.BLUE}[委派] 原始用户任务摘要: {original_task[:150]}...{Style.RESET_ALL}"
             )
 
-        # ── 防御性检查：委派任务是否遗漏了原始用户需求中的关键操作 ────────────
-        # 典型遗漏场景：用户说"查询订单并写入本地"，LLM 规划只把"查询订单"
-        # 传给 order_agent，把"写入本地"直接丢弃，导致子 Agent 不知道还需要写文件
-        FILE_WRITE_KEYWORDS = ["写入本地", "保存文件", "写入文件", "保存到", "写到", "file_write"]
+        # ═══════════════════════════════════════════════════════════════════
+        # 【计划感知的需求完整性检查】
+        #
+        # 设计动机：
+        #   当父 Agent（如 cs_master）规划了多步策略时，每一步只负责一部分需求。
+        #   例如：step1=delegate(查数据) → step2=text_writing(写报告) → step3=final_answer
+        #   此时 step1 的 delegate task 中自然不含"保存到"关键词，
+        #   但这不代表需求被遗漏——step2 已经负责了。
+        #
+        #   旧逻辑：只比对 delegate task 与原始用户需求的关键词差异，盲目注入缺失需求。
+        #   新逻辑：先扫描 remaining_steps，若后续步骤已覆盖某关键词对应的能力，
+        #          则跳过该关键词的注入，避免子 Agent 越权执行本应由父计划的后续步骤处理的任务。
+        #
+        # 通用性设计：
+        #   - CAPABILITY_KEYWORDS 定义了「关键词 → 覆盖该关键词的工具/技能/action」映射
+        #   - 新增场景只需向 CAPABILITY_KEYWORDS 添加条目即可，不需改动检查逻辑
+        #   - _is_keyword_covered_by_remaining_steps 方法可被其他模块复用
+        # ═══════════════════════════════════════════════════════════════════
+
+        # ── 能力关键词映射表（通用扩展点） ─────────────────────────────────
+        # 格式: 关键词 → {
+        #   "tools":   [可覆盖该需求的工具名],
+        #   "skills":  [可覆盖该需求的技能 ID],
+        #   "actions": [可覆盖该需求的 action 类型（如 delegate）]
+        # }
+        # 后续新增场景（如搜索、发邮件、数据导出等）只需在此处追加条目
+        CAPABILITY_KEYWORDS: Dict[str, Dict[str, list]] = {
+            "写入本地": {"tools": ["file_write", "file_manager"], "skills": ["text_writing"], "actions": ["delegate"]},
+            "保存文件": {"tools": ["file_write", "file_manager"], "skills": ["text_writing"], "actions": ["delegate"]},
+            "写入文件": {"tools": ["file_write", "file_manager"], "skills": ["text_writing"], "actions": ["delegate"]},
+            "保存到":   {"tools": ["file_write", "file_manager"], "skills": ["text_writing"], "actions": ["delegate"]},
+            "写到":     {"tools": ["file_write", "file_manager"], "skills": ["text_writing"], "actions": ["delegate"]},
+            "file_write": {"tools": ["file_write"], "skills": [], "actions": []},
+            # ── 可扩展：后续新增场景在此添加 ──
+            # "搜索":    {"tools": ["web_search", "search"], "skills": ["web_browsing"], "actions": ["delegate"]},
+            # "发邮件":  {"tools": ["send_email"], "skills": ["email_sending"], "actions": ["delegate"]},
+            # "导出":    {"tools": ["data_export"], "skills": ["report_export"], "actions": ["delegate"]},
+        }
+
         if original_task:
             missing_keywords = []
-            for kw in FILE_WRITE_KEYWORDS:
+            covered_keywords = []
+
+            for kw, coverage_config in CAPABILITY_KEYWORDS.items():
                 # 原始任务中包含该关键词，但规划的委派 task 中没有
                 if kw in original_task and kw not in task:
+                    # ════ 计划感知检查 ════
+                    # 扫描父计划后续步骤，判断是否已覆盖该关键词对应的能力
+                    if remaining_steps and self._is_keyword_covered_by_remaining_steps(
+                        kw, coverage_config, remaining_steps
+                    ):
+                        # 后续步骤已覆盖，跳过注入
+                        covered_keywords.append(kw)
+                        continue
                     missing_keywords.append(kw)
 
+            # ── 打印计划感知检查结果的详细日志 ────────────────────────────
+            if covered_keywords:
+                logger.info(
+                    f"{Fore.GREEN}[委派✅ 计划感知] 以下关键词虽不在委派 task 中，"
+                    f"但父计划后续步骤已覆盖，跳过注入: {covered_keywords}{Style.RESET_ALL}"
+                )
+
             if missing_keywords:
-                # 检测到需求可能被遗漏，发出警告日志并补充原始任务上下文
+                # 检测到需求确实被遗漏（后续步骤也未覆盖），发出警告并补充原始任务上下文
                 logger.warning(
                     f"{Fore.YELLOW}[委派⚠️] 检测到委派任务可能遗漏了原始用户需求！"
                     f"\n  原始用户任务: '{original_task[:120]}'"
                     f"\n  委派的 task : '{task[:120]}'"
                     f"\n  疑似遗漏关键词: {missing_keywords}"
+                    f"\n  已被后续步骤覆盖（无需注入）: {covered_keywords}"
                     f"\n  🔧 已自动追加原始用户完整需求到委派 task 末尾，防止信息丢失。{Style.RESET_ALL}"
                 )
                 # 自动修复：将原始用户任务作为"完整需求上下文"补充到委派 task 末尾，
@@ -2042,7 +2277,8 @@ class ExecutionEngine:
                 )
             else:
                 logger.debug(
-                    f"{Fore.GREEN}[委派✅] 委派任务完整性检查通过，未发现需求遗漏{Style.RESET_ALL}"
+                    f"{Fore.GREEN}[委派✅] 委派任务完整性检查通过，"
+                    f"未发现需求遗漏（已覆盖: {covered_keywords}）{Style.RESET_ALL}"
                 )
 
         if not self.child_agent_manager:
@@ -2261,7 +2497,81 @@ class ExecutionEngine:
                 "agent_id": agent_id,
             }
 
+    def _is_keyword_covered_by_remaining_steps(
+        self,
+        keyword: str,
+        coverage_config: Dict[str, list],
+        remaining_steps: List
+    ) -> bool:
+        """
+        【通用辅助方法】判断某个关键词对应的能力是否已被父计划的后续步骤覆盖
 
+        设计思路：
+            对于每个后续步骤 (PlanStep)，按以下维度依次检查：
+            1. action 匹配  — 步骤的 action 是否在 coverage_config["actions"] 中
+            2. 工具名匹配   — 步骤参数中的 tool_name 是否在 coverage_config["tools"] 中
+            3. 技能 ID 匹配 — 步骤参数中的 skill_id 是否在 coverage_config["skills"] 中
+            4. 关键词出现    — keyword 本身是否出现在步骤参数的值中（文本模糊匹配兜底）
+
+            任一维度匹配即视为「已覆盖」。
+
+        Args:
+            keyword: 被检查的关键词（如 "保存到"）
+            coverage_config: CAPABILITY_KEYWORDS 映射表中该关键词的配置
+                             格式: {"tools": [...], "skills": [...], "actions": [...]}
+            remaining_steps: 父计划中 delegate 步骤之后的所有剩余步骤
+
+        Returns:
+            bool: True 表示至少有一个后续步骤可以覆盖该关键词能力
+
+        NOTE: 此方法为纯逻辑判断，不修改任何状态，可安全地被其他模块复用。
+        """
+        tools_can_cover   = coverage_config.get("tools", [])
+        skills_can_cover  = coverage_config.get("skills", [])
+        actions_can_cover = coverage_config.get("actions", [])
+
+        for step in remaining_steps:
+            step_action = getattr(step, "action", "")
+            step_params = getattr(step, "params", {}) or {}
+
+            # ── 维度 1：action 类型匹配（如 delegate） ─────────────────
+            if step_action in actions_can_cover:
+                logger.debug(
+                    f"{Fore.BLUE}[计划感知] 关键词 '{keyword}' 被后续步骤的 "
+                    f"action='{step_action}' 覆盖{Style.RESET_ALL}"
+                )
+                return True
+
+            # ── 维度 2：工具名匹配 ─────────────────────────────────────
+            step_tool = step_params.get("tool_name", "")
+            if step_tool and step_tool in tools_can_cover:
+                logger.debug(
+                    f"{Fore.BLUE}[计划感知] 关键词 '{keyword}' 被后续步骤的 "
+                    f"tool='{step_tool}' 覆盖{Style.RESET_ALL}"
+                )
+                return True
+
+            # ── 维度 3：技能 ID 匹配 ───────────────────────────────────
+            step_skill = step_params.get("skill_id", "")
+            if step_skill and step_skill in skills_can_cover:
+                logger.debug(
+                    f"{Fore.BLUE}[计划感知] 关键词 '{keyword}' 被后续步骤的 "
+                    f"skill='{step_skill}' 覆盖{Style.RESET_ALL}"
+                )
+                return True
+
+            # ── 维度 4：关键词文本出现在参数值中（兜底模糊匹配） ────────
+            # 扫描所有参数值，判断关键词是否出现在描述/task/其他文本字段中
+            for param_key, param_val in step_params.items():
+                if isinstance(param_val, str) and keyword in param_val:
+                    logger.debug(
+                        f"{Fore.BLUE}[计划感知] 关键词 '{keyword}' 出现在后续步骤的 "
+                        f"params['{param_key}'] 中，视为已覆盖{Style.RESET_ALL}"
+                    )
+                    return True
+
+        # 所有后续步骤都未覆盖该关键词
+        return False
 # =============================================================================
 # 测试代码
 # =============================================================================

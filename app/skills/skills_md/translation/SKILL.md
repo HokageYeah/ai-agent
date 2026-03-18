@@ -1,6 +1,8 @@
 ---
 name: translation
-description: 多语言翻译，保持原文风格并确保术语准确。
+description: 专业多语言翻译，保持原文风格并确保术语准确。当用户要求将文本翻译为指定语言（如中英互译、日文、德文等）、需要保留技术术语和格式的翻译、或对已有译文做润色校对时使用。
+tags: ["translation", "language", "i18n", "localization", "multilingual"]
+memory_include_short_term: true
 ---
 # 何时使用 (When to use)
 - 当用户要求将文本翻译为目标语言时

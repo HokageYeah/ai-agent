@@ -92,6 +92,16 @@ required_tools: {required_tools_json}
 optional_tools: {optional_tools_json}
 tags: {tags_json}
 memory_include_short_term: true
+# output_validators:（可选）声明式输出校验规则列表
+# 执行引擎会在技能返回结果后按此规则自动校验，校验失败触发反思重试
+# 支持类型：must_contain_any（输出须含至少一个标记词）、must_not_contain_any（输出不得含任何标记词）
+# 示例（取消注释并按需修改）：
+#   - type: "must_contain_any"
+#     markers: ["关键词1", "关键词2"]
+#     error: "技能输出未包含预期的关键信息"
+#   - type: "must_not_contain_any"
+#     markers: ["不应出现的话术"]
+#     error: "技能返回了不期望的内容"
 ---
 
 # 何时使用 (When to use)

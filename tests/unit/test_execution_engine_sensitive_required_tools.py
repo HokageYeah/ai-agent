@@ -290,3 +290,116 @@ def test_skill_output_validation_should_accept_plain_result():
 
     assert ok is True
     assert reason == ""
+
+
+# ========== 声明式 output_validators 校验测试 ==========
+
+
+def test_output_validators_must_contain_any_rejects():
+    """声明式 must_contain_any 规则：输出不含任何标记词时应判定失败。"""
+    tool_hub = ToolHub()
+    skill = Skill(
+        skill_id="weather",
+        name="Weather",
+        description="天气查询",
+        prompt_template="{task}",
+        output_validators=[
+            {
+                "type": "must_contain_any",
+                "markers": ["°C", "温度", "湿度", "天气"],
+                "error": "weather 技能未返回可识别的天气事实字段",
+            }
+        ],
+    )
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=DummySkillManager(skill=skill),
+        llm_hub=DummyLLMHub(),
+    )
+
+    # 输出中不含任何天气标记词 → 应被拒绝
+    # NOTE: 测试文本刻意避开所有 markers（°C / 温度 / 湿度 / 天气），确保校验必定拦截
+    ok, reason = execution_engine._validate_skill_output(
+        skill_id="weather",
+        output_text="这是一段完全无关的文本，只有一些普通数据。",
+        params={},
+        validators=skill.output_validators,
+    )
+    assert ok is False
+    assert "天气事实字段" in reason
+
+
+def test_output_validators_must_not_contain_any_rejects():
+    """声明式 must_not_contain_any 规则：输出含引导话术时应判定失败。"""
+    tool_hub = ToolHub()
+    skill = Skill(
+        skill_id="weather",
+        name="Weather",
+        description="天气查询",
+        prompt_template="{task}",
+        output_validators=[
+            {
+                "type": "must_contain_any",
+                "markers": ["°C", "温度", "湿度", "天气"],
+                "error": "weather 技能未返回可识别的天气事实字段",
+            },
+            {
+                "type": "must_not_contain_any",
+                "markers": ["请告诉我您要查询的城市", "您可以直接说例如"],
+                "error": "weather 技能返回引导话术，未直接给出查询结果",
+            },
+        ],
+    )
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=DummySkillManager(skill=skill),
+        llm_hub=DummyLLMHub(),
+    )
+
+    # 输出含天气关键词但同时含引导话术 → 应被第二条规则拒绝
+    ok, reason = execution_engine._validate_skill_output(
+        skill_id="weather",
+        output_text="当前天气晴朗。请告诉我您要查询的城市，我可以提供更详细的信息。",
+        params={},
+        validators=skill.output_validators,
+    )
+    assert ok is False
+    assert "引导话术" in reason
+
+
+def test_output_validators_pass_when_valid():
+    """声明式校验：输出满足所有声明式规则时应通过。"""
+    tool_hub = ToolHub()
+    skill = Skill(
+        skill_id="weather",
+        name="Weather",
+        description="天气查询",
+        prompt_template="{task}",
+        output_validators=[
+            {
+                "type": "must_contain_any",
+                "markers": ["°C", "温度", "湿度", "天气"],
+                "error": "weather 技能未返回可识别的天气事实字段",
+            },
+            {
+                "type": "must_not_contain_any",
+                "markers": ["请告诉我您要查询的城市", "您可以直接说例如"],
+                "error": "weather 技能返回引导话术，未直接给出查询结果",
+            },
+        ],
+    )
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=DummySkillManager(skill=skill),
+        llm_hub=DummyLLMHub(),
+    )
+
+    # 输出含天气事实且无引导话术 → 应通过所有校验
+    ok, reason = execution_engine._validate_skill_output(
+        skill_id="weather",
+        output_text="北京今日天气：晴，温度 25°C，湿度 45%，东风 3 级。",
+        params={"location": "北京"},
+        validators=skill.output_validators,
+    )
+    assert ok is True
+    assert reason == ""

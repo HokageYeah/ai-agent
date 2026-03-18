@@ -9,6 +9,7 @@ role: |-
   【核心工具说明】
   - search / http_request: 网络数据采集与 API 调用
   - file_read / file_write / file_edit / list_dir: 本地文件及系统操作
+  - archive_extract / archive_compress: ZIP 解压与压缩（例如下载技能 zip 后解压到指定目录）
   - shell_exec: 后台命令执行（含安全隔离）
   - send_message: 向用户实时反馈消息、请求输入补充信息，或者取得高风险操作确认授权
   - python_executor: 终极兜底能力，任何现有工具不会的，必须尝试写 Python 脚本解决
@@ -36,6 +37,7 @@ capabilities:
 - 文件读写
 - 文件精准编辑
 - 目录浏览
+- ZIP 解压缩
 - Shell 命令执行
 - 数学计算
 available_tools:
@@ -46,6 +48,8 @@ available_tools:
 - file_write
 - file_edit
 - list_dir
+- archive_extract
+- archive_compress
 - shell_exec
 - send_message
 - calculator

@@ -21,6 +21,8 @@ import os
 import platform
 import re
 import shutil
+import hashlib
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -48,6 +50,10 @@ class SkillManager:
         self._skill_files: Dict[str, Path] = {}
         self._loaded_skills: Dict[str, Skill] = {}
         self._availability: Dict[str, tuple[bool, List[str]]] = {}
+        # 目录指纹：用于检测 skills_md 目录是否变化（新增/删除/修改）
+        self._last_fs_signature: str = ""
+        # 线程锁：避免并发请求同时触发重载导致状态抖动
+        self._reload_lock = threading.RLock()
 
         logger.info(
             f"{Fore.BLUE}SkillManager 初始化完成 | root={self.skills_root} | "
@@ -67,92 +73,107 @@ class SkillManager:
         """
         扫描技能目录，生成轻量元数据索引
         """
-        if self._metadata and not force_reload:
-            return self._filter_metadata(include_unavailable=include_unavailable)
+        with self._reload_lock:
+            if self._metadata and not force_reload:
+                return self._filter_metadata(include_unavailable=include_unavailable)
 
-        self._metadata.clear()
-        self._skill_files.clear()
-        self._availability.clear()
-        self._loaded_skills.clear()
+            self._metadata.clear()
+            self._skill_files.clear()
+            self._availability.clear()
+            self._loaded_skills.clear()
 
-        if not self.skills_root.exists():
-            logger.warning(
-                f"{Fore.YELLOW}技能目录不存在，跳过扫描: {self.skills_root}{Style.RESET_ALL}"
+            if not self.skills_root.exists():
+                logger.warning(
+                    f"{Fore.YELLOW}技能目录不存在，跳过扫描: {self.skills_root}{Style.RESET_ALL}"
+                )
+                self._last_fs_signature = self._compute_fs_signature()
+                return []
+
+            skill_files = sorted(self.skills_root.glob("*/SKILL.md"))
+            logger.info(
+                f"{Fore.CYAN}开始扫描技能目录，共发现 {len(skill_files)} 个 SKILL.md{Style.RESET_ALL}"
             )
-            return []
 
-        skill_files = sorted(self.skills_root.glob("*/SKILL.md"))
-        logger.info(
-            f"{Fore.CYAN}开始扫描技能目录，共发现 {len(skill_files)} 个 SKILL.md{Style.RESET_ALL}"
-        )
+            for skill_file in skill_files:
+                try:
+                    raw_content = skill_file.read_text(encoding="utf-8")
+                    frontmatter, body = self._split_frontmatter(raw_content)
+                    fm = self._parse_frontmatter(frontmatter)
+                    sections = self._parse_standard_sections(body)
 
-        for skill_file in skill_files:
-            try:
-                raw_content = skill_file.read_text(encoding="utf-8")
-                frontmatter, body = self._split_frontmatter(raw_content)
-                fm = self._parse_frontmatter(frontmatter)
-                sections = self._parse_standard_sections(body)
+                    skill_id = str(fm.get("name") or skill_file.parent.name).strip()
+                    if not skill_id:
+                        logger.warning(
+                            f"{Fore.YELLOW}跳过无 name 的技能文件: {skill_file}{Style.RESET_ALL}"
+                        )
+                        continue
 
-                skill_id = str(fm.get("name") or skill_file.parent.name).strip()
-                if not skill_id:
-                    logger.warning(
-                        f"{Fore.YELLOW}跳过无 name 的技能文件: {skill_file}{Style.RESET_ALL}"
+                    description = str(fm.get("description") or "未提供描述").strip()
+
+                    input_defs = self._parse_inputs_section(sections.get("inputs", ""))
+                    input_names = list(input_defs.keys())
+                    when_to_use = self._parse_markdown_list(sections.get("when_to_use", ""))
+                    scripts = self._parse_markdown_list(sections.get("scripts", ""))
+                    resources = self._parse_markdown_list(sections.get("resources", ""))
+
+                    required_tools = self._ensure_list(fm.get("required_tools"))
+                    optional_tools = self._ensure_list(fm.get("optional_tools"))
+                    tags = self._ensure_list(fm.get("tags"))
+                    # NOTE: 解析声明式输出校验规则（从 frontmatter 中的 output_validators 字段读取）
+                    #       例如 weather 技能可以在 SKILL.md 中声明 "must_contain_any" / "must_not_contain_any" 规则，
+                    #       这样新增技能时不需要修改执行引擎 Python 代码。
+                    raw_validators = fm.get("output_validators")
+                    output_validators: List[Dict[str, Any]] = []
+                    if isinstance(raw_validators, list):
+                        for v in raw_validators:
+                            if isinstance(v, dict):
+                                output_validators.append(v)
+
+                    available, missing = self._check_availability(fm=fm)
+                    self._availability[skill_id] = (available, missing)
+
+                    meta = SkillMetadata(
+                        skill_id=skill_id,
+                        name=skill_id,  # Claude Code 风格下 name 使用技能唯一标识
+                        description=description,
+                        source_path=str(skill_file),
+                        when_to_use=when_to_use,
+                        inputs=input_names,
+                        input_descriptions=input_defs,
+                        required_tools=required_tools,
+                        optional_tools=optional_tools,
+                        tags=tags,
+                        memory_include_short_term=bool(
+                            fm.get("memory_include_short_term", True)
+                        ),
+                        scripts=scripts,
+                        resources=resources,
+                        output_validators=output_validators,
                     )
-                    continue
 
-                description = str(fm.get("description") or "未提供描述").strip()
+                    self._metadata[skill_id] = meta
+                    self._skill_files[skill_id] = skill_file
 
-                input_defs = self._parse_inputs_section(sections.get("inputs", ""))
-                input_names = list(input_defs.keys())
-                when_to_use = self._parse_markdown_list(sections.get("when_to_use", ""))
-                scripts = self._parse_markdown_list(sections.get("scripts", ""))
-                resources = self._parse_markdown_list(sections.get("resources", ""))
-
-                required_tools = self._ensure_list(fm.get("required_tools"))
-                optional_tools = self._ensure_list(fm.get("optional_tools"))
-                tags = self._ensure_list(fm.get("tags"))
-
-                available, missing = self._check_availability(fm=fm)
-                self._availability[skill_id] = (available, missing)
-
-                meta = SkillMetadata(
-                    skill_id=skill_id,
-                    name=skill_id,  # Claude Code 风格下 name 使用技能唯一标识
-                    description=description,
-                    source_path=str(skill_file),
-                    when_to_use=when_to_use,
-                    inputs=input_names,
-                    input_descriptions=input_defs,
-                    required_tools=required_tools,
-                    optional_tools=optional_tools,
-                    tags=tags,
-                    memory_include_short_term=bool(
-                        fm.get("memory_include_short_term", True)
-                    ),
-                    scripts=scripts,
-                    resources=resources,
-                )
-
-                self._metadata[skill_id] = meta
-                self._skill_files[skill_id] = skill_file
-
-                if available:
-                    logger.debug(
-                        f"{Fore.GREEN}技能可用: {skill_id} | path={skill_file}{Style.RESET_ALL}"
+                    if available:
+                        logger.debug(
+                            f"{Fore.GREEN}技能可用: {skill_id} | path={skill_file}{Style.RESET_ALL}"
+                        )
+                    else:
+                        logger.warning(
+                            f"{Fore.YELLOW}技能不可用(已保留索引): {skill_id} | 缺失={missing}{Style.RESET_ALL}"
+                        )
+                except Exception as exc:
+                    logger.error(
+                        f"{Fore.RED}解析技能失败: {skill_file} | error={exc}{Style.RESET_ALL}"
                     )
-                else:
-                    logger.warning(
-                        f"{Fore.YELLOW}技能不可用(已保留索引): {skill_id} | 缺失={missing}{Style.RESET_ALL}"
-                    )
-            except Exception as exc:
-                logger.error(
-                    f"{Fore.RED}解析技能失败: {skill_file} | error={exc}{Style.RESET_ALL}"
-                )
 
-        logger.info(
-            f"{Fore.GREEN}技能扫描完成，总计 {len(self._metadata)} 个（含不可用技能）{Style.RESET_ALL}"
-        )
-        return self._filter_metadata(include_unavailable=include_unavailable)
+            # 记录扫描后的目录签名，作为后续自动重载对比基线
+            self._last_fs_signature = self._compute_fs_signature()
+            logger.info(
+                f"{Fore.GREEN}技能扫描完成，总计 {len(self._metadata)} 个（含不可用技能）"
+                f" | fs_signature={self._last_fs_signature[:12]}...{Style.RESET_ALL}"
+            )
+            return self._filter_metadata(include_unavailable=include_unavailable)
 
     def list_skill_metadata(
         self,
@@ -161,6 +182,7 @@ class SkillManager:
         """
         获取技能元数据列表（供路由阶段使用）
         """
+        self._auto_reload_if_changed(trigger="list_skill_metadata")
         if not self._metadata:
             self.discover_skills(include_unavailable=include_unavailable)
         meta_list = self._filter_metadata(include_unavailable=include_unavailable)
@@ -170,6 +192,7 @@ class SkillManager:
         """
         按需加载完整技能
         """
+        self._auto_reload_if_changed(trigger=f"load_skill:{skill_name}")
         if skill_name in self._loaded_skills:
             return self._loaded_skills[skill_name]
 
@@ -223,6 +246,7 @@ class SkillManager:
                 instruction_markdown=instructions,
                 scripts=meta.scripts,
                 resources=meta.resources,
+                output_validators=meta.output_validators,
             )
             self._loaded_skills[skill_name] = skill
 
@@ -247,6 +271,7 @@ class SkillManager:
 
         说明：仅返回轻量 Skill 视图，执行时再懒加载完整指令。
         """
+        self._auto_reload_if_changed(trigger="list_skills")
         if not self._metadata:
             self.discover_skills(include_unavailable=False)
 
@@ -281,6 +306,15 @@ class SkillManager:
                 )
             )
         return result
+
+    def reload_skills(self, reason: str = "manual") -> List[SkillMetadata]:
+        """
+        显式重载技能索引（供外部在安装/删除后主动触发）。
+        """
+        logger.info(
+            f"{Fore.CYAN}收到技能重载请求，开始强制扫描 | reason={reason}{Style.RESET_ALL}"
+        )
+        return self.discover_skills(force_reload=True, include_unavailable=True)
 
     async def execute_skill_runtime(
         self,
@@ -329,6 +363,58 @@ class SkillManager:
             if include_unavailable or available:
                 rows.append(self._metadata[skill_id])
         return rows
+
+    def _compute_fs_signature(self) -> str:
+        """
+        计算 skills_root 当前文件系统签名，用于快速判断目录是否变化。
+
+        签名覆盖范围：
+        - skills_root 下所有文件（含 SKILL.md、resources、scripts 等）
+        - 每个文件的相对路径、mtime_ns、size
+        """
+        if not self.skills_root.exists():
+            return "missing"
+
+        hasher = hashlib.sha1()
+        file_count = 0
+        for path in sorted(self.skills_root.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                # 扫描过程中若并发删除，忽略该文件即可
+                continue
+            rel = path.relative_to(self.skills_root).as_posix()
+            payload = f"{rel}|{stat.st_mtime_ns}|{stat.st_size}\n"
+            hasher.update(payload.encode("utf-8", errors="ignore"))
+            file_count += 1
+        hasher.update(f"count={file_count}".encode("utf-8"))
+        return hasher.hexdigest()
+
+    def _auto_reload_if_changed(self, trigger: str) -> None:
+        """
+        自动检测目录变化并按需重载。
+
+        触发时机：list_skills / list_skill_metadata / load_skill 等读取路径前。
+        """
+        if not self.auto_discover:
+            return
+
+        current = self._compute_fs_signature()
+        # 首次建立基线（通常初始化 discover 已建立，这里做兜底）
+        if not self._last_fs_signature:
+            self._last_fs_signature = current
+            return
+        if current == self._last_fs_signature:
+            return
+
+        logger.info(
+            f"{Fore.YELLOW}检测到 skills_md 目录变化，自动重载技能索引 "
+            f"| trigger={trigger} | old={self._last_fs_signature[:10]}... "
+            f"| new={current[:10]}...{Style.RESET_ALL}"
+        )
+        self.discover_skills(force_reload=True, include_unavailable=True)
 
     def _split_frontmatter(self, content: str) -> tuple[str, str]:
         if not content.startswith("---"):
