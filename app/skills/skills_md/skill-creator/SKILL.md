@@ -65,6 +65,19 @@ python3 app/skills/skills_md/skill-creator/scripts/create_skill_from_brief.py \
      - `# 执行指令 (Instructions)`  
      - `# 脚本 (Scripts)`  
      - `# 资源 (Resources)`  
+   - 若技能有明确的输出质量要求（如必须包含特定关键词、不得出现引导话术等），
+     应在 frontmatter 中补充 `output_validators` 声明式校验规则：
+     ```yaml
+     output_validators:
+       - type: "must_contain_any"
+         markers: ["关键词1", "关键词2"]
+         error: "技能输出未包含预期的关键信息"
+       - type: "must_not_contain_any"
+         markers: ["不应出现的话术"]
+         error: "技能返回了不期望的内容"
+     ```
+     - 支持的 type：`must_contain_any`（输出须含至少一个标记词）、`must_not_contain_any`（输出不得含任何标记词）
+     - 参考 `weather/SKILL.md` 的 frontmatter 示例
 
 5. 最终返回必须包含  
    - 创建出的技能 ID 与目录路径  

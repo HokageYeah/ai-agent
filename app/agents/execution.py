@@ -297,7 +297,8 @@ class ExecutionEngine:
         *,
         skill_id: str,
         output_text: str,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
+        validators: Optional[List[Dict[str, Any]]] = None
     ) -> tuple[bool, str]:
         """
         对技能输出做轻量质量校验，避免“空泛话术”被误判为执行成功。
@@ -327,34 +328,29 @@ class ExecutionEngine:
             if marker_hits >= 2 and has_action_list:
                 return False, f"{skill_id} 输出为执行过程说明，不是最终结果正文"
 
-        if skill_id != "weather":
-            return True, ""
+        # 声明式校验：遍历 SKILL.md 中定义的 output_validators 规则
+        # 每条规则包含 type（校验类型）、markers（标记词列表）、error（失败提示）
+        for rule in (validators or []):
+            rule_type = str(rule.get("type", "")).strip()
+            markers = rule.get("markers", [])
+            error_msg = str(rule.get("error", f"{skill_id} 声明式校验失败"))
 
-        # 天气结果至少应包含若干核心要素之一
-        weather_markers = [
-            "°C", "温度", "湿度", "风速", "天气", "体感", "降水", "能见度", "air quality", "humidity"
-        ]
-        has_weather_fact = any(marker in text for marker in weather_markers)
-        if not has_weather_fact:
-            return False, "weather 技能未返回可识别的天气事实字段"
+            if rule_type == "must_contain_any":
+                # 输出必须包含至少一个标记词（如天气技能要求含"温度"等关键词）
+                if not any(m in text for m in markers):
+                    return False, error_msg
 
-        # 命中典型“引导话术”时判定为未真正执行查询
-        guidance_markers = [
-            "请告诉我您要查询的城市",
-            "您可以直接说例如",
-            "我将作为天气查询助手",
-            "我会：",
-        ]
-        if any(marker in text for marker in guidance_markers):
-            return False, "weather 技能返回引导话术，未直接给出查询结果"
+            elif rule_type == "must_not_contain_any":
+                # 输出不得包含任何标记词（如拦截"引导话术"式回复）
+                if any(m in text for m in markers):
+                    return False, error_msg
 
-        # location 已给定时，鼓励输出中携带地点信息（不做硬失败，只做日志提示）
-        location = str(params.get("location", "")).strip()
-        if location and location not in text:
-            logger.debug(
-                f"{Fore.CYAN}[执行引擎] weather 输出未显式包含 location 文本 | "
-                f"location={location}{Style.RESET_ALL}"
-            )
+            else:
+                # 未知校验类型仅记录日志，不阻断执行，确保向前兼容
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 未知 output_validator 类型: {rule_type} | "
+                    f"skill={skill_id}{Style.RESET_ALL}"
+                )
 
         return True, ""
 
@@ -1926,10 +1922,13 @@ class ExecutionEngine:
             )
 
             # 技能输出质量校验（避免无效话术污染后续 file_write / final_answer）
+            # NOTE: validators 来自 SKILL.md 的 output_validators 声明，实现声明式校验，
+            #       新增技能时只需编辑 SKILL.md 即可自定义校验逻辑，无需修改执行引擎代码。
             is_valid, invalid_reason = self._validate_skill_output(
                 skill_id=skill_id,
                 output_text=response.content or "",
                 params=safe_params,
+                validators=getattr(skill, "output_validators", None),
             )
             if not is_valid:
                 logger.warning(

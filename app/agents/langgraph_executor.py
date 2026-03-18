@@ -203,6 +203,153 @@ class LangGraphAgentExecutor:
         # 防止 token 过多导致打分开销过大
         return result[:120]
 
+    def _extract_routing_terms(
+        self,
+        text: str,
+        *,
+        max_terms: int = 80,
+    ) -> List[str]:
+        """
+        从任意文本中提取“可用于技能路由加权”的关键词。
+
+        设计说明：
+        - 复用 `_extract_task_keywords` 的中英混合分词能力；
+        - 增加停用词与纯数字过滤，避免通用词在动态技能场景里造成误召回；
+        - 输出保持去重保序，便于后续做可解释日志。
+        """
+        if not text:
+            return []
+
+        # 中英混合停用词：仅保留与任务意图更相关的术语
+        # NOTE: 这些词在多数技能描述中高频出现，不具备领域区分度，
+        #       留在关键词列表中只会导致跨域误召回（如"查询"让 weather 命中订单任务）
+        stopwords = {
+            "用户", "需要", "任务", "执行", "使用", "相关", "进行", "用于", "支持", "可以",
+            "请", "输出", "输入", "参数", "内容", "文本", "格式", "默认", "可选", "场景",
+            "一个", "以及", "并且", "如果", "通过", "返回", "结果", "技能", "工具", "说明",
+            "步骤", "目标", "要求", "能力", "模块", "处理", "生成", "提供", "查询",
+            # 高频功能词：几乎每个技能描述都会出现这些词
+            "信息", "数据", "详情", "状态", "获取", "完整", "包括", "情况",
+            "功能", "操作", "方式", "类型", "系统", "发送", "接收", "设置",
+            "user", "users", "task", "tasks", "use", "using", "used", "input", "inputs",
+            "output", "outputs", "content", "text", "format", "default", "optional",
+            "skill", "skills", "tool", "tools", "execute", "execution", "support",
+            "provide", "processing", "process", "module", "feature", "features",
+            "data", "get", "set", "information", "status", "detail", "details",
+            "result", "results", "request", "response", "query",
+        }
+
+        terms: List[str] = []
+        seen = set()
+        for token in self._extract_task_keywords(text):
+            t = str(token).strip().lower()
+            if not t or len(t) < 2:
+                continue
+            if t in stopwords:
+                continue
+            if re.fullmatch(r"\d+", t):
+                continue
+            if re.fullmatch(r"[_\-]+", t):
+                continue
+            if t in seen:
+                continue
+            seen.add(t)
+            terms.append(t)
+            if len(terms) >= max_terms:
+                break
+
+        return terms
+
+    def _build_dynamic_skill_boost_rules(
+        self,
+        *,
+        all_skills: List[Any],
+        meta_by_id: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, List[str]]:
+        """
+        基于技能元数据动态构建“技能关键词加权规则”。
+
+        设计目标：
+        - 不再写死任何具体技能的规则，适配技能的动态新增与变更；
+        - 优先利用技能 ID / 名称 / tags / inputs / when_to_use 等元数据；
+        - 通过“跨技能词频”抑制过于通用的词，提升区分度。
+        """
+        if not all_skills:
+            return {}
+
+        skill_count = max(1, len(all_skills))
+        per_skill_terms: Dict[str, Dict[str, float]] = {}
+        term_df: Dict[str, int] = {}
+
+        # 第一步：收集每个技能的候选词（按来源赋予基础权重）
+        for skill in all_skills:
+            skill_id = str(getattr(skill, "skill_id", "")).strip()
+            if not skill_id:
+                continue
+            meta = meta_by_id.get(skill_id, {})
+            weighted_terms: Dict[str, float] = {}
+
+            def _add_terms(text: str, weight: float) -> None:
+                for term in self._extract_routing_terms(text):
+                    # 同一词在多个来源出现时累计权重，提升稳定性
+                    weighted_terms[term] = weighted_terms.get(term, 0.0) + weight
+
+            # 高置信来源：技能标识与结构化元数据
+            _add_terms(skill_id.replace("-", " ").replace("_", " "), 4.0)
+            _add_terms(str(getattr(skill, "name", "")), 3.0)
+            _add_terms(" ".join(meta.get("tags", []) or []), 2.8)
+            _add_terms(" ".join(meta.get("inputs", []) or []), 2.6)
+
+            # 中等置信来源：使用场景与描述（信息丰富但噪声也更高）
+            _add_terms(" ".join(meta.get("when_to_use", []) or []), 1.8)
+            _add_terms(str(getattr(skill, "description", "")), 1.4)
+            _add_terms(" ".join((meta.get("input_descriptions", {}) or {}).values()), 1.2)
+
+            per_skill_terms[skill_id] = weighted_terms
+            for term in weighted_terms.keys():
+                term_df[term] = term_df.get(term, 0) + 1
+
+        # 第二步：结合全局词频做“通用词抑制 + 稀有词增强”
+        rules: Dict[str, List[str]] = {}
+        too_common_threshold = max(3, int(skill_count * 0.6))
+        medium_common_threshold = max(2, int(skill_count * 0.35))
+
+        for skill_id, weighted_terms in per_skill_terms.items():
+            ranked_terms: List[tuple[float, int, str]] = []
+            for term, base_weight in weighted_terms.items():
+                df = term_df.get(term, skill_count)
+
+                # 过于高频的词（跨多数技能）不适合作为 boost 触发词
+                if df >= too_common_threshold:
+                    continue
+
+                rarity_multiplier = 1.0
+                if df == 1:
+                    rarity_multiplier = 1.9
+                elif df == 2:
+                    rarity_multiplier = 1.5
+                elif df <= medium_common_threshold:
+                    rarity_multiplier = 1.2
+
+                final_weight = base_weight * rarity_multiplier
+                ranked_terms.append((final_weight, len(term), term))
+
+            ranked_terms.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            selected_terms = [term for _, _, term in ranked_terms[:12]]
+
+            # 防御性回退：若过滤过严，保留基础权重最高的少量词，避免规则为空
+            if not selected_terms and weighted_terms:
+                fallback_terms = sorted(
+                    weighted_terms.items(),
+                    key=lambda x: (x[1], len(x[0])),
+                    reverse=True,
+                )
+                selected_terms = [term for term, _ in fallback_terms[:5]]
+
+            rules[skill_id] = selected_terms
+
+        return rules
+
     def _is_skill_inventory_query(self, task: str) -> bool:
         """
         判断是否为“技能清单/能力盘点”类问题。
@@ -331,8 +478,19 @@ class LangGraphAgentExecutor:
             str(m.get("skill_id")): m for m in meta_list if m.get("skill_id")
         }
         keywords = self._extract_task_keywords(task)
+        joined_keywords = " ".join(keywords)
+        # 使用经停用词过滤的关键词进行打分，避免通用词（查询/信息/数据）造成跨域误选
+        filtered_keywords = self._extract_routing_terms(task)
+        # 动态构建关键词加权规则：不绑定具体技能 ID，适配技能包动态增删改。
+        dynamic_boost_rules = self._build_dynamic_skill_boost_rules(
+            all_skills=all_skills,
+            meta_by_id=meta_by_id,
+        )
 
-        scored: List[tuple[float, Any, List[str]]] = []
+        # ── 预构建每个技能的 candidate_text，用于 IDF 词频惩罚 ──
+        # 设计思路：如果某个关键词出现在大多数技能的描述中，说明它无区分度（如"查询"），
+        # 应降低其命中得分；只有在少数技能中出现的词才代表领域特征。
+        skill_candidate_texts: Dict[str, str] = {}
         for skill in all_skills:
             meta = meta_by_id.get(skill.skill_id, {})
             candidate_text_parts = [
@@ -344,7 +502,28 @@ class LangGraphAgentExecutor:
                 " ".join((meta.get("input_descriptions", {}) or {}).values()),
                 " ".join(meta.get("tags", []) or []),
             ]
-            candidate_text = " ".join([str(x).lower() for x in candidate_text_parts if x])
+            skill_candidate_texts[skill.skill_id] = " ".join(
+                [str(x).lower() for x in candidate_text_parts if x]
+            )
+
+        # 构建关键词跨技能词频表（DF），用于 IDF 权重衰减
+        kw_document_freq: Dict[str, int] = {}
+        for kw in filtered_keywords:
+            if not kw:
+                continue
+            df = sum(1 for ct in skill_candidate_texts.values() if kw in ct)
+            kw_document_freq[kw] = df
+
+        skill_count = max(1, len(all_skills))
+        # 通用词阈值：出现在 >= 60% 技能中视为高频通用词
+        high_freq_threshold = max(3, int(skill_count * 0.6))
+        # 中频阈值：出现在 >= 30% 技能中视为中等通用词
+        medium_freq_threshold = max(2, int(skill_count * 0.3))
+
+        scored: List[tuple[float, Any, List[str]]] = []
+        for skill in all_skills:
+            candidate_text = skill_candidate_texts[skill.skill_id]
+            meta = meta_by_id.get(skill.skill_id, {})
 
             score = 0.0
             reasons: List[str] = []
@@ -354,29 +533,39 @@ class LangGraphAgentExecutor:
                 score += 8.0
                 reasons.append("任务文本直接提到技能ID")
 
-            # 技能专属关键词规则加权（提升中文任务命中准确率）
-            joined = " ".join(keywords)
-            skill_boost_rules = {
-                "translation": ["翻译", "译成", "译为", "中英", "英文", "中文", "日文", "韩文", "translation"],
-                "code_generation": ["代码", "函数", "脚本", "算法", "python", "typescript", "java", "go", "rust", "编程"],
-                "data_analysis": ["分析", "数据", "统计", "趋势", "异常", "报表", "图表", "洞察"],
-                "text_writing": ["写作", "文章", "文案", "演讲稿", "邮件", "报告", "润色", "改写"],
-            }
-            for rule_kw in skill_boost_rules.get(skill.skill_id, []):
-                if rule_kw in joined:
+            # 动态关键词规则加权（来源于技能 metadata，支持技能动态变更）
+            for rule_kw in dynamic_boost_rules.get(skill.skill_id, []):
+                if rule_kw in joined_keywords:
                     score += 3.0
-                    reasons.append(f"命中技能关键词:{rule_kw}")
+                    reasons.append(f"命中动态技能关键词:{rule_kw}")
                     break
 
-            # 任务关键词命中技能描述/场景
-            for kw in keywords:
+            # 任务关键词命中技能描述/场景 —— 引入 IDF 词频惩罚
+            # 使用过滤后关键词（已剔除停用词），并按跨技能出现次数衰减得分
+            kw_hit_score = 0.0
+            kw_hit_count = 0
+            for kw in filtered_keywords:
                 if kw and kw in candidate_text:
-                    score += 2.0
+                    df = kw_document_freq.get(kw, 1)
+                    if df >= high_freq_threshold:
+                        # 高频通用词：出现在大多数技能中，几乎无区分度
+                        kw_hit_score += 0.3
+                    elif df >= medium_freq_threshold:
+                        # 中频词：有一定区分度但仍偏通用
+                        kw_hit_score += 0.8
+                    else:
+                        # 稀有词：仅在少数技能中出现，高区分度
+                        kw_hit_score += 2.0
+                    kw_hit_count += 1
+            if kw_hit_count > 0:
+                score += kw_hit_score
+                reasons.append(f"关键词命中x{kw_hit_count}={kw_hit_score:.1f}")
 
             # 若技能声明了 when_to_use，且任务中出现其关键短语，额外加权
+            # NOTE: 同样使用过滤后关键词，防止通用词（如"查询"）触发误匹配
             for hint in meta.get("when_to_use", []) or []:
                 hint_l = str(hint).lower()
-                if hint_l and any(tok in hint_l for tok in keywords):
+                if hint_l and any(tok in hint_l for tok in filtered_keywords):
                     score += 1.5
                     reasons.append("匹配when_to_use场景")
                     break

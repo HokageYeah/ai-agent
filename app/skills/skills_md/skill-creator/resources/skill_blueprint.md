@@ -18,6 +18,10 @@
    - `name`
    - `description`
    - 推荐补充 `required_tools`、`optional_tools`、`tags`、`memory_include_short_term`
+   - 可选补充 `output_validators`（声明式输出校验规则列表）
+     - 每条规则需包含 `type`（校验类型）、`markers`（标记词列表）、`error`（失败提示）
+     - 支持的 type：`must_contain_any`（输出须含至少一个标记词）、`must_not_contain_any`（输出不得含任何标记词）
+     - 示例见 `weather/SKILL.md` 的 frontmatter
 
 4. 命名规范
    - 技能 ID 使用小写英文+连字符

@@ -3,6 +3,13 @@ name: weather
 description: 查询实时天气与天气预报（无需 API Key）。
 required_tools: ["shell_exec"]
 optional_tools: ["http_request"]
+output_validators:
+  - type: "must_contain_any"
+    markers: ["°C", "温度", "湿度", "风速", "天气", "体感", "降水", "能见度", "air quality", "humidity"]
+    error: "weather 技能未返回可识别的天气事实字段"
+  - type: "must_not_contain_any"
+    markers: ["请告诉我您要查询的城市", "您可以直接说例如", "我将作为天气查询助手", "我会："]
+    error: "weather 技能返回引导话术，未直接给出查询结果"
 ---
 
 # 何时使用 (When to use)

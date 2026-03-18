@@ -111,6 +111,15 @@ class SkillManager:
                 required_tools = self._ensure_list(fm.get("required_tools"))
                 optional_tools = self._ensure_list(fm.get("optional_tools"))
                 tags = self._ensure_list(fm.get("tags"))
+                # NOTE: 解析声明式输出校验规则（从 frontmatter 中的 output_validators 字段读取）
+                #       例如 weather 技能可以在 SKILL.md 中声明 "must_contain_any" / "must_not_contain_any" 规则，
+                #       这样新增技能时不需要修改执行引擎 Python 代码。
+                raw_validators = fm.get("output_validators")
+                output_validators: List[Dict[str, Any]] = []
+                if isinstance(raw_validators, list):
+                    for v in raw_validators:
+                        if isinstance(v, dict):
+                            output_validators.append(v)
 
                 available, missing = self._check_availability(fm=fm)
                 self._availability[skill_id] = (available, missing)
@@ -131,6 +140,7 @@ class SkillManager:
                     ),
                     scripts=scripts,
                     resources=resources,
+                    output_validators=output_validators,
                 )
 
                 self._metadata[skill_id] = meta
@@ -223,6 +233,7 @@ class SkillManager:
                 instruction_markdown=instructions,
                 scripts=meta.scripts,
                 resources=meta.resources,
+                output_validators=meta.output_validators,
             )
             self._loaded_skills[skill_name] = skill
 
