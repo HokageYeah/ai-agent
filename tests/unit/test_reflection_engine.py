@@ -174,7 +174,62 @@ async def test_reflection_engine_parse_invalid_json():
     # 应该返回保守的反思结果
     assert result.success is False
     assert result.needs_replanning is True
-    assert "无法解析" in result.feedback
+    assert "非 JSON" in result.feedback
+
+
+@pytest.mark.asyncio
+async def test_reflection_engine_parse_think_plus_inline_json():
+    """测试 `<think>...` + 裸 JSON 的混合输出可被正确解析。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    mixed_output = """
+<think>
+这里是推理过程
+</think>
+{
+  "success": false,
+  "needs_replanning": true,
+  "should_continue": true,
+  "feedback": "安装失败，需要重试",
+  "summary": "skill 安装失败"
+}
+"""
+    result = reflection_engine._parse_reflection(mixed_output)
+
+    assert result.success is False
+    assert result.needs_replanning is True
+    assert result.should_continue is True
+    assert "安装失败" in result.feedback
+
+
+@pytest.mark.asyncio
+async def test_reflection_engine_parse_invalid_json_should_consider_failed_step_results():
+    """
+    JSON 解析失败时，不应只依赖 execution_result.success。
+
+    当执行结果含失败步骤（step_results.success=False）时，应回退为失败并触发重规划。
+    """
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    execution_result = ExecutionResult(
+        success=True,  # 流程级成功
+        result="final answer",
+        step_results=[
+            {"action": "tool", "tool_name": "shell_exec", "success": False, "error": "target exists"}
+        ],
+        error=None,
+    )
+
+    result = reflection_engine._parse_reflection("This is not JSON", execution_result=execution_result)
+
+    assert result.success is False
+    assert result.needs_replanning is True
 
 
 @pytest.mark.asyncio

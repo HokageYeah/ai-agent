@@ -32,6 +32,7 @@ Shell 命令执行工具模块
 import asyncio
 import os
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -39,6 +40,7 @@ from typing import Any, Dict, List, Optional
 from colorama import Fore, Style
 from loguru import logger
 
+from app.core.config import get_agent_workspace_dir
 from app.tools.base import Tool, ToolSchema
 
 
@@ -228,6 +230,17 @@ class ShellExecutorTool(Tool):
             )
             return {"success": False, "error": "命令不能为空"}
 
+        # ── 规范化 skillhub 安装命令的目标目录 ──
+        # 当命令形如 `skillhub install xxx` 且未显式提供 --dir 时，
+        # 自动注入 `--dir <AGENT_WORKSPACE_DIR>`，避免技能被安装到项目根 `./skills`。
+        normalized_command = self._rewrite_skillhub_install_command(command)
+        if normalized_command != command:
+            logger.info(
+                f"{Fore.CYAN}[ShellExecutorTool] 检测到 skillhub 安装命令，"
+                f"已自动注入 --dir 指向 Agent 工作区{Style.RESET_ALL}"
+            )
+            command = normalized_command
+
         logger.info(
             f"{Fore.CYAN}[ShellExecutorTool] 准备执行命令 "
             f"| cmd='{command[:80]}{'...' if len(command) > 80 else ''}' "
@@ -321,16 +334,36 @@ class ShellExecutorTool(Tool):
 
             # ── 根据 returncode 决定 success ──
             success = (return_code == 0)
+            idempotent_hit = False
+
+            # 对 `skillhub install` 做幂等容错：
+            # 若 CLI 返回 "Target exists" 且目标目录下已有 SKILL.md，
+            # 视为“已安装完成”，避免把重复安装误判为失败。
+            if not success:
+                idempotent_hit = self._is_skillhub_install_already_satisfied(
+                    command=command,
+                    stdout_text=stdout_text,
+                    stderr_text=stderr_text,
+                    working_dir=working_dir,
+                )
+                if idempotent_hit:
+                    success = True
 
             if success:
-                logger.info(
-                    f"{Fore.GREEN}[ShellExecutorTool] 命令执行成功 "
-                    f"| returncode={return_code} "
-                    f"| 耗时={elapsed_ms}ms "
-                    f"| stdout={len(stdout_text)}字符 "
-                    f"| stderr={len(stderr_text)}字符 "
-                    f"| 截断={truncated}{Style.RESET_ALL}"
-                )
+                if idempotent_hit:
+                    logger.info(
+                        f"{Fore.GREEN}[ShellExecutorTool] 命中安装幂等场景：目标已存在且可用，"
+                        f"按成功处理 | returncode={return_code} | 耗时={elapsed_ms}ms{Style.RESET_ALL}"
+                    )
+                else:
+                    logger.info(
+                        f"{Fore.GREEN}[ShellExecutorTool] 命令执行成功 "
+                        f"| returncode={return_code} "
+                        f"| 耗时={elapsed_ms}ms "
+                        f"| stdout={len(stdout_text)}字符 "
+                        f"| stderr={len(stderr_text)}字符 "
+                        f"| 截断={truncated}{Style.RESET_ALL}"
+                    )
             else:
                 logger.warning(
                     f"{Fore.YELLOW}[ShellExecutorTool] 命令以非零码退出 "
@@ -351,7 +384,8 @@ class ShellExecutorTool(Tool):
                 "return_code": return_code,
                 "elapsed_ms":  elapsed_ms,
                 "truncated":   truncated,
-                "working_dir": working_dir
+                "working_dir": working_dir,
+                "idempotent":  idempotent_hit,
             }
 
         except FileNotFoundError:
@@ -382,6 +416,143 @@ class ShellExecutorTool(Tool):
                 "error":   f"命令执行失败: {e}",
                 "command": command
             }
+
+    def _rewrite_skillhub_install_command(self, command: str) -> str:
+        """
+        为 `skillhub install` 命令注入 `--dir <workspace>`。
+
+        只在“单条简单命令”场景下做重写，避免破坏复杂 shell 语句。
+        """
+        raw_command = (command or "").strip()
+        if not raw_command:
+            return raw_command
+
+        # 遇到复合 shell 表达式时保守跳过，避免改写语义。
+        if any(token in raw_command for token in ["&&", "||", "|", ";", "$(", "`"]):
+            return raw_command
+
+        try:
+            tokens = shlex.split(raw_command)
+        except ValueError:
+            return raw_command
+        if not self._is_skillhub_install_tokens(tokens):
+            return raw_command
+        if any(token == "--dir" or token.startswith("--dir=") for token in tokens):
+            return raw_command
+
+        workspace_dir = str(get_agent_workspace_dir())
+        rewritten_tokens = [tokens[0], "--dir", workspace_dir, *tokens[1:]]
+        return shlex.join(rewritten_tokens)
+
+    def _is_skillhub_install_tokens(self, tokens: List[str]) -> bool:
+        """判断命令 token 是否为 `skillhub install ...`。"""
+        if not tokens:
+            return False
+        executable = Path(tokens[0]).name.lower()
+        if executable != "skillhub":
+            return False
+        return "install" in tokens
+
+    def _is_skillhub_install_already_satisfied(
+        self,
+        command: str,
+        stdout_text: str,
+        stderr_text: str,
+        working_dir: str,
+    ) -> bool:
+        """
+        检测 `skillhub install` 的“目录已存在”幂等场景。
+
+        只有当：
+        1. 输出里明确出现 Target exists / already exists
+        2. 且目标目录下存在 SKILL.md
+        才会按成功处理。
+        """
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return False
+        if not self._is_skillhub_install_tokens(tokens):
+            return False
+
+        combined = "\n".join([stderr_text or "", stdout_text or ""]).lower()
+        if ("target exists" not in combined) and ("already exists" not in combined):
+            return False
+
+        target_path = self._extract_target_exists_path(stderr_text) or self._extract_target_exists_path(stdout_text)
+        if target_path:
+            candidate_dir = Path(target_path).expanduser()
+        else:
+            candidate_dir = self._infer_skillhub_target_dir_from_command(
+                command=command,
+                working_dir=working_dir,
+            )
+        if candidate_dir is None:
+            return False
+
+        candidate_dir = candidate_dir.resolve(strict=False)
+        skill_file = candidate_dir / "SKILL.md"
+        if skill_file.exists():
+            logger.info(
+                f"{Fore.GREEN}[ShellExecutorTool] 检测到技能目录已存在且包含 SKILL.md："
+                f"{candidate_dir}，按已安装成功处理{Style.RESET_ALL}"
+            )
+            return True
+        return False
+
+    def _extract_target_exists_path(self, text: str) -> Optional[str]:
+        """从 CLI 输出中提取 `Target exists: <path>` 的路径。"""
+        if not text:
+            return None
+        match = re.search(r"Target exists:\s*(.+)", text)
+        if not match:
+            return None
+        return match.group(1).strip()
+
+    def _infer_skillhub_target_dir_from_command(
+        self,
+        command: str,
+        working_dir: str,
+    ) -> Optional[Path]:
+        """
+        根据 `skillhub install` 命令推断目标目录。
+
+        推断规则：
+        - 若显式传了 --dir，则目标是 `<dir>/<slug>`
+        - 否则默认 `<working_dir>/skills/<slug>`
+        """
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return None
+        if not self._is_skillhub_install_tokens(tokens):
+            return None
+
+        install_idx = tokens.index("install")
+        slug = None
+        for candidate in tokens[install_idx + 1 :]:
+            if candidate.startswith("-"):
+                continue
+            slug = candidate.strip()
+            break
+        if not slug:
+            return None
+
+        install_root: Optional[Path] = None
+        for idx, token in enumerate(tokens):
+            if token == "--dir" and idx + 1 < len(tokens):
+                install_root = Path(tokens[idx + 1].strip()).expanduser()
+                break
+            if token.startswith("--dir="):
+                install_root = Path(token.split("=", 1)[1].strip()).expanduser()
+                break
+
+        if install_root is None:
+            install_root = Path(working_dir) / "skills"
+        elif not install_root.is_absolute():
+            install_root = (Path(working_dir) / install_root).resolve(strict=False)
+
+        return install_root / slug
 
     def _guard_command(self, command: str, cwd: str) -> Optional[str]:
         """

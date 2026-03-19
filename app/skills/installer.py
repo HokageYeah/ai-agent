@@ -120,6 +120,23 @@ class SkillInstallerService:
             f"overwrite={overwrite}{Style.RESET_ALL}"
         )
 
+        # SkillHub 官方商店引用（如 `skillhub/browser-use`）优先走 skillhub CLI。
+        # 这样可以：
+        # 1. 避免 npx skills add 对 `skillhub/...` 误判为 Git 仓库地址；
+        # 2. 直接通过 `--dir <AGENT_WORKSPACE_DIR>` 落到项目技能工作区。
+        skillhub_slug = self._extract_skillhub_slug(parsed.package_ref)
+        if skillhub_slug:
+            logger.info(
+                f"{Fore.CYAN}[SkillInstallerService] 检测到 SkillHub 商店引用，"
+                f"将改用 skillhub CLI 安装 | slug={skillhub_slug}{Style.RESET_ALL}"
+            )
+            return await self._install_via_skillhub_cli(
+                package=package,
+                parsed=parsed,
+                slug=skillhub_slug,
+                overwrite=overwrite,
+            )
+
         with tempfile.TemporaryDirectory(prefix="ai-agent-skill-home-") as temp_home:
             temp_home_path = Path(temp_home).resolve()
             codex_home = temp_home_path
@@ -500,6 +517,167 @@ class SkillInstallerService:
 
         return command
 
+    def _extract_skillhub_slug(self, package_ref: str) -> Optional[str]:
+        """
+        从输入中提取 SkillHub skill slug。
+
+        支持两类写法：
+        1. `skillhub/browser-use`
+        2. `skillhub install browser-use`（把完整命令当 package 传入时）
+        """
+        candidate = (package_ref or "").strip()
+        if not candidate:
+            return None
+
+        ref_match = re.fullmatch(r"skillhub/([A-Za-z0-9._-]+)", candidate, flags=re.IGNORECASE)
+        if ref_match:
+            return ref_match.group(1).strip() or None
+
+        try:
+            tokens = shlex.split(candidate)
+        except ValueError:
+            return None
+        if not tokens:
+            return None
+        if Path(tokens[0]).name.lower() != "skillhub":
+            return None
+        if "install" not in tokens:
+            return None
+        install_idx = tokens.index("install")
+        slug = None
+        for candidate_slug in tokens[install_idx + 1 :]:
+            if candidate_slug.startswith("-"):
+                continue
+            slug = candidate_slug.strip()
+            break
+        return slug or None
+
+    async def _install_via_skillhub_cli(
+        self,
+        package: str,
+        parsed: ParsedSkillInstallRequest,
+        slug: str,
+        overwrite: bool,
+    ) -> Dict[str, Any]:
+        """
+        使用 SkillHub CLI 直接安装技能到 Agent 工作区。
+
+        说明：
+        - 强制注入 `--dir <workspace_dir>`，确保落地目录统一；
+        - 对 “Target exists” 做幂等兼容（目录和 SKILL.md 存在即判成功）。
+        """
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        install_command = ["skillhub", "--dir", str(self.workspace_dir), "install", slug]
+        if overwrite:
+            install_command.append("--force")
+
+        cli_result = await self._run_command(
+            command=install_command,
+            env={**os.environ},
+            cwd=str(self.workspace_dir),
+            timeout_seconds=self.timeout_seconds,
+        )
+
+        target_dir = self.workspace_dir / slug
+        target_skill_file = target_dir / SKILL_FILE_NAME
+
+        if cli_result["return_code"] != 0:
+            detail = "\n".join(
+                part
+                for part in [cli_result.get("stderr", ""), cli_result.get("stdout", "")]
+                if part
+            ).lower()
+            target_exists = ("target exists" in detail) or ("already exists" in detail)
+            if target_exists and target_skill_file.exists():
+                logger.info(
+                    f"{Fore.GREEN}[SkillInstallerService] SkillHub 返回目标已存在，"
+                    f"且目录可用，按幂等成功处理: {target_dir}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "overwritten": False,
+                    "package": package,
+                    "original_package_ref": parsed.package_ref,
+                    "resolved_package_ref": f"skillhub/{slug}",
+                    "skill_name": slug,
+                    "installed_path": str(target_dir),
+                    "skill_file": str(target_skill_file),
+                    "workspace_dir": str(self.workspace_dir),
+                    "cli_command": cli_result["command"],
+                    "stdout": cli_result["stdout"],
+                    "stderr": cli_result["stderr"],
+                    "used_legacy_install_alias": parsed.used_legacy_install_alias,
+                    **self._build_recovery_fields(None),
+                    "message": "技能已存在，按已安装处理",
+                }
+
+            error_message = (
+                "SkillHub CLI 安装失败："
+                f"{(cli_result.get('stderr') or cli_result.get('stdout') or '未知错误').strip()}"
+            )
+            logger.error(
+                f"{Fore.RED}[SkillInstallerService] {error_message}{Style.RESET_ALL}"
+            )
+            return {
+                "success": False,
+                "error": error_message,
+                "package": package,
+                "original_package_ref": parsed.package_ref,
+                "resolved_package_ref": f"skillhub/{slug}",
+                "cli_command": cli_result["command"],
+                "stdout": cli_result["stdout"],
+                "stderr": cli_result["stderr"],
+                "workspace_dir": str(self.workspace_dir),
+                "used_legacy_install_alias": parsed.used_legacy_install_alias,
+                **self._build_recovery_fields(None),
+            }
+
+        if not target_skill_file.exists():
+            error_message = (
+                "SkillHub CLI 命令执行成功，但目标技能文件缺失："
+                f"{target_skill_file}"
+            )
+            logger.error(
+                f"{Fore.RED}[SkillInstallerService] {error_message}{Style.RESET_ALL}"
+            )
+            return {
+                "success": False,
+                "error": error_message,
+                "package": package,
+                "original_package_ref": parsed.package_ref,
+                "resolved_package_ref": f"skillhub/{slug}",
+                "cli_command": cli_result["command"],
+                "stdout": cli_result["stdout"],
+                "stderr": cli_result["stderr"],
+                "workspace_dir": str(self.workspace_dir),
+                "used_legacy_install_alias": parsed.used_legacy_install_alias,
+                **self._build_recovery_fields(None),
+            }
+
+        logger.info(
+            f"{Fore.GREEN}[SkillInstallerService] SkillHub CLI 安装成功 | "
+            f"skill={slug} | path={target_dir}{Style.RESET_ALL}"
+        )
+        return {
+            "success": True,
+            "skipped": False,
+            "overwritten": overwrite,
+            "package": package,
+            "original_package_ref": parsed.package_ref,
+            "resolved_package_ref": f"skillhub/{slug}",
+            "skill_name": slug,
+            "installed_path": str(target_dir),
+            "skill_file": str(target_skill_file),
+            "workspace_dir": str(self.workspace_dir),
+            "cli_command": cli_result["command"],
+            "stdout": cli_result["stdout"],
+            "stderr": cli_result["stderr"],
+            "used_legacy_install_alias": parsed.used_legacy_install_alias,
+            **self._build_recovery_fields(None),
+            "message": "技能已安装到项目工作区",
+        }
+
     def _build_execution_env(self, temp_home: Path) -> Dict[str, str]:
         """
         构建 Skills CLI 执行环境。
@@ -623,7 +801,7 @@ class SkillInstallerService:
         start_time = time.time()
         rendered_command = " ".join(shlex.quote(part) for part in command)
         logger.info(
-            f"{Fore.CYAN}[SkillInstallerService] 启动 Skills CLI 命令 | cwd={cwd} | cmd={rendered_command}{Style.RESET_ALL}"
+            f"{Fore.CYAN}[SkillInstallerService] 启动外部命令 | cwd={cwd} | cmd={rendered_command}{Style.RESET_ALL}"
         )
 
         try:
@@ -635,11 +813,12 @@ class SkillInstallerService:
                 env=env,
             )
         except FileNotFoundError:
+            executable = command[0] if command else "未知命令"
             return {
                 "success": False,
                 "return_code": -1,
                 "stdout": "",
-                "stderr": "未找到 npx，可先检查 Node.js / npm 环境是否安装",
+                "stderr": f"未找到可执行命令: {executable}",
                 "elapsed_ms": int((time.time() - start_time) * 1000),
                 "command": rendered_command,
             }
@@ -648,7 +827,7 @@ class SkillInstallerService:
                 "success": False,
                 "return_code": -1,
                 "stdout": "",
-                "stderr": f"启动 Skills CLI 命令失败: {exc}",
+                "stderr": f"启动外部命令失败: {exc}",
                 "elapsed_ms": int((time.time() - start_time) * 1000),
                 "command": rendered_command,
             }
@@ -677,12 +856,12 @@ class SkillInstallerService:
 
         if return_code == 0:
             logger.info(
-                f"{Fore.GREEN}[SkillInstallerService] Skills CLI 命令执行成功 | "
+                f"{Fore.GREEN}[SkillInstallerService] 外部命令执行成功 | "
                 f"elapsed={elapsed_ms}ms | cmd={rendered_command}{Style.RESET_ALL}"
             )
         else:
             logger.warning(
-                f"{Fore.YELLOW}[SkillInstallerService] Skills CLI 命令执行失败 | "
+                f"{Fore.YELLOW}[SkillInstallerService] 外部命令执行失败 | "
                 f"exit={return_code} | elapsed={elapsed_ms}ms | cmd={rendered_command}{Style.RESET_ALL}"
             )
             if stderr_text:
@@ -922,6 +1101,8 @@ class SkillInstallerService:
         ).lower()
         if not detail:
             return "unknown"
+        if "username for 'https://github.com'" in detail:
+            return "repository_auth_failed"
         if "authentication failed" in detail or "private repository" in detail:
             return "repository_auth_failed"
         if "repository not found" in detail or "not found" in detail:

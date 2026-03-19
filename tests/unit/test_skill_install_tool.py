@@ -211,3 +211,70 @@ async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
     assert "wechat-official-account-helper" in result["skill_name"]
     assert target_dir.exists()
     assert (target_dir / "SKILL.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_install_should_route_skillhub_package_to_workspace(tmp_path, monkeypatch):
+    """`skillhub/<slug>` 应走 skillhub CLI，并通过 --dir 落到工作区。"""
+    workspace_dir = tmp_path / "skills_md"
+    service = SkillInstallerService(workspace_dir=workspace_dir)
+    captured = {}
+
+    async def fake_run_command(command, env, cwd, timeout_seconds):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        skill_dir = workspace_dir / "browser-use"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: browser-use\ndescription: 浏览器自动化\n---\n",
+            encoding="utf-8",
+        )
+        return {
+            "success": True,
+            "return_code": 0,
+            "stdout": "installed",
+            "stderr": "",
+            "elapsed_ms": 10,
+            "command": " ".join(command),
+        }
+
+    monkeypatch.setattr(service, "_run_command", fake_run_command)
+
+    result = await service.install(package="skillhub/browser-use", overwrite=False)
+
+    assert result["success"] is True
+    assert result["resolved_package_ref"] == "skillhub/browser-use"
+    assert result["installed_path"] == str(workspace_dir / "browser-use")
+    assert captured["command"][:4] == ["skillhub", "--dir", str(workspace_dir), "install"]
+    assert captured["command"][4] == "browser-use"
+
+
+@pytest.mark.asyncio
+async def test_install_should_treat_skillhub_target_exists_as_success(tmp_path, monkeypatch):
+    """SkillHub 返回 Target exists 且目录有效时，应按幂等成功处理。"""
+    workspace_dir = tmp_path / "skills_md"
+    service = SkillInstallerService(workspace_dir=workspace_dir)
+
+    async def fake_run_command(command, env, cwd, timeout_seconds):
+        skill_dir = workspace_dir / "browser-use"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: browser-use\ndescription: 浏览器自动化\n---\n",
+            encoding="utf-8",
+        )
+        return {
+            "success": False,
+            "return_code": 1,
+            "stdout": "",
+            "stderr": f"Error: Target exists: {skill_dir}",
+            "elapsed_ms": 10,
+            "command": " ".join(command),
+        }
+
+    monkeypatch.setattr(service, "_run_command", fake_run_command)
+
+    result = await service.install(package="skillhub/browser-use", overwrite=False)
+
+    assert result["success"] is True
+    assert result["skipped"] is True
+    assert result["skill_file"] == str(workspace_dir / "browser-use" / "SKILL.md")

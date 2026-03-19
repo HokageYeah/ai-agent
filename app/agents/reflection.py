@@ -17,6 +17,7 @@
 """
 
 import json
+import re
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from loguru import logger
 from colorama import Fore, Style
@@ -332,25 +333,19 @@ class ReflectionEngine:
         """
         logger.debug(f"{Fore.CYAN}解析 LLM 输出为反思结果{Style.RESET_ALL}")
         
-        # NOTE: 提前从 execution_result 提取执行状态，用于各种 fallback 场景
-        exec_success = execution_result.success if execution_result else False
+        # NOTE: 提前从 execution_result 提取执行状态，用于各种 fallback 场景。
+        # 这里不能只看 execution_result.success：
+        # - execute_plan 可能在“部分步骤失败但最终给出 final_answer”时仍返回 success=True
+        # - 需要结合 step_results/error 综合判断，避免误判“任务已完成”
+        exec_success = self._derive_execution_success(execution_result)
         
         try:
             # 尝试提取 JSON
-            llm_output = llm_output.strip()
-            
-            # 如果包含 markdown 代码块，提取其中的 JSON
-            if "```json" in llm_output:
-                start = llm_output.find("```json") + 7
-                end = llm_output.find("```", start)
-                llm_output = llm_output[start:end].strip()
-            elif "```" in llm_output:
-                start = llm_output.find("```") + 3
-                end = llm_output.find("```", start)
-                llm_output = llm_output[start:end].strip()
+            llm_output = (llm_output or "").strip()
+            json_payload = self._extract_json_payload(llm_output)
             
             # 解析 JSON
-            reflection_dict = json.loads(llm_output)
+            reflection_dict = json.loads(json_payload)
 
             result = ReflectionResult(
                 success=reflection_dict.get("success", False),
@@ -370,16 +365,27 @@ class ReflectionEngine:
         except json.JSONDecodeError as e:
             logger.error(f"{Fore.RED}JSON 解析失败: {e}{Style.RESET_ALL}")
             logger.error(f"{Fore.RED}LLM 输出: {llm_output[:200]}...{Style.RESET_ALL}")
-            
-            # NOTE: JSON 解析失败时以执行结果为准：
-            #       - 执行成功 → needs_replanning=False（无需重试）
-            #       - 执行失败 → needs_replanning=True（允许重试）
-            # 这样能避免因 LLM 输出格式问题导致已成功的执行被无限重试
+
+            # NOTE: JSON 解析失败时，先尝试从原文中推断布尔字段；
+            # 若推断失败再退回执行结果。这样可尽量保留 LLM 的真实判断，
+            # 同时避免因为格式噪声把“失败任务”误判为成功。
+            inferred_success = self._infer_bool_flag(llm_output, "success")
+            inferred_needs_replanning = self._infer_bool_flag(llm_output, "needs_replanning")
+            inferred_should_continue = self._infer_bool_flag(llm_output, "should_continue")
+
+            final_success = inferred_success if inferred_success is not None else exec_success
+            final_needs_replanning = (
+                inferred_needs_replanning
+                if inferred_needs_replanning is not None
+                else (not final_success)
+            )
+
             return ReflectionResult(
-                success=exec_success,
-                needs_replanning=not exec_success,
+                success=final_success,
+                needs_replanning=final_needs_replanning,
                 feedback="LLM 反思输出格式无效（非 JSON）",
-                summary=llm_output[:200] if llm_output else "无法生成总结"
+                summary=llm_output[:200] if llm_output else "无法生成总结",
+                should_continue=inferred_should_continue,
             )
         
         except Exception as e:
@@ -391,6 +397,116 @@ class ReflectionEngine:
                 feedback=f"解析错误: {str(e)}",
                 summary="解析失败"
             )
+
+    def _derive_execution_success(self, execution_result: Optional[Any]) -> bool:
+        """
+        根据执行结果综合推断“是否真正成功”。
+
+        设计原因：
+        - execution_result.success 可能是流程级成功（例如包含 final_answer）；
+        - 但任务语义上可能仍失败（步骤中存在 success=false 或 execution_result.error 非空）。
+        """
+        if execution_result is None:
+            return False
+
+        base_success = bool(getattr(execution_result, "success", False))
+        execution_error = getattr(execution_result, "error", None)
+        if execution_error:
+            return False
+
+        step_results = getattr(execution_result, "step_results", None) or []
+        has_failed_step = any(
+            isinstance(step_result, dict) and step_result.get("success") is False
+            for step_result in step_results
+        )
+        if has_failed_step:
+            return False
+
+        return base_success
+
+    def _extract_json_payload(self, llm_output: str) -> str:
+        """
+        从 LLM 输出中尽量提取 JSON 载荷。
+
+        兼容场景：
+        1. ```json ... ``` 代码块
+        2. ``` ... ``` 普通代码块
+        3. `<think>...</think>` + 紧随其后的裸 JSON 对象
+        """
+        text = (llm_output or "").strip()
+        if not text:
+            return text
+
+        fenced = self._extract_first_fenced_block(text)
+        if fenced:
+            return fenced
+
+        json_object = self._extract_first_balanced_json_object(text)
+        if json_object:
+            return json_object
+
+        return text
+
+    def _extract_first_fenced_block(self, text: str) -> Optional[str]:
+        """提取第一个 Markdown 代码块内容。"""
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
+        if not match:
+            return None
+        return match.group(1).strip()
+
+    def _extract_first_balanced_json_object(self, text: str) -> Optional[str]:
+        """
+        提取首个平衡的大括号 JSON 对象。
+
+        通过字符扫描处理字符串转义，避免误把 JSON 字符串内部的大括号当作结构边界。
+        """
+        start_idx = text.find("{")
+        if start_idx < 0:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+
+        for idx in range(start_idx, len(text)):
+            ch = text[idx]
+
+            if in_string:
+                if escape:
+                    escape = False
+                    continue
+                if ch == "\\":
+                    escape = True
+                elif ch == "\"":
+                    in_string = False
+                continue
+
+            if ch == "\"":
+                in_string = True
+                continue
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start_idx : idx + 1].strip()
+
+        return None
+
+    def _infer_bool_flag(self, text: str, key: str) -> Optional[bool]:
+        """
+        在非标准 JSON 文本中推断布尔字段值。
+
+        支持格式示例：
+        - "success": true
+        - success: false
+        """
+        pattern = rf'"?{re.escape(key)}"?\s*:\s*(true|false)'
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            return None
+        return match.group(1).lower() == "true"
 
 
 # =============================================================================
