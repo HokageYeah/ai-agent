@@ -457,6 +457,96 @@ def test_is_explicit_skill_creator_request(task: str, expected: bool):
     assert executor._is_explicit_skill_creator_request(task) is expected
 
 
+@pytest.mark.parametrize(
+    "task, expected",
+    [
+        ("npx skills add demo/repo@wechat-article-search -g -y，运行这个命令", True),
+        ("请执行 bash ./deploy.sh", True),
+        ("帮我把这句话翻译成英文", False),
+        ("请安装一个微信公众号搜索技能", False),
+    ],
+)
+def test_is_explicit_system_command_task(task: str, expected: bool):
+    """测试显式系统命令任务识别，避免普通自然语言任务被误判为命令执行。"""
+    executor = _build_executor()
+    assert executor._is_explicit_system_command_task(task) is expected
+
+
+@pytest.mark.parametrize(
+    "task, expected",
+    [
+        ("请安装 wechat-article-search 技能", True),
+        ("npx skills add demo/repo@wechat-article-search -g -y", True),
+        ("帮我列出可用技能", False),
+        ("请执行 bash ./deploy.sh", False),
+    ],
+)
+def test_is_skill_install_request(task: str, expected: bool):
+    """测试技能安装任务识别，兼容自然语言和命令式写法。"""
+    executor = _build_executor()
+    assert executor._is_skill_install_request(task) is expected
+
+
+def test_build_capability_gap_delegate_plan_should_delegate_command_task_to_general_agent():
+    """
+    测试：协调型 Agent 遇到显式命令执行任务、且自身无 shell_exec/skill_install 时，
+    应直接委派给 general_agent，而不是回答“做不到”。
+    """
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent", "send_message"],
+        child_agents=["general_agent"],
+    )
+    available_tools = [
+        SimpleNamespace(name="datetime"),
+        SimpleNamespace(name="spawn_agent"),
+        SimpleNamespace(name="send_message"),
+    ]
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="npx skills add wuchubuzai2018/expert-skills-hub@wechat-article-search -g -y 运行这个命令，安装这个技能",
+        available_tools=available_tools,
+    )
+
+    assert plan is not None
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "delegate"
+    assert plan.steps[0].params["agent_id"] == "general_agent"
+    assert "wechat-article-search" in plan.steps[0].params["task"]
+    assert plan.steps[1].action == "final_answer"
+
+
+def test_build_capability_gap_delegate_plan_should_not_force_delegate_when_agent_has_install_tool():
+    """测试：若当前 Agent 自己就有 skill_install，则不应触发兜底委派。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="具备安装能力",
+        role="执行型 Agent",
+        available_tools=["skill_install", "shell_exec", "send_message"],
+        child_agents=[],
+    )
+    available_tools = [
+        SimpleNamespace(name="skill_install"),
+        SimpleNamespace(name="shell_exec"),
+        SimpleNamespace(name="send_message"),
+    ]
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="请安装 wechat-article-search 技能",
+        available_tools=available_tools,
+    )
+
+    assert plan is None
+
+
 def test_resolve_available_skills_should_hide_restricted_skills_for_normal_task(monkeypatch):
     """
     测试普通任务下，skill-creator/dynamic_probe 会在路由前被门禁隐藏。

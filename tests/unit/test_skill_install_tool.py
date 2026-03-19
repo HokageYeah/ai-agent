@@ -93,6 +93,51 @@ async def test_install_should_copy_skill_into_workspace(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_install_should_detect_skill_from_global_agents_dir(tmp_path, monkeypatch):
+    """
+    Skills CLI 新版会把全局通用技能写入 `$HOME/.agents/skills`。
+
+    这个测试用于覆盖本次线上报错场景：
+    命令执行成功，但旧逻辑只查 `CODEX_HOME/skills`，导致误判“未找到技能包”。
+    """
+    workspace_dir = tmp_path / "skills_md"
+    service = SkillInstallerService(workspace_dir=workspace_dir)
+    captured_env = {}
+
+    async def fake_run_command(command, env, cwd, timeout_seconds):
+        captured_env.update(env)
+        skill_dir = Path(env["HOME"]) / ".agents" / "skills" / "wechat-article-search"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: wechat-article-search\ndescription: 全局技能目录测试\n---\n",
+            encoding="utf-8",
+        )
+        (skill_dir / "notes.txt").write_text("ok\n", encoding="utf-8")
+        return {
+            "success": True,
+            "return_code": 0,
+            "stdout": "installed",
+            "stderr": "",
+            "elapsed_ms": 10,
+            "command": " ".join(command),
+        }
+
+    monkeypatch.setattr(service, "_run_command", fake_run_command)
+
+    result = await service.install(
+        package="wuchubuzai2018/expert-skills-hub@wechat-article-search",
+        overwrite=False,
+    )
+
+    target_dir = workspace_dir / "wechat-article-search"
+    assert result["success"] is True
+    assert captured_env["HOME"] == captured_env["CODEX_HOME"]
+    assert target_dir.exists()
+    assert (target_dir / "SKILL.md").exists()
+    assert (target_dir / "notes.txt").exists()
+
+
+@pytest.mark.asyncio
 async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
     tmp_path,
     monkeypatch,

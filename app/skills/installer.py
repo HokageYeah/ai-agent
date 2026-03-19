@@ -8,7 +8,7 @@
 1. 不再让 LLM 直接拼接 `shell_exec` 安装命令，减少命令猜错导致的失败。
 2. 统一把技能落地到项目配置的 Agent 工作区（默认 `app/skills/skills_md`）。
 3. 兼容历史遗留输入，例如 `npx skills install xxx`，在服务层自动规范化为 `npx skills add ...`。
-4. 安装过程使用临时 `CODEX_HOME` 隔离目录，成功后再复制到项目工作区，避免污染用户本机全局目录。
+4. 安装过程使用临时 HOME / `CODEX_HOME` 隔离目录，成功后再复制到项目工作区，避免污染用户本机全局目录。
 """
 
 from __future__ import annotations
@@ -30,6 +30,13 @@ from loguru import logger
 from app.core.config import get_agent_workspace_dir, resolve_agent_workspace_dir
 
 SKILL_FILE_NAME = "SKILL.md"
+DEFAULT_SKILL_SEARCH_EXCLUDES = {
+    ".git",
+    ".npm",
+    ".pnpm-store",
+    "node_modules",
+    "__pycache__",
+}
 INSTALL_REF_PATTERN = re.compile(
     r"([A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+)"
 )
@@ -55,7 +62,7 @@ class SkillInstallerService:
 
     说明：
     - 安装命令实际通过 `npx skills add ...` 执行；
-    - 技能先安装到临时 `CODEX_HOME/skills`，再复制进项目工作区；
+    - 技能先安装到临时 HOME 下的 Skills CLI 实际落点，再复制进项目工作区；
     - 这样既能兼容 Skills CLI 的默认目录约定，也能保证本项目只扫描自己的技能目录。
     """
 
@@ -114,8 +121,9 @@ class SkillInstallerService:
         )
 
         with tempfile.TemporaryDirectory(prefix="ai-agent-skill-home-") as temp_home:
-            codex_home = Path(temp_home).resolve()
-            exec_env = {**os.environ, "CODEX_HOME": str(codex_home)}
+            temp_home_path = Path(temp_home).resolve()
+            codex_home = temp_home_path
+            exec_env = self._build_execution_env(temp_home=temp_home_path)
             requested_package_ref = parsed.package_ref
             effective_parsed = parsed
             recovery_context: Optional[Dict[str, Any]] = None
@@ -201,15 +209,21 @@ class SkillInstallerService:
                     **self._build_recovery_fields(recovery_context),
                 }
 
-            skill_root = codex_home / "skills"
+            skill_search_roots = self._build_skill_search_roots(
+                codex_home=codex_home,
+                temp_home=temp_home_path,
+            )
             installed_skill_dir = self._locate_installed_skill_dir(
-                skill_root=skill_root,
+                search_roots=skill_search_roots,
+                fallback_scan_root=temp_home_path,
                 preferred_skill_name=effective_parsed.skill_name,
                 preferred_package_ref=effective_parsed.package_ref,
             )
             if installed_skill_dir is None:
+                searched_locations = "、".join(str(path) for path in skill_search_roots)
                 error_message = (
-                    f"Skills CLI 命令执行成功，但未在临时目录 {skill_root} 中找到包含 {SKILL_FILE_NAME} 的技能包"
+                    "Skills CLI 命令执行成功，但未在临时隔离目录中找到包含 "
+                    f"{SKILL_FILE_NAME} 的技能包。已检查路径：{searched_locations}"
                 )
                 logger.error(
                     f"{Fore.RED}[SkillInstallerService] {error_message}{Style.RESET_ALL}"
@@ -486,6 +500,51 @@ class SkillInstallerService:
 
         return command
 
+    def _build_execution_env(self, temp_home: Path) -> Dict[str, str]:
+        """
+        构建 Skills CLI 执行环境。
+
+        设计原因：
+        - 仅设置 `CODEX_HOME` 并不足以隔离 `skills -g` 的真实安装路径；
+        - Skills CLI 的全局“通用技能”会写到 `$HOME/.agents/skills`；
+        - 因此这里同步覆盖 `HOME/XDG_*`，确保安装产物全部落在临时目录。
+        """
+        env = {**os.environ}
+        env["CODEX_HOME"] = str(temp_home)
+        env["HOME"] = str(temp_home)
+        env["XDG_CONFIG_HOME"] = str(temp_home / ".config")
+        env["XDG_STATE_HOME"] = str(temp_home / ".local" / "state")
+        env["XDG_CACHE_HOME"] = str(temp_home / ".cache")
+        return env
+
+    def _build_skill_search_roots(
+        self,
+        codex_home: Path,
+        temp_home: Path,
+    ) -> List[Path]:
+        """
+        构建技能产物优先搜索根目录。
+
+        说明：
+        - 旧逻辑只检查 `CODEX_HOME/skills`；
+        - 但新版 Skills CLI 在 `-g` 模式下会优先把通用技能写入 `$HOME/.agents/skills`；
+        - 因此这里同时覆盖历史目录、通用目录以及 `HOME` 下的 `.codex/skills` 兼容目录。
+        """
+        ordered_roots = [
+            temp_home / ".agents" / "skills",
+            codex_home / "skills",
+            temp_home / ".codex" / "skills",
+        ]
+        unique_roots: List[Path] = []
+        seen: set[str] = set()
+        for root in ordered_roots:
+            key = str(root.resolve(strict=False))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_roots.append(root)
+        return unique_roots
+
     async def _attempt_recover_from_failed_install(
         self,
         parsed: ParsedSkillInstallRequest,
@@ -643,28 +702,64 @@ class SkillInstallerService:
 
     def _locate_installed_skill_dir(
         self,
-        skill_root: Path,
+        search_roots: List[Path],
+        fallback_scan_root: Optional[Path],
         preferred_skill_name: Optional[str],
         preferred_package_ref: str,
     ) -> Optional[Path]:
         """
-        在临时 `CODEX_HOME/skills` 中定位刚安装的技能目录。
+        在临时隔离目录中定位刚安装的技能目录。
 
-        这里使用 `rglob(SKILL.md)` 是为了兼容多层目录结构，
-        避免未来 Skills CLI 组织方式轻微变化时立刻失效。
+        设计原因：
+        - 新版 Skills CLI 在 `-g` 模式下不一定写入 `CODEX_HOME/skills`；
+        - 通用技能常见落点是 `$HOME/.agents/skills/<skill>`；
+        - 某些 agent 还会写入 `~/.cursor/skills`、`~/.config/.../skills` 等目录。
+        - 因此这里先检查已知优先目录，再回退到临时 HOME 递归扫描。
         """
-        if not skill_root.exists():
-            logger.warning(
-                f"{Fore.YELLOW}[SkillInstallerService] 临时技能根目录不存在: {skill_root}{Style.RESET_ALL}"
-            )
-            return None
+        candidate_dirs: List[Path] = []
+        seen_dirs: set[str] = set()
 
-        candidate_dirs = sorted(
-            {skill_file.parent for skill_file in skill_root.rglob(SKILL_FILE_NAME)}
-        )
+        def _append_candidate_dirs(from_root: Path) -> None:
+            if not from_root.exists():
+                logger.debug(
+                    f"[SkillInstallerService] 技能搜索目录不存在，跳过: {from_root}"
+                )
+                return
+            logger.info(
+                f"{Fore.CYAN}[SkillInstallerService] 开始扫描技能落地目录: {from_root}{Style.RESET_ALL}"
+            )
+            for skill_file in from_root.rglob(SKILL_FILE_NAME):
+                candidate_dir = skill_file.parent
+                candidate_key = str(candidate_dir.resolve(strict=False))
+                if candidate_key in seen_dirs:
+                    continue
+                seen_dirs.add(candidate_key)
+                candidate_dirs.append(candidate_dir)
+
+        for search_root in search_roots:
+            _append_candidate_dirs(search_root)
+
+        if not candidate_dirs and fallback_scan_root and fallback_scan_root.exists():
+            logger.warning(
+                f"{Fore.YELLOW}[SkillInstallerService] 预设技能目录未发现安装产物，"
+                f"准备回退扫描临时 HOME: {fallback_scan_root}{Style.RESET_ALL}"
+            )
+            for skill_file in fallback_scan_root.rglob(SKILL_FILE_NAME):
+                if self._should_skip_skill_search_path(skill_file):
+                    continue
+                candidate_dir = skill_file.parent
+                candidate_key = str(candidate_dir.resolve(strict=False))
+                if candidate_key in seen_dirs:
+                    continue
+                seen_dirs.add(candidate_key)
+                candidate_dirs.append(candidate_dir)
+
         if not candidate_dirs:
             return None
 
+        logger.info(
+            f"{Fore.CYAN}[SkillInstallerService] 安装产物扫描完成，共发现 {len(candidate_dirs)} 个候选技能目录{Style.RESET_ALL}"
+        )
         if len(candidate_dirs) == 1:
             return candidate_dirs[0]
 
@@ -674,18 +769,47 @@ class SkillInstallerService:
         }
         normalized_targets.discard("")
 
+        exact_matches: List[Path] = []
         for candidate_dir in candidate_dirs:
             candidate_dir_name = self._normalize_name(candidate_dir.name)
             declared_name = self._normalize_name(
                 self._read_declared_skill_name(candidate_dir / SKILL_FILE_NAME)
             )
             if candidate_dir_name in normalized_targets or declared_name in normalized_targets:
-                return candidate_dir
+                exact_matches.append(candidate_dir)
+
+        if len(exact_matches) == 1:
+            return exact_matches[0]
+
+        if len(exact_matches) > 1:
+            exact_matches.sort(
+                key=lambda path: (
+                    0 if any(part == ".agents" for part in path.parts) else 1,
+                    len(path.parts),
+                    str(path),
+                )
+            )
+            logger.warning(
+                f"{Fore.YELLOW}[SkillInstallerService] 命中多个同名技能候选，"
+                f"已优先选择通用目录路径: {exact_matches[0]}{Style.RESET_ALL}"
+            )
+            return exact_matches[0]
 
         logger.warning(
             f"{Fore.YELLOW}[SkillInstallerService] 发现多个技能目录但未能自动匹配，候选={candidate_dirs}{Style.RESET_ALL}"
         )
         return None
+
+    def _should_skip_skill_search_path(self, skill_file: Path) -> bool:
+        """
+        判断某个递归扫描命中的 `SKILL.md` 是否应跳过。
+
+        设计原因：
+        - 回退扫描临时 HOME 时，npm/cache 等目录也可能存在无关文件；
+        - 这里只做轻量排除，减少误命中概率。
+        """
+        lower_parts = {part.lower() for part in skill_file.parts}
+        return any(part in lower_parts for part in DEFAULT_SKILL_SEARCH_EXCLUDES)
 
     def _infer_final_skill_name(
         self,

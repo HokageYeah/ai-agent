@@ -28,7 +28,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
 from app.agents.base import Agent
-from app.agents.planning import PlanningEngine, Plan
+from app.agents.planning import PlanningEngine, Plan, PlanStep
 from app.agents.execution import ExecutionEngine, ExecutionResult
 from app.agents.reflection import ReflectionEngine
 from app.memory.agent_run_memory import AgentRunMemory
@@ -411,6 +411,129 @@ class LangGraphAgentExecutor:
             r"\b(create|build|generate|update|modify)\b.{0,24}\b(skill|skills)\b",
         ]
         return any(re.search(p, task_l) for p in explicit_patterns)
+
+    def _is_explicit_system_command_task(self, task: str) -> bool:
+        """
+        判断是否为“明确要求执行系统命令/终端命令”的任务。
+
+        设计原因：
+        - 顶层协调 Agent 往往没有 `shell_exec` / `skill_install`；
+        - 用户却可能直接下达“运行这个命令”“执行 npx/npm/bash”等请求；
+        - 这类任务若不做额外兜底，模型容易直接回答“我没有工具”，
+          而不是按架构委派给 general_agent。
+        """
+        if not task:
+            return False
+
+        task_l = task.lower().strip()
+        command_patterns = [
+            r"\b(npx|npm|pnpm|yarn|poetry|pip|python|python3|bash|sh|zsh|brew|git|uv)\b",
+            r"(运行|执行).{0,8}(这个命令|该命令|命令|脚本|shell|终端)",
+            r"(run|execute).{0,12}(this command|command|shell|script|terminal)",
+            r"`[^`]+`",
+        ]
+        return any(re.search(pattern, task_l) for pattern in command_patterns)
+
+    def _is_skill_install_request(self, task: str) -> bool:
+        """
+        判断是否为“安装技能 / SkillHub”的任务。
+
+        说明：
+        - 这类任务优先应走 `skill_install`；
+        - 若当前 Agent 没有该工具，则应优先委派给具备该能力的 general_agent。
+        """
+        if not task:
+            return False
+
+        task_l = task.lower().strip()
+        install_patterns = [
+            r"(安装|install|add).{0,24}(skillhub|skills?|技能|能力包)",
+            r"npx\s+skills\s+(add|install)",
+            r"[a-z0-9._-]+/[a-z0-9._-]+@[a-z0-9._-]+",
+        ]
+        return any(re.search(pattern, task_l) for pattern in install_patterns)
+
+    def _build_capability_gap_delegate_plan(
+        self,
+        agent: Agent,
+        task: str,
+        available_tools: List[Any],
+    ) -> Optional[Plan]:
+        """
+        为“当前 Agent 缺少关键能力，但可委派给 general_agent”的场景生成强制委派计划。
+
+        设计原因：
+        - 顶层协调 Agent 的职责是路由，不应该因为自己没 `shell_exec` / `skill_install`
+          就直接给用户回复“做不到”；
+        - 当任务明显属于命令执行 / 技能安装，而当前 Agent 又具备
+          `spawn_agent -> general_agent` 路径时，直接构造委派计划比依赖 LLM 更稳。
+        """
+        if not agent or not task:
+            return None
+
+        child_agents = {str(agent_id).strip() for agent_id in (agent.child_agents or [])}
+        available_tool_names = {
+            getattr(tool, "name", "").strip() for tool in (available_tools or [])
+        }
+        available_tool_names.discard("")
+
+        can_delegate = "spawn_agent" in available_tool_names and "general_agent" in child_agents
+        if not can_delegate:
+            return None
+
+        is_command_task = self._is_explicit_system_command_task(task)
+        is_install_task = self._is_skill_install_request(task)
+        if not is_command_task and not is_install_task:
+            return None
+
+        lacks_shell_exec = "shell_exec" not in available_tool_names
+        lacks_skill_install = "skill_install" not in available_tool_names
+
+        # 技能安装优先依赖 skill_install；显式命令执行优先依赖 shell_exec。
+        needs_delegate = (
+            (is_install_task and lacks_skill_install)
+            or (is_command_task and lacks_shell_exec and lacks_skill_install)
+        )
+        if not needs_delegate:
+            return None
+
+        logger.info(
+            f"{Fore.YELLOW}[能力兜底委派] 检测到能力缺口："
+            f"agent={agent.agent_id} | command_task={is_command_task} | "
+            f"install_task={is_install_task} | "
+            f"tools={sorted(available_tool_names)}{Style.RESET_ALL}"
+        )
+
+        reasoning_parts = []
+        if is_install_task:
+            reasoning_parts.append("技能安装")
+        if is_command_task:
+            reasoning_parts.append("系统命令执行")
+        if lacks_skill_install:
+            reasoning_parts.append("缺少 skill_install")
+        if lacks_shell_exec:
+            reasoning_parts.append("缺少 shell_exec")
+
+        reasoning = (
+            f"当前 Agent '{agent.name}' 识别到这是"
+            f"{'、'.join(reasoning_parts)}相关任务。根据既有多 Agent 架构，"
+            "应通过 spawn_agent 将完整需求委派给具备安装/命令执行能力的 general_agent，"
+            "而不是直接向用户宣称无法处理。"
+        )
+        return Plan(
+            steps=[
+                PlanStep(
+                    action="delegate",
+                    agent_id="general_agent",
+                    task=task.strip(),
+                ),
+                PlanStep(
+                    action="final_answer",
+                    content="根据以上执行结果回答用户",
+                ),
+            ],
+            reasoning=reasoning,
+        )
 
     def _is_explicit_dynamic_probe_request(self, task: str) -> bool:
         """
@@ -1013,69 +1136,81 @@ class LangGraphAgentExecutor:
             f"可用工具: {[t.name for t in available_tools]} | "
             f"可用技能: {[s.skill_id for s in available_skills]}{Style.RESET_ALL}"
         )
-        
-        # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
-        # 使 LLM 在重规划时能规避已知失败路径
-        current_error_ctx = state.get("error_context", [])
-        if current_error_ctx:
-            logger.info(
-                f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
-                f"本次为错误感知重规划{Style.RESET_ALL}"
-            )
 
-        # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
-        # 这是解决「无效迭代循环」的核心修复点：
-        # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
-        # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
-        current_reflection_history = state.get("reflection_history", [])
-        if current_reflection_history:
-            logger.info(
-                f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
-                f"本次为历史感知重规划{Style.RESET_ALL}"
-            )
-
-        # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
-        # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
-        # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
-        planning_context: Dict[str, Any] = {
-            "iteration": iteration,
-            "user_rejected_tools": user_rejected_tools,
-        }
-        # 取最近一次 plan/execution 消息，控制体积只保留近一次
-        recent_messages = state.get("messages", []) or []
-        # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
-        #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
-        dict_messages = [m for m in recent_messages if isinstance(m, dict)]
-        last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
-        last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
-        if last_plan_msg:
-            planning_context["last_plan"] = {
-                "reasoning": last_plan_msg.get("reasoning", ""),
-                "steps": last_plan_msg.get("steps", [])[:8]
-            }
-        if last_exec_msg:
-            planning_context["last_execution"] = {
-                "content": last_exec_msg.get("content", ""),
-                # 仅保留最近步骤，避免 Prompt 爆长
-                "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
-            }
-        if state.get("final_result") is not None:
-            planning_context["last_final_result"] = state.get("final_result")
-
-        # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
-        plan = await self.planning_engine.create_plan(
+        forced_delegate_plan = self._build_capability_gap_delegate_plan(
             agent=agent,
             task=task,
             available_tools=available_tools,
-            available_skills=available_skills,
-            context=planning_context,
-            error_context=current_error_ctx if current_error_ctx else None,
-            reflection_history=current_reflection_history if current_reflection_history else None,
-            # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
-            run_memory=state.get("run_memory"),
-            iteration=iteration
         )
-        
+        if forced_delegate_plan is not None:
+            plan = forced_delegate_plan
+            logger.info(
+                f"{Fore.YELLOW}[Plan Node] 已命中能力缺口兜底委派，"
+                f"跳过 LLM 规划，直接委派给 general_agent{Style.RESET_ALL}"
+            )
+        else:
+            # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
+            # 使 LLM 在重规划时能规避已知失败路径
+            current_error_ctx = state.get("error_context", [])
+            if current_error_ctx:
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
+                    f"本次为错误感知重规划{Style.RESET_ALL}"
+                )
+
+            # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
+            # 这是解决「无效迭代循环」的核心修复点：
+            # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
+            # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
+            current_reflection_history = state.get("reflection_history", [])
+            if current_reflection_history:
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
+                    f"本次为历史感知重规划{Style.RESET_ALL}"
+                )
+
+            # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
+            # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
+            # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
+            planning_context: Dict[str, Any] = {
+                "iteration": iteration,
+                "user_rejected_tools": user_rejected_tools,
+            }
+            # 取最近一次 plan/execution 消息，控制体积只保留近一次
+            recent_messages = state.get("messages", []) or []
+            # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
+            #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
+            dict_messages = [m for m in recent_messages if isinstance(m, dict)]
+            last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
+            last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
+            if last_plan_msg:
+                planning_context["last_plan"] = {
+                    "reasoning": last_plan_msg.get("reasoning", ""),
+                    "steps": last_plan_msg.get("steps", [])[:8]
+                }
+            if last_exec_msg:
+                planning_context["last_execution"] = {
+                    "content": last_exec_msg.get("content", ""),
+                    # 仅保留最近步骤，避免 Prompt 爆长
+                    "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
+                }
+            if state.get("final_result") is not None:
+                planning_context["last_final_result"] = state.get("final_result")
+
+            # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
+            plan = await self.planning_engine.create_plan(
+                agent=agent,
+                task=task,
+                available_tools=available_tools,
+                available_skills=available_skills,
+                context=planning_context,
+                error_context=current_error_ctx if current_error_ctx else None,
+                reflection_history=current_reflection_history if current_reflection_history else None,
+                # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
+                run_memory=state.get("run_memory"),
+                iteration=iteration
+            )
+
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
         
         # 发送规划完成事件（含推理过程和步骤列表）
