@@ -1,6 +1,6 @@
 agent_id: general_agent
 name: 通用助手
-description: 处理通用请求，以及接收 order_agent / refund_agent 无法完成的任务。拥有搜索、HTTP、代码执行、文件操作等全量通用工具，并以 python_executor 作为万能兜底适配器。
+description: 处理通用请求，以及接收 order_agent / refund_agent 无法完成的任务。拥有搜索、HTTP、浏览器自动化、代码执行、文件操作等全量通用工具，并以 python_executor 作为万能兜底适配器。
 role: |-
   你是一个能力全面的通用 AI 助手，负责以下两类任务：
     A. cs_master 委派的通用请求（搜索、发邮件、数据分析、编程及系统操作等）
@@ -8,6 +8,7 @@ role: |-
 
   【核心工具说明】
   - search / http_request: 网络数据采集与 API 调用
+  - browser: 基于 Playwright 的真实浏览器自动化，可打开网页、点击输入、提取快照、截图与导出 PDF
   - file_read / file_write / file_edit / list_dir: 本地文件及系统操作
   - archive_extract / archive_compress: ZIP 解压与压缩（例如下载技能 zip 后解压到指定目录）
   - skill_install: 将外部技能包安装到项目技能工作区（安装技能时优先使用，避免手写 shell 命令）
@@ -35,6 +36,7 @@ capabilities:
 - 数据分析
 - 文本写作
 - HTTP 请求
+- 浏览器自动化
 - 文件读写
 - 文件精准编辑
 - 目录浏览
@@ -45,6 +47,7 @@ capabilities:
 available_tools:
 - search
 - http_request
+- browser
 - python_executor
 - file_read
 - file_write

@@ -1,0 +1,91 @@
+2026-03-20 11:25:53 | ERROR    | app.tools.builtin.browser:_ensure_browser:252 - [BrowserTool] 启动浏览器失败: BrowserType.launch: Executable doesn't exist at /Users/yuye/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔════════════════════════════════════════════════════════════╗
+║ Looks like Playwright was just installed or updated.       ║
+║ Please run the following command to download new browsers: ║
+║                                                            ║
+║     playwright install                                     ║
+║                                                            ║
+║ <3 Playwright Team                                         ║
+╚════════════════════════════════════════════════════════════╝
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1038, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1686, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 519, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1168, in _execute_step
+    return await self._execute_tool(step, agent, context)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1345, in _execute_tool
+    gateway_result = await self.tool_gateway.execute_direct_tool_call(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 809, in execute_direct_tool_call
+    result = await self._execute_single_call(tool_call, actual_context, skip_validation=True)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/browser.py", line 178, in execute
+    return await self._navigate(params=params, timeout=timeout)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/browser.py", line 272, in _navigate
+    ok, browser_error = await self._ensure_browser(timeout=timeout)
+
+> File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/browser.py", line 237, in _ensure_browser
+    self._browser = await self._playwright.chromium.launch(headless=self._headless)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/async_api/_generated.py", line 14547, in launch
+    await self._impl_obj.launch(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_browser_type.py", line 97, in launch
+    await self._channel.send(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+
+playwright._impl._errors.Error: BrowserType.launch: Executable doesn't exist at /Users/yuye/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔════════════════════════════════════════════════════════════╗
+║ Looks like Playwright was just installed or updated.       ║
+║ Please run the following command to download new browsers: ║
+║                                                            ║
+║     playwright install                                     ║
+║                                                            ║
+║ <3 Playwright Team                                         ║
+╚════════════════════════════════════════════════════════════╝

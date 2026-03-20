@@ -186,6 +186,173 @@ class TestHTTPRequestTool:
                 os.remove(saved_path)
 
 
+class TestBrowserTool:
+    """BrowserTool 测试类"""
+
+    @pytest.fixture
+    def browser_tool(self, tmp_path):
+        """创建 BrowserTool 实例。"""
+        from app.tools.builtin.browser import BrowserTool
+
+        return BrowserTool(screenshot_dir=tmp_path)
+
+    def test_tool_name(self, browser_tool):
+        """测试工具名称。"""
+        assert browser_tool.name == "browser"
+
+    def test_tool_schema(self, browser_tool):
+        """测试工具 Schema。"""
+        schema = browser_tool.schema
+        assert schema.name == "browser"
+        assert "action" in schema.parameters["required"]
+        assert "act_type" in schema.parameters["properties"]
+        assert "screenshot" in schema.parameters["properties"]["action"]["enum"]
+
+    @pytest.mark.asyncio
+    async def test_empty_action(self, browser_tool):
+        """测试缺少 action。"""
+        result = await browser_tool.execute({})
+        assert result["success"] is False
+        assert "action 不能为空" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_act_requires_navigate_first(self, browser_tool):
+        """测试在未打开页面前不能直接交互。"""
+        result = await browser_tool.execute({
+            "action": "act",
+            "act_type": "click",
+            "selector": "#submit",
+        })
+        assert result["success"] is False
+        assert "请先执行 navigate" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_navigate_requires_valid_url(self, browser_tool):
+        """测试 navigate 必须传合法 URL。"""
+        result = await browser_tool.execute({
+            "action": "navigate",
+            "url": "file:///tmp/test.html",
+        })
+        assert result["success"] is False
+        assert "仅支持 http/https" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_navigate_success(self, browser_tool, monkeypatch):
+        """测试导航成功返回标题与状态码。"""
+        class _FakeResponse:
+            status = 200
+
+        class _FakePage:
+            def __init__(self):
+                self.url = "https://example.com"
+                self.default_timeout = None
+
+            def set_default_timeout(self, timeout):
+                self.default_timeout = timeout
+
+            async def goto(self, url, timeout, wait_until):
+                self.url = url
+                return _FakeResponse()
+
+            async def title(self):
+                return "示例站点"
+
+        fake_page = _FakePage()
+
+        async def _fake_ensure_browser(timeout):
+            browser_tool._page = fake_page
+            fake_page.set_default_timeout(timeout)
+            return True, ""
+
+        monkeypatch.setattr(browser_tool, "_ensure_browser", _fake_ensure_browser)
+
+        result = await browser_tool.execute({
+            "action": "navigate",
+            "url": "https://example.com",
+        })
+
+        assert result["success"] is True
+        assert result["title"] == "示例站点"
+        assert result["status"] == 200
+        assert result["url"] == "https://example.com"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_truncates_long_content(self, browser_tool):
+        """测试页面快照在超长内容时会自动截断。"""
+        class _FakePage:
+            url = "https://example.com/long"
+
+            async def title(self):
+                return "长页面"
+
+            async def evaluate(self, script):
+                return "A" * 5000
+
+        browser_tool._page = _FakePage()
+
+        result = await browser_tool.execute({"action": "snapshot"})
+
+        assert result["success"] is True
+        assert result["truncated"] is True
+        assert result["title"] == "长页面"
+        assert "内容已截断" in result["content"]
+
+    @pytest.mark.asyncio
+    async def test_screenshot_auto_save(self, browser_tool):
+        """测试截图会自动保存到本地文件。"""
+        class _FakePage:
+            async def screenshot(self, path, type, full_page):
+                Path(path).write_bytes(b"fake-png-bytes")
+
+        browser_tool._page = _FakePage()
+
+        result = await browser_tool.execute({
+            "action": "screenshot",
+            "full_page": True,
+        })
+
+        assert result["success"] is True
+        assert result["full_page"] is True
+        assert result["path"].endswith(".png")
+        assert Path(result["path"]).exists()
+        assert Path(result["path"]).read_bytes() == b"fake-png-bytes"
+
+    @pytest.mark.asyncio
+    async def test_close_should_cleanup_runtime(self, browser_tool):
+        """测试 close 会清理浏览器运行时对象。"""
+        events = []
+
+        class _Closable:
+            def __init__(self, name):
+                self.name = name
+
+            async def close(self):
+                events.append(f"close:{self.name}")
+
+        class _Playable:
+            async def stop(self):
+                events.append("stop:playwright")
+
+        browser_tool._page = _Closable("page")
+        browser_tool._context = _Closable("context")
+        browser_tool._browser = _Closable("browser")
+        browser_tool._playwright = _Playable()
+
+        result = await browser_tool.execute({"action": "close"})
+
+        assert result["success"] is True
+        assert browser_tool._page is None
+        assert browser_tool._context is None
+        assert browser_tool._browser is None
+        assert browser_tool._playwright is None
+        assert events == [
+            "close:page",
+            "close:context",
+            "close:browser",
+            "stop:playwright",
+        ]
+
+
 class TestPythonExecutorTool:
     """PythonExecutorTool 测试类"""
     

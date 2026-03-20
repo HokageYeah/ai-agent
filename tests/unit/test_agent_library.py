@@ -179,3 +179,11 @@ def test_agent_library_import():
     assert OA.agent_id == "order_agent"
     assert RA.agent_id == "refund_agent"
     assert GA.agent_id == "general_agent"
+
+
+def test_general_agent_has_browser_tool():
+    """测试通用 Agent 已接入浏览器自动化工具。"""
+    from app.agents.library import GENERAL_AGENT
+
+    assert "browser" in GENERAL_AGENT.available_tools
+    assert "浏览器自动化" in GENERAL_AGENT.capabilities

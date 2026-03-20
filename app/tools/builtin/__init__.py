@@ -4,6 +4,7 @@
 本模块包含所有内置的工具实现，包括：
 - SearchTool: 网络搜索工具
 - HTTPRequestTool: HTTP 请求工具
+- BrowserTool: 浏览器自动化工具
 - PythonExecutorTool: Python 代码执行工具
 - FileReadTool: 文件读取工具
 - FileWriteTool: 文件写入工具
@@ -24,6 +25,7 @@
 
 from app.tools.builtin.search import SearchTool
 from app.tools.builtin.http import HTTPRequestTool
+from app.tools.builtin.browser import BrowserTool
 from app.tools.builtin.executor import PythonExecutorTool
 from app.tools.builtin.file import FileReadTool, FileWriteTool, FileEditTool, FileListDirTool
 from app.tools.builtin.archive import ArchiveCompressTool, ArchiveExtractTool
@@ -40,6 +42,7 @@ from app.tools.builtin.datetime import DateTimeTool
 __all__ = [
     "SearchTool",
     "HTTPRequestTool", 
+    "BrowserTool",
     "PythonExecutorTool",
     "FileReadTool",
     "FileWriteTool",
@@ -87,6 +90,7 @@ def register_all_builtin_tools(tool_hub, seed_order_data: bool = True) -> None:
     builtin_tools = [
         SearchTool(),
         HTTPRequestTool(),
+        BrowserTool(),
         PythonExecutorTool(),
         FileReadTool(),
         FileWriteTool(),
