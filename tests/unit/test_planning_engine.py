@@ -291,6 +291,32 @@ async def test_planning_engine_parse_invalid_json():
 
 
 @pytest.mark.asyncio
+async def test_planning_engine_parse_think_and_semistructured_steps():
+    """测试 `<think>` + 半结构化“执行步骤”文本可被正确解析。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    mixed_output = """
+<think>
+这里是思考过程
+</think>
+
+【规划-第1轮】
+推理过程: 先检查依赖，再执行搜索脚本。
+执行步骤: [{"action": "tool", "tool_name": "shell_exec", "params": {"command": "node scripts/search_wechat.js \\"郑州一中\\" -n 10", "working_dir": "/tmp/wechat"}}, {"action": "final_answer", "content": "根据搜索结果回答用户"}]
+"""
+
+    plan = planning_engine._parse_plan(mixed_output)
+
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "shell_exec"
+    assert "先检查依赖" in plan.reasoning
+
+
+@pytest.mark.asyncio
 async def test_planning_engine_retry_when_truncated_output():
     """测试：首轮输出截断导致 JSON 失败时，规划引擎会自动重试。"""
     first_truncated = _StubInferenceResult(

@@ -272,14 +272,24 @@ class AgentRunMemory:
         else:
             result_str = str(tool_result) if tool_result is not None else ""
 
+        # 失败时不仅保留 error_msg，也尽量保留工具返回详情，
+        # 避免后续规划只能看到一句“success=false”而失去真正的报错上下文。
+        if not success:
+            error_parts: list[str] = []
+            display_msg = str(error_msg or "").strip()
+            if display_msg:
+                error_parts.append(display_msg)
+
+            normalized_result = result_str.strip()
+            if normalized_result and normalized_result != display_msg:
+                error_parts.append(f"工具返回详情: {normalized_result}")
+
+            combined_error = "\n".join(part for part in error_parts if part).strip()
+            result_str = f"[ERROR] {combined_error or '工具执行失败'}"
+
         # 控制结果长度，避免 Prompt 爆长
         if len(result_str) > 1500:
             result_str = result_str[:1500] + "\n...（结果已截断）"
-
-        # 失败时在结果前加 [ERROR] 标注，让 LLM 清楚感知失败
-        if not success:
-            display_msg = error_msg or result_str
-            result_str = f"[ERROR] {display_msg}"
 
         self._messages.append(AgentMemoryMessage(
             role="tool",

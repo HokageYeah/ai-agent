@@ -15,7 +15,8 @@ import pytest
 from app.agents.base import Agent
 from app.agents.execution import ExecutionEngine
 from app.agents.planning import Plan, PlanStep
-from app.skills.base import Skill
+from app.skills.base import Skill, SkillRuntimeDependency
+from app.tools.base import Tool, ToolSchema
 from app.tools.hub import ToolHub
 
 
@@ -43,6 +44,40 @@ class DummyLLMHub:
         self.calls += 1
         self.tools_history.append(list(getattr(config, "tools", []) or []))
         return SimpleNamespace(content=self.content)
+
+
+class SequencedShellTool(Tool):
+    """按预设队列返回结果的 shell_exec 测试桩。"""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    @property
+    def name(self) -> str:
+        return "shell_exec"
+
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name="shell_exec",
+            description="执行 Shell 命令",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "working_dir": {"type": "string"},
+                    "timeout": {"type": "integer"},
+                },
+                "required": ["command"],
+            },
+        )
+
+    async def execute(self, params):
+        self.calls.append(dict(params))
+        if not self._responses:
+            raise AssertionError("shell_exec 测试桩没有更多预设响应")
+        return self._responses.pop(0)
 
 
 @pytest.mark.asyncio
@@ -189,8 +224,8 @@ async def test_skill_creator_should_pass_with_explicit_intent():
 
 
 @pytest.mark.asyncio
-async def test_skill_without_declared_tools_should_disable_internal_tools():
-    """技能未声明 required/optional 工具时，应默认禁用技能内部工具。"""
+async def test_skill_without_declared_tools_should_use_all_authorized_tools():
+    """技能未声明 required/optional 工具时，应兼容外部技能并开放全部已授权工具。"""
     tool_hub = ToolHub()
     # 直接伪造工具 Schema 列表，模拟 Agent 拥有多种可用工具。
     tool_hub.get_schemas = lambda: [
@@ -235,7 +270,185 @@ async def test_skill_without_declared_tools_should_disable_internal_tools():
     assert result.success is True
     assert result.step_results[0]["success"] is True
     assert llm_hub.tools_history, "应记录至少一次技能推理调用"
-    assert llm_hub.tools_history[0] == []
+    tool_names = {
+        schema.get("function", {}).get("name") or schema.get("name")
+        for schema in llm_hub.tools_history[0]
+    }
+    assert tool_names == {"file_read", "list_dir", "shell_exec"}
+
+
+@pytest.mark.asyncio
+async def test_skill_runtime_dependency_should_auto_install_before_llm(tmp_path):
+    """技能声明 runtime_dependencies 时，应先检查缺失并自动安装，再进入 LLM 执行。"""
+    skill_dir = tmp_path / "wechat_skill"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    tool_hub = ToolHub()
+    shell_tool = SequencedShellTool(
+        responses=[
+            {"success": False, "error": "Cannot find module 'cheerio'"},
+            {"success": True, "stdout": "added 1 package"},
+            {"success": True, "stdout": ""},
+        ]
+    )
+    tool_hub.register_tool(shell_tool)
+
+    skill = Skill(
+        skill_id="wechat-article-search",
+        name="wechat-article-search",
+        description="微信公众号文章搜索",
+        prompt_template="请搜索：{keywords}",
+        required_tools=["shell_exec"],
+        optional_tools=[],
+        source_path=str(skill_dir / "SKILL.md"),
+        runtime_dependencies=[
+            SkillRuntimeDependency(
+                type="npm",
+                packages=["cheerio"],
+                working_dir=".",
+                description="cheerio HTML 解析依赖",
+            )
+        ],
+    )
+    skill_manager = DummySkillManager(skill=skill)
+    llm_hub = DummyLLMHub(content="搜索结果：共 2 篇文章")
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=llm_hub,
+    )
+    agent = Agent(
+        agent_id="general_agent",
+        name="General Agent",
+        description="通用助手",
+        role="Test role",
+        available_tools=["shell_exec"],
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(
+                action="skill",
+                skill_id="wechat-article-search",
+                params={"keywords": "郑州一中"},
+            ),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(
+        agent,
+        plan,
+        context={"task": "查找郑州一中微信公众号文章"},
+    )
+
+    assert result.success is True
+    assert result.step_results[0]["success"] is True
+    assert len(shell_tool.calls) == 3
+    assert shell_tool.calls[0]["command"].startswith("node -e ")
+    assert "npm install --no-save cheerio" in shell_tool.calls[1]["command"]
+    assert shell_tool.calls[1]["working_dir"] == str(skill_dir.resolve())
+    assert llm_hub.calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_skill_runtime_dependency_should_fail_without_required_tool(tmp_path):
+    """若运行时依赖需要 shell_exec，但当前 Agent 无权使用，应在 LLM 前明确失败。"""
+    skill_dir = tmp_path / "wechat_skill"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    tool_hub = ToolHub()
+    tool_hub.register_tool(
+        SequencedShellTool(responses=[{"success": True, "stdout": ""}])
+    )
+    skill = Skill(
+        skill_id="wechat-article-search",
+        name="wechat-article-search",
+        description="微信公众号文章搜索",
+        prompt_template="请搜索：{keywords}",
+        required_tools=["shell_exec"],
+        optional_tools=[],
+        source_path=str(skill_dir / "SKILL.md"),
+        runtime_dependencies=[
+            SkillRuntimeDependency(type="npm", packages=["cheerio"], working_dir=".")
+        ],
+    )
+    llm_hub = DummyLLMHub(content="不应进入 LLM")
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=DummySkillManager(skill=skill),
+        llm_hub=llm_hub,
+    )
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="只负责委派",
+        available_tools=["datetime", "spawn_agent"],
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(
+                action="skill",
+                skill_id="wechat-article-search",
+                params={"keywords": "郑州一中"},
+            ),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(
+        agent,
+        plan,
+        context={"task": "查找郑州一中微信公众号文章"},
+    )
+
+    assert result.step_results[0]["success"] is False
+    assert "无权使用工具 'shell_exec'" in str(result.step_results[0]["error"])
+    assert llm_hub.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_shell_exec_business_failure_should_expose_stderr_and_recovery_hint():
+    """shell_exec 业务失败时，应把真实 stderr 和恢复建议暴露给上层。"""
+    tool_hub = ToolHub()
+    shell_tool = SequencedShellTool(
+        responses=[
+            {
+                "success": False,
+                "command": 'node scripts/search_wechat.js "郑州一中"',
+                "stderr": "Error: Cannot find module 'cheerio'",
+                "stdout": "",
+                "return_code": 1,
+                "working_dir": "/tmp/wechat-skill",
+            }
+        ]
+    )
+    tool_hub.register_tool(shell_tool)
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=SimpleNamespace(get_skill=lambda *_args, **_kwargs: None),
+        llm_hub=DummyLLMHub(),
+    )
+    agent = Agent(
+        agent_id="general_agent",
+        name="General Agent",
+        description="通用助手",
+        role="Test role",
+        available_tools=["shell_exec"],
+    )
+    step = PlanStep(
+        action="tool",
+        tool_name="shell_exec",
+        params={
+            "command": 'node scripts/search_wechat.js "郑州一中"',
+            "working_dir": "/tmp/wechat-skill",
+        },
+    )
+
+    result = await execution_engine._execute_tool(step=step, agent=agent, context={})
+
+    assert result["success"] is False
+    assert "Cannot find module 'cheerio'" in str(result["error"])
+    assert "npm install --no-save cheerio" in str(result["error"])
+    assert "return_code=1" in str(result["error"])
 
 
 def test_skill_output_validation_should_reject_process_report_style():

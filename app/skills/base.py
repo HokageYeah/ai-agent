@@ -34,6 +34,53 @@ class MemoryStrategy(BaseModel):
     include_short_term: bool = Field(True, description="是否包含短期对话记忆")
     # 可以扩展长期记忆等其他策略
 
+
+class SkillRuntimeDependency(BaseModel):
+    """
+    技能运行时依赖声明
+
+    设计说明：
+    1. 依赖声明写在 SKILL.md frontmatter 中，便于技能自描述；
+    2. 执行引擎会在真正调用 LLM 前先做“检查 -> 缺失则安装 -> 安装后复检”；
+    3. 当前先支持 npm / shell 两类，后续可继续扩展而不破坏旧技能。
+    """
+
+    type: str = Field(..., description="依赖类型，例如 npm / shell")
+    tool_name: Optional[str] = Field(
+        default=None,
+        description="执行依赖检查/安装所需的工具名；为空时按 type 自动推导",
+    )
+    packages: List[str] = Field(
+        default_factory=list,
+        description="包管理器依赖列表，例如 npm 包名列表",
+    )
+    check_command: Optional[str] = Field(
+        default=None,
+        description="自定义检查命令；为空时按 type 自动生成",
+    )
+    install_command: Optional[str] = Field(
+        default=None,
+        description="自定义安装命令；为空时按 type 自动生成",
+    )
+    working_dir: str = Field(
+        default=".",
+        description="依赖检查/安装的工作目录；相对路径相对于技能目录解析",
+    )
+    env: Dict[str, str] = Field(
+        default_factory=dict,
+        description="执行依赖命令时附加的环境变量",
+    )
+    timeout_seconds: int = Field(
+        default=180,
+        ge=1,
+        le=1800,
+        description="单条依赖检查/安装命令超时时间（秒）",
+    )
+    description: str = Field(
+        default="",
+        description="依赖说明，便于日志输出和排障",
+    )
+
 class Skill(BaseModel):
     """
     技能定义数据模型
@@ -70,6 +117,10 @@ class Skill(BaseModel):
     output_validators: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="声明式输出校验规则列表，由 SKILL.md frontmatter 定义"
+    )
+    runtime_dependencies: List[SkillRuntimeDependency] = Field(
+        default_factory=list,
+        description="技能运行时依赖列表；执行前由执行引擎预检并尝试自动安装",
     )
     
     model_config = ConfigDict(
@@ -116,4 +167,8 @@ class SkillMetadata(BaseModel):
     output_validators: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="声明式输出校验规则列表"
+    )
+    runtime_dependencies: List[SkillRuntimeDependency] = Field(
+        default_factory=list,
+        description="技能运行时依赖列表"
     )

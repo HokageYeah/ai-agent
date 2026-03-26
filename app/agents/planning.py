@@ -17,6 +17,7 @@
 """
 
 import json
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from colorama import Fore, Style
@@ -25,6 +26,12 @@ from loguru import logger
 from app.agents.base import Agent
 from app.skills.base import Skill
 from app.tools.base import Tool
+from app.utils.llm_output_parser import (
+    extract_first_balanced_json_array,
+    extract_first_balanced_json_object,
+    extract_json_payload,
+    strip_think_blocks,
+)
 from app.utils.prompt_manager import PromptManager
 
 # NOTE: 使用 TYPE_CHECKING 避免循环导入；运行时通过函数参数类型注解字符串引用
@@ -467,18 +474,8 @@ class PlanningEngine:
         logger.debug(f"{Fore.CYAN}解析 LLM 输出为计划{Style.RESET_ALL}")
 
         try:
-            llm_output = llm_output.strip()
-
-            if "```json" in llm_output:
-                start = llm_output.find("```json") + 7
-                end = llm_output.find("```", start)
-                llm_output = llm_output[start:end].strip()
-            elif "```" in llm_output:
-                start = llm_output.find("```") + 3
-                end = llm_output.find("```", start)
-                llm_output = llm_output[start:end].strip()
-
-            plan_dict = json.loads(llm_output)
+            llm_output = (llm_output or "").strip()
+            plan_dict = self._extract_plan_dict(llm_output)
 
             steps: List[PlanStep] = []
             for step_dict in plan_dict.get("steps", []):
@@ -513,6 +510,96 @@ class PlanningEngine:
                 ],
                 reasoning="解析错误",
             )
+
+    def _extract_plan_dict(self, llm_output: str) -> Dict[str, Any]:
+        """
+        从混合格式 LLM 输出中恢复计划字典。
+
+        兼容场景：
+        1. 标准 JSON 对象：`{"steps":[...],"reasoning":"..."}`
+        2. 顶层 JSON 数组：`[{"action":"tool", ...}]`
+        3. `<think>...</think>` + 半结构化文本：
+           `推理过程: ...`
+           `执行步骤: [{"action":"tool", ...}]`
+        """
+        payload = extract_json_payload(llm_output)
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            semi_structured_plan = self._extract_semistructured_plan(llm_output)
+            if semi_structured_plan:
+                return semi_structured_plan
+            raise
+
+        if isinstance(parsed, dict) and isinstance(parsed.get("steps"), list):
+            return parsed
+
+        if isinstance(parsed, list):
+            return {
+                "steps": parsed,
+                "reasoning": self._extract_plan_reasoning(llm_output),
+            }
+
+        semi_structured_plan = self._extract_semistructured_plan(llm_output)
+        if semi_structured_plan:
+            return semi_structured_plan
+
+        raise json.JSONDecodeError("规划输出中未找到可执行的 steps 数组", llm_output, 0)
+
+    def _extract_semistructured_plan(self, llm_output: str) -> Optional[Dict[str, Any]]:
+        """
+        兼容“说明文字 + 执行步骤数组”的半结构化规划文本。
+
+        典型示例：
+        `【规划-第1轮】`
+        `推理过程: ...`
+        `执行步骤: [{"action":"tool", ...}]`
+        """
+        text = strip_think_blocks(llm_output or "")
+        if not text:
+            return None
+
+        step_label_match = re.search(r"执行步骤\s*[:：]", text)
+        if not step_label_match:
+            return None
+
+        remaining = text[step_label_match.end() :].strip()
+        step_payload = (
+            extract_first_balanced_json_array(remaining)
+            or extract_first_balanced_json_object(remaining)
+        )
+        if not step_payload:
+            return None
+
+        parsed_steps = json.loads(step_payload)
+        if isinstance(parsed_steps, dict):
+            plan_dict = dict(parsed_steps)
+            if not isinstance(plan_dict.get("steps"), list):
+                return None
+        elif isinstance(parsed_steps, list):
+            plan_dict = {"steps": parsed_steps}
+        else:
+            return None
+
+        reasoning = self._extract_plan_reasoning(text)
+        if reasoning and not plan_dict.get("reasoning"):
+            plan_dict["reasoning"] = reasoning
+
+        return plan_dict
+
+    def _extract_plan_reasoning(self, llm_output: str) -> str:
+        """从半结构化文本中提取“推理过程”字段。"""
+        text = strip_think_blocks(llm_output or "")
+        if not text:
+            return ""
+
+        match = re.search(
+            r"推理过程\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:执行步骤|计划内容)\s*[:：]|\Z)",
+            text,
+        )
+        if not match:
+            return ""
+        return match.group(1).strip()
 
     def _is_json_parse_failed_plan(self, plan: Plan) -> bool:
         """

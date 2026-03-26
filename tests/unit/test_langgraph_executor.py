@@ -323,6 +323,42 @@ async def test_execute_node_handles_none_error_in_failed_step(monkeypatch):
     assert step_error_events[0]["data"].get("error") == "Unknown error"
 
 
+def test_run_memory_failed_tool_call_should_keep_error_detail():
+    """失败工具写入 run_memory 时，不应只剩一条泛化的 success=false。"""
+    run_memory = AgentRunMemory(
+        task="测试任务",
+        agent_id="test_agent",
+        agent_name="Test Agent",
+    )
+
+    run_memory.write_tool_call(
+        iteration=0,
+        tool_name="shell_exec",
+        tool_args={"command": 'node scripts/search_wechat.js "郑州一中"'},
+        tool_result={
+            "success": False,
+            "stderr": "Error: Cannot find module 'cheerio'",
+            "return_code": 1,
+        },
+        success=False,
+        error_msg=(
+            "工具 shell_exec 返回 success=false | return_code=1 | "
+            "stderr=Error: Cannot find module 'cheerio'"
+        ),
+    )
+
+    messages = run_memory.build_messages_for_planning(
+        system_prompt="你是测试规划器",
+        current_iteration=1,
+        trigger_prompt="请重规划",
+    )
+    tool_messages = [msg for msg in messages if msg.get("role") == "tool"]
+
+    assert tool_messages, "应至少存在一条 tool 结果消息"
+    assert "Cannot find module 'cheerio'" in str(tool_messages[-1]["content"])
+    assert "工具返回详情" in str(tool_messages[-1]["content"])
+
+
 @pytest.mark.parametrize(
     "task, expected",
     [
@@ -656,5 +692,55 @@ def test_resolve_available_skills_should_hide_tool_incompatible_skills(monkeypat
     selected_ids = [s.skill_id for s in selected]
 
     assert "find-skills" not in routed_ids
+    assert routed_ids == ["text_writing"]
+    assert selected_ids == ["text_writing"]
+
+
+def test_resolve_available_skills_should_hide_script_skill_without_shell_exec(monkeypatch):
+    """外部下载技能未声明工具但带脚本时，协调型 Agent 无 shell_exec 应先隐藏并走委派。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="只负责委派",
+        available_tools=["datetime", "spawn_agent"],
+    )
+    fake_skills = [
+        SimpleNamespace(
+            skill_id="wechat-article-search",
+            name="微信公众号搜索",
+            description="下载的外部技能",
+            required_tools=[],
+            optional_tools=[],
+            scripts=["scripts/search_wechat.js"],
+            runtime_dependencies=[],
+        ),
+        SimpleNamespace(
+            skill_id="text_writing",
+            name="写作",
+            description="写作",
+            required_tools=[],
+            optional_tools=[],
+            scripts=[],
+            runtime_dependencies=[],
+        ),
+    ]
+    monkeypatch.setattr(executor.skill_manager, "list_skills", lambda: fake_skills)
+    captured = {}
+
+    def fake_route(**kwargs):
+        captured["all_skills"] = kwargs.get("all_skills", [])
+        return kwargs.get("all_skills", [])
+
+    monkeypatch.setattr(executor, "_route_skills_by_metadata", fake_route)
+    selected = executor._resolve_available_skills(
+        agent=agent,
+        task="查找郑州一中微信公众号文章",
+    )
+    routed_ids = [s.skill_id for s in captured["all_skills"]]
+    selected_ids = [s.skill_id for s in selected]
+
+    assert "wechat-article-search" not in routed_ids
     assert routed_ids == ["text_writing"]
     assert selected_ids == ["text_writing"]

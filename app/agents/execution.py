@@ -16,6 +16,8 @@
 
 import re
 import json as _json
+import shlex
+from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable, Awaitable
 from typing import Dict as DictType
 from typing import List as ListType
@@ -115,6 +117,133 @@ class ExecutionEngine:
                 f"{Fore.YELLOW}[执行引擎] 初始化/预加载 execution 提示词失败（{exc}），"
                 f"运行时将回退内置提示词{Style.RESET_ALL}"
             )
+
+    def _truncate_tool_error_text(self, value: Any, limit: int = 240) -> str:
+        """
+        截断工具错误文本，避免错误摘要把上下文挤爆。
+
+        这里保留单行预览即可，详细原始结果仍会放在 result 字段中供后续记忆写入。
+        """
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        compact = re.sub(r"\s+", " ", text)
+        if len(compact) <= limit:
+            return compact
+        return compact[:limit] + "..."
+
+    def _infer_tool_failure_recovery_hint(
+        self,
+        *,
+        tool_name: str,
+        result: Dict[str, Any],
+    ) -> str:
+        """
+        根据失败结果推断高置信度恢复建议。
+
+        设计原则：
+        - 只输出“高置信度、通用”的建议，避免硬编码单技能逻辑；
+        - 当前重点覆盖最常见、可恢复的缺依赖/缺命令场景；
+        - 保持为纯文本提示，供反思/重规划或记忆系统继续利用。
+        """
+        if not isinstance(result, dict):
+            return ""
+
+        combined_text = "\n".join(
+            str(result.get(key, "") or "")
+            for key in ("error", "stderr", "stdout")
+        )
+        if not combined_text.strip():
+            return ""
+
+        npm_missing_match = re.search(
+            r"Cannot find module ['\"]([^'\"]+)['\"]",
+            combined_text,
+            flags=re.IGNORECASE,
+        )
+        if npm_missing_match:
+            package_name = npm_missing_match.group(1).strip()
+            return (
+                f"检测到缺少 Node 模块 '{package_name}'，"
+                f"应优先在当前 working_dir 执行 `npm install --no-save {package_name}` 后重试。"
+            )
+
+        python_missing_match = re.search(
+            r"(?:ModuleNotFoundError|ImportError): .*?['\"]([^'\"]+)['\"]",
+            combined_text,
+            flags=re.IGNORECASE,
+        )
+        if python_missing_match:
+            package_name = python_missing_match.group(1).strip()
+            return (
+                f"检测到缺少 Python 模块 '{package_name}'，"
+                f"若属于后端项目依赖应使用 `poetry add {package_name}`，"
+                "若属于独立技能目录则需先准备对应运行环境后再重试。"
+            )
+
+        command_missing_match = re.search(
+            r"(?:^|[\n: ])([a-zA-Z0-9_.-]+):\s+command not found",
+            combined_text,
+            flags=re.IGNORECASE,
+        )
+        if command_missing_match:
+            command_name = command_missing_match.group(1).strip()
+            return (
+                f"检测到缺少命令 '{command_name}'，"
+                "需先安装该命令，或改用当前环境已存在的替代工具。"
+            )
+
+        if re.search(
+            r"(unsupported engine|EBADENGINE|requires?\s+node|requires?\s+Node|not compatible with your version of node)",
+            combined_text,
+            flags=re.IGNORECASE,
+        ):
+            return "检测到 Node 版本或依赖引擎兼容性问题，需要安装兼容版本的依赖或升级 Node 后重试。"
+
+        return ""
+
+    def _build_tool_business_error(self, tool_name: str, result: Any) -> str:
+        """
+        构造业务级失败摘要。
+
+        为什么需要单独归一化：
+        - 很多工具会返回 `success=false`，但真正的失败线索藏在 stderr/stdout/return_code 中；
+        - 若只把 `success=false` 透传给反思/重规划，模型只能盲猜原因；
+        - 这里统一提炼关键信息，供日志、记忆和下一轮规划复用。
+        """
+        if not isinstance(result, dict):
+            text = self._truncate_tool_error_text(result)
+            return text or f"工具 {tool_name} 返回 success=false"
+
+        base_error = str(result.get("error") or f"工具 {tool_name} 返回 success=false").strip()
+        detail_parts: List[str] = []
+
+        return_code = result.get("return_code")
+        if return_code not in (None, ""):
+            detail_parts.append(f"return_code={return_code}")
+
+        stderr_preview = self._truncate_tool_error_text(result.get("stderr"))
+        stdout_preview = self._truncate_tool_error_text(result.get("stdout"))
+        if stderr_preview:
+            detail_parts.append(f"stderr={stderr_preview}")
+        elif stdout_preview and tool_name in {"shell_exec", "python_executor"}:
+            detail_parts.append(f"stdout={stdout_preview}")
+
+        working_dir = self._truncate_tool_error_text(result.get("working_dir"), limit=120)
+        if working_dir and tool_name in {"shell_exec", "python_executor"}:
+            detail_parts.append(f"working_dir={working_dir}")
+
+        recovery_hint = self._infer_tool_failure_recovery_hint(
+            tool_name=tool_name,
+            result=result,
+        )
+        if recovery_hint:
+            detail_parts.append(f"恢复建议={recovery_hint}")
+
+        if not detail_parts:
+            return base_error
+
+        return f"{base_error} | " + " | ".join(detail_parts)
         
         if tool_gateway:
             logger.info(
@@ -1359,7 +1488,7 @@ class ExecutionEngine:
                     result = gateway_result.result
                     # 业务级失败透传：工具正常返回，但 payload 标记 success=false（如 file_write/base64 失败）
                     if isinstance(result, dict) and result.get("success") is False:
-                        business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                        business_error = self._build_tool_business_error(tool_name, result)
                         logger.warning(
                             f"{Fore.YELLOW}[执行工具-网关路径] 工具 {tool_name} 业务失败: "
                             f"{business_error}{Style.RESET_ALL}"
@@ -1419,7 +1548,7 @@ class ExecutionEngine:
                             if retry_result.status == ToolCallStatus.SUCCESS:
                                 retry_payload = retry_result.result
                                 if isinstance(retry_payload, dict) and retry_payload.get("success") is False:
-                                    business_error = retry_payload.get("error") or f"工具 {tool_name} 返回 success=false"
+                                    business_error = self._build_tool_business_error(tool_name, retry_payload)
                                     return {
                                         "success": False,
                                         "error": business_error,
@@ -1507,7 +1636,7 @@ class ExecutionEngine:
             logger.info(f"{Fore.GREEN}工具 {tool_name} 执行成功{Style.RESET_ALL}")
             # 业务级失败透传：避免“调用成功”掩盖工具真实失败
             if isinstance(result, dict) and result.get("success") is False:
-                business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                business_error = self._build_tool_business_error(tool_name, result)
                 logger.warning(
                     f"{Fore.YELLOW}[执行工具] 工具 {tool_name} 业务失败: "
                     f"{business_error}{Style.RESET_ALL}"
@@ -1562,7 +1691,7 @@ class ExecutionEngine:
                             f"{Fore.GREEN}工具 {tool_name} 重新执行成功{Style.RESET_ALL}"
                         )
                         if isinstance(result, dict) and result.get("success") is False:
-                            business_error = result.get("error") or f"工具 {tool_name} 返回 success=false"
+                            business_error = self._build_tool_business_error(tool_name, result)
                             return {
                                 "success": False,
                                 "error": business_error,
@@ -1771,6 +1900,272 @@ class ExecutionEngine:
                 stream_callback(event)
         except Exception as e:
             logger.warning(f"{Fore.YELLOW}[流式事件] 发送事件失败: {e}{Style.RESET_ALL}")
+
+    def _resolve_skill_working_dir(self, skill) -> Optional[Path]:
+        """
+        解析技能目录绝对路径。
+        """
+        source_path = getattr(skill, "source_path", None)
+        if not source_path:
+            return None
+        try:
+            return Path(source_path).resolve().parent
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 解析技能目录失败 | "
+                f"source_path={source_path} | error={exc}{Style.RESET_ALL}"
+            )
+            return None
+
+    async def _invoke_skill_internal_tool(
+        self,
+        *,
+        tool_name: str,
+        params: Dict[str, Any],
+        agent: Optional[Agent],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        在技能前置流程中直接调用工具。
+
+        设计说明：
+        - 技能运行时依赖的预检/安装属于执行引擎职责，不应再让 LLM 自己“先想出一条安装命令”；
+        - 但仍要复用统一的工具授权、网关、日志和上下文注入逻辑；
+        - 因此这里构造一个轻量的 tool step，走现有 _execute_tool 通道。
+        """
+        user_rejected_tools = {
+            str(item).strip()
+            for item in ((context or {}).get("user_rejected_tools") or [])
+            if isinstance(item, str) and str(item).strip()
+        }
+        if tool_name in user_rejected_tools:
+            error_msg = (
+                f"用户已拒绝工具 '{tool_name}'，执行引擎不会在技能前置依赖处理中再次调用它。"
+            )
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] 技能前置工具调用被拒绝 | "
+                f"tool={tool_name}{Style.RESET_ALL}"
+            )
+            return {
+                "success": False,
+                "error": error_msg,
+                "action": "tool",
+                "tool_name": tool_name,
+            }
+
+        synthetic_step = PlanStep(
+            action="tool",
+            tool_name=tool_name,
+            params=params,
+        )
+        return await self._execute_tool(
+            step=synthetic_step,
+            agent=agent,
+            context=context,
+        )
+
+    def _build_dependency_check_command(
+        self,
+        *,
+        dependency,
+    ) -> Optional[str]:
+        """
+        生成运行时依赖的检查命令。
+        """
+        if dependency.check_command:
+            return dependency.check_command
+
+        dep_type = str(getattr(dependency, "type", "") or "").strip().lower()
+        packages = [
+            str(pkg).strip()
+            for pkg in (getattr(dependency, "packages", []) or [])
+            if str(pkg).strip()
+        ]
+        if dep_type == "npm" and packages:
+            js_statements = ";".join(
+                f"require.resolve({_json.dumps(pkg, ensure_ascii=False)})"
+                for pkg in packages
+            )
+            return f"node -e {shlex.quote(js_statements)}"
+
+        return None
+
+    def _build_dependency_install_command(
+        self,
+        *,
+        dependency,
+    ) -> Optional[str]:
+        """
+        生成运行时依赖的安装命令。
+        """
+        if dependency.install_command:
+            return dependency.install_command
+
+        dep_type = str(getattr(dependency, "type", "") or "").strip().lower()
+        packages = [
+            str(pkg).strip()
+            for pkg in (getattr(dependency, "packages", []) or [])
+            if str(pkg).strip()
+        ]
+        if dep_type == "npm" and packages:
+            quoted_packages = " ".join(shlex.quote(pkg) for pkg in packages)
+            return f"npm install --no-save {quoted_packages}"
+
+        return None
+
+    async def _ensure_skill_runtime_dependencies(
+        self,
+        *,
+        skill,
+        skill_id: str,
+        agent: Optional[Agent],
+        context: Optional[Dict[str, Any]],
+    ) -> tuple[bool, List[str], Optional[str]]:
+        """
+        技能执行前的依赖预检与自动安装。
+
+        返回：
+        - success: 是否全部就绪
+        - messages: 依赖处理摘要（会追加到技能 Prompt，帮助模型理解当前环境）
+        - error: 失败原因（仅 success=False 时有值）
+        """
+        runtime_dependencies = list(getattr(skill, "runtime_dependencies", []) or [])
+        if not runtime_dependencies:
+            return True, [], None
+
+        skill_dir = self._resolve_skill_working_dir(skill)
+        if skill_dir is None:
+            error_msg = (
+                f"技能 {skill_id} 声明了 runtime_dependencies，但 source_path 缺失，"
+                "无法确定依赖安装目录。"
+            )
+            return False, [], error_msg
+
+        summaries: List[str] = []
+        for dependency in runtime_dependencies:
+            dep_type = str(getattr(dependency, "type", "") or "").strip().lower()
+            tool_name = (
+                str(getattr(dependency, "tool_name", "") or "").strip()
+                or "shell_exec"
+            )
+            dep_label = (
+                getattr(dependency, "description", "") or
+                (", ".join(getattr(dependency, "packages", []) or [])) or
+                dep_type or
+                "未命名依赖"
+            )
+
+            raw_working_dir = str(getattr(dependency, "working_dir", ".") or ".").strip() or "."
+            working_dir = (
+                Path(raw_working_dir).expanduser()
+                if Path(raw_working_dir).is_absolute()
+                else (skill_dir / raw_working_dir).resolve()
+            )
+            timeout = int(getattr(dependency, "timeout_seconds", 180) or 180)
+            env = dict(getattr(dependency, "env", {}) or {})
+
+            logger.info(
+                f"{Fore.CYAN}[技能依赖] 开始预检运行时依赖 | "
+                f"skill={skill_id} | type={dep_type} | tool={tool_name} | "
+                f"working_dir={working_dir}{Style.RESET_ALL}"
+            )
+
+            if dep_type not in {"npm", "shell"}:
+                error_msg = (
+                    f"技能 {skill_id} 声明了暂不支持的 runtime_dependency.type='{dep_type}'。"
+                    "当前仅支持 npm / shell。"
+                )
+                logger.warning(
+                    f"{Fore.YELLOW}[技能依赖] {error_msg}{Style.RESET_ALL}"
+                )
+                return False, summaries, error_msg
+
+            check_command = self._build_dependency_check_command(dependency=dependency)
+            install_command = self._build_dependency_install_command(dependency=dependency)
+            if not check_command:
+                error_msg = (
+                    f"技能 {skill_id} 的依赖 '{dep_label}' 缺少可执行的检查命令。"
+                )
+                return False, summaries, error_msg
+            if not install_command:
+                error_msg = (
+                    f"技能 {skill_id} 的依赖 '{dep_label}' 缺少可执行的安装命令。"
+                )
+                return False, summaries, error_msg
+
+            check_params = {
+                "command": check_command,
+                "working_dir": str(working_dir),
+                "timeout": timeout,
+                "env": env,
+            }
+            check_result = await self._invoke_skill_internal_tool(
+                tool_name=tool_name,
+                params=check_params,
+                agent=agent,
+                context=context,
+            )
+            if check_result.get("success"):
+                summaries.append(f"- 依赖已就绪：{dep_label}")
+                logger.info(
+                    f"{Fore.GREEN}[技能依赖] 依赖已存在，无需安装 | "
+                    f"skill={skill_id} | dep={dep_label}{Style.RESET_ALL}"
+                )
+                continue
+
+            logger.warning(
+                f"{Fore.YELLOW}[技能依赖] 检查发现依赖缺失，准备自动安装 | "
+                f"skill={skill_id} | dep={dep_label} | reason={check_result.get('error')}{Style.RESET_ALL}"
+            )
+
+            install_params = {
+                "command": install_command,
+                "working_dir": str(working_dir),
+                "timeout": timeout,
+                "env": env,
+            }
+            install_result = await self._invoke_skill_internal_tool(
+                tool_name=tool_name,
+                params=install_params,
+                agent=agent,
+                context=context,
+            )
+            if not install_result.get("success"):
+                error_msg = (
+                    f"技能 {skill_id} 自动安装运行时依赖失败: {dep_label}。"
+                    f"检查命令={check_command}；安装命令={install_command}；"
+                    f"原因={install_result.get('error')}"
+                )
+                logger.error(
+                    f"{Fore.RED}[技能依赖] {error_msg}{Style.RESET_ALL}"
+                )
+                return False, summaries, error_msg
+
+            recheck_result = await self._invoke_skill_internal_tool(
+                tool_name=tool_name,
+                params=check_params,
+                agent=agent,
+                context=context,
+            )
+            if not recheck_result.get("success"):
+                error_msg = (
+                    f"技能 {skill_id} 已尝试自动安装依赖 '{dep_label}'，"
+                    "但安装后复检仍未通过。"
+                    f"检查命令={check_command}；安装命令={install_command}；"
+                    f"原因={recheck_result.get('error')}"
+                )
+                logger.error(
+                    f"{Fore.RED}[技能依赖] {error_msg}{Style.RESET_ALL}"
+                )
+                return False, summaries, error_msg
+
+            summaries.append(f"- 已自动安装并校验通过：{dep_label}")
+            logger.info(
+                f"{Fore.GREEN}[技能依赖] 自动安装成功 | "
+                f"skill={skill_id} | dep={dep_label}{Style.RESET_ALL}"
+            )
+
+        return True, summaries, None
     
     async def _execute_skill(
         self,
@@ -1909,6 +2304,27 @@ class ExecutionEngine:
                 if "word_count" not in safe_params:
                     safe_params["word_count"] = "适中"
 
+            skill_dir = self._resolve_skill_working_dir(skill)
+            dependency_ok, dependency_messages, dependency_error = (
+                await self._ensure_skill_runtime_dependencies(
+                    skill=skill,
+                    skill_id=skill_id,
+                    agent=agent,
+                    context=context,
+                )
+            )
+            if not dependency_ok:
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 技能前置依赖未满足 | "
+                    f"skill={skill_id} | error={dependency_error}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": dependency_error,
+                    "action": "skill",
+                    "skill_id": skill_id,
+                }
+
             # 2. 构建 Prompt（安全格式化：缺失变量不再导致整段技能降级）
             prompt = self._safe_format_skill_prompt(
                 template=skill.prompt_template,
@@ -1931,13 +2347,22 @@ class ExecutionEngine:
             # 对技能执行统一注入“当前任务 + 参数 + 执行约束”，减少模型反问和跑题
             current_task = context.get("task", "") if context else ""
             params_json = _json.dumps(safe_params, ensure_ascii=False, indent=2, default=str)
+            dependency_summary = (
+                "\n".join(dependency_messages)
+                if dependency_messages else "（无额外运行时依赖，或无需安装）"
+            )
             prompt = (
                 f"【当前用户任务】\n{current_task or '（未提供）'}\n\n"
                 f"【技能参数（JSON）】\n{params_json}\n\n"
+                f"【技能工作目录】\n{str(skill_dir) if skill_dir else '（未知）'}\n\n"
+                f"【运行时依赖预检结果】\n{dependency_summary}\n\n"
                 "【执行硬约束】\n"
                 "1. 若技能参数已包含完成任务所需信息（例如 location），必须直接执行，不要向用户重复询问同一参数。\n"
                 "2. 优先使用可用工具获取真实结果，再给出结论。\n"
                 "3. 若工具调用失败，明确说明失败原因与下一步建议，不要编造结果。\n\n"
+                "4. 若 shell_exec / python_executor / 其他工具报出“缺少命令、缺少模块、缺少包、command not found、Cannot find module”等依赖错误，"
+                "应优先在当前技能工作目录内自动补齐依赖并重试一次，而不是直接放弃。\n"
+                "5. 若调用 shell_exec 执行技能脚本或依赖命令，必须把 working_dir 设为上方“技能工作目录”。\n\n"
                 f"{prompt}"
             )
             
@@ -2006,9 +2431,9 @@ class ExecutionEngine:
                     f"optional={sorted(skill_optional_tools)}{Style.RESET_ALL}"
                 )
             else:
-                logger.warning(
-                    f"{Fore.YELLOW}[执行引擎] 技能 {skill_id} 未在 SKILL.md 声明 required_tools/optional_tools，"
-                    "按最小权限策略，本次技能内部将禁用全部工具。"
+                logger.info(
+                    f"{Fore.CYAN}[执行引擎] 技能 {skill_id} 未声明 required_tools/optional_tools，"
+                    "已启用兼容模式：开放当前 Agent 已授权的全部非敏感工具。"
                     f"{Style.RESET_ALL}"
                 )
 
@@ -2027,12 +2452,10 @@ class ExecutionEngine:
                     continue
                 if t_name in user_rejected_set:
                     continue
-                # 通用策略：技能内部默认最小授权
+                # 兼容策略：
                 # - 声明了工具：仅允许声明工具（与 Agent 白名单/敏感工具策略求交集）
-                # - 未声明工具：不允许任何工具
-                if not has_declared_skill_tools:
-                    continue
-                if t_name not in declared_skill_tools:
+                # - 未声明工具：开放当前 Agent 已授权的全部非敏感工具，兼容外部下载技能
+                if has_declared_skill_tools and t_name not in declared_skill_tools:
                     continue
                 tools.append(t_schema)
             

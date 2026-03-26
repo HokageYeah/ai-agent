@@ -36,6 +36,7 @@ from app.memory.session_memory import get_session_memory, extract_summary_from_r
 import asyncio
 
 from app.tools.builtin.message import send_agent_message
+from app.utils.llm_output_parser import extract_json_payload
 from app.utils.prompt_manager import PromptManager
 
 
@@ -830,6 +831,11 @@ class LangGraphAgentExecutor:
                 for tool_name in (getattr(skill, "required_tools", []) or [])
                 if isinstance(tool_name, str) and str(tool_name).strip()
             }
+            declared_optional_tools = {
+                str(tool_name).strip()
+                for tool_name in (getattr(skill, "optional_tools", []) or [])
+                if isinstance(tool_name, str) and str(tool_name).strip()
+            }
             effective_required_tools = {
                 tool_name
                 for tool_name in declared_required_tools
@@ -841,6 +847,32 @@ class LangGraphAgentExecutor:
                 missing_tools = sorted(effective_required_tools - agent_allowed_tools)
                 hidden_skills.append(
                     f"{getattr(skill, 'skill_id', 'unknown')}缺少{missing_tools}"
+                )
+                continue
+
+            # 兼容外部下载技能：
+            # - 许多外部技能没有 required_tools/optional_tools 声明；
+            # - 但若技能带 scripts 或 runtime_dependencies，通常意味着需要 shell_exec 执行真实命令；
+            # - 对于没有 shell_exec 的协调型 Agent，应先隐藏这类技能，促使其委派给 general_agent，
+            #   避免出现“技能可见但实际无法真实执行”的假成功。
+            has_explicit_tool_declaration = bool(
+                declared_required_tools or declared_optional_tools
+            )
+            runtime_dependencies = list(getattr(skill, "runtime_dependencies", []) or [])
+            needs_shell_exec_hint = False
+            if not has_explicit_tool_declaration:
+                if getattr(skill, "scripts", None):
+                    needs_shell_exec_hint = True
+                else:
+                    for dependency in runtime_dependencies:
+                        dep_type = str(getattr(dependency, "type", "") or "").strip().lower()
+                        dep_tool = str(getattr(dependency, "tool_name", "") or "").strip()
+                        if dep_type in {"npm", "shell"} and (not dep_tool or dep_tool == "shell_exec"):
+                            needs_shell_exec_hint = True
+                            break
+            if needs_shell_exec_hint and "shell_exec" not in agent_allowed_tools:
+                hidden_skills.append(
+                    f"{getattr(skill, 'skill_id', 'unknown')}缺少['shell_exec(兼容模式推断)']"
                 )
                 continue
             compatible_skills.append(skill)
@@ -2215,17 +2247,7 @@ class LangGraphAgentExecutor:
             )
 
             # ── 解析 LLM 返回的 JSON ─────────────────────────────────
-            raw_content = response.content.strip()
-
-            # 处理 markdown 代码块包裹的 JSON
-            if "```json" in raw_content:
-                start = raw_content.find("```json") + 7
-                end = raw_content.find("```", start)
-                raw_content = raw_content[start:end].strip()
-            elif "```" in raw_content:
-                start = raw_content.find("```") + 3
-                end = raw_content.find("```", start)
-                raw_content = raw_content[start:end].strip()
+            raw_content = extract_json_payload(response.content or "")
 
             analysis_result = _json_parser.loads(raw_content)
             logger.info(

@@ -75,6 +75,52 @@ def test_discover_and_lazy_load_skill(tmp_path):
     assert skill.param_schemas["input_text"].label == "输入文本"
 
 
+def test_frontmatter_yaml_should_parse_structured_runtime_dependencies(tmp_path):
+    skill_dir = tmp_path / "yaml_skill"
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "run_demo.js").write_text("console.log('ok')\n", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: yaml_skill
+description: 使用多行 YAML frontmatter 的技能。
+runtime_dependencies:
+  - type: npm
+    packages: ["cheerio"]
+    working_dir: "."
+    timeout_seconds: 120
+output_validators:
+  - type: must_contain_any
+    markers: ["结果", "文章"]
+    error: 必须包含结果字段
+---
+# 何时使用 (When to use)
+- 当需要测试 frontmatter 多行 YAML 解析时
+
+# 执行指令 (Instructions)
+请执行 scripts/run_demo.js
+
+# 脚本 (Scripts)
+- scripts/run_demo.js
+""",
+        encoding="utf-8",
+    )
+
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+    meta = manager.list_skill_metadata()[0]
+    skill = manager.get_skill("yaml_skill")
+
+    assert meta["skill_id"] == "yaml_skill"
+    # 兼容外部下载技能：未显式声明工具时，不应被框架偷偷写成项目私有规范
+    assert meta["required_tools"] == []
+    assert skill is not None
+    assert len(skill.runtime_dependencies) == 1
+    assert skill.runtime_dependencies[0].type == "npm"
+    assert skill.runtime_dependencies[0].packages == ["cheerio"]
+    assert len(skill.output_validators) == 1
+    assert skill.output_validators[0]["type"] == "must_contain_any"
+
+
 @pytest.mark.asyncio
 async def test_execute_skill_runtime(tmp_path):
     _write_demo_skill(tmp_path)

@@ -28,9 +28,16 @@ from typing import Any, Dict, List, Optional
 
 from colorama import Fore, Style
 from loguru import logger
+import yaml
 
 from app.core.config import get_agent_workspace_dir
-from app.skills.base import MemoryStrategy, ParamSchema, Skill, SkillMetadata
+from app.skills.base import (
+    MemoryStrategy,
+    ParamSchema,
+    Skill,
+    SkillMetadata,
+    SkillRuntimeDependency,
+)
 
 
 class SkillManager:
@@ -129,6 +136,9 @@ class SkillManager:
                         for v in raw_validators:
                             if isinstance(v, dict):
                                 output_validators.append(v)
+                    runtime_dependencies = self._parse_runtime_dependencies(
+                        fm.get("runtime_dependencies")
+                    )
 
                     available, missing = self._check_availability(fm=fm)
                     self._availability[skill_id] = (available, missing)
@@ -150,6 +160,7 @@ class SkillManager:
                         scripts=scripts,
                         resources=resources,
                         output_validators=output_validators,
+                        runtime_dependencies=runtime_dependencies,
                     )
 
                     self._metadata[skill_id] = meta
@@ -248,6 +259,7 @@ class SkillManager:
                 scripts=meta.scripts,
                 resources=meta.resources,
                 output_validators=meta.output_validators,
+                runtime_dependencies=meta.runtime_dependencies,
             )
             self._loaded_skills[skill_name] = skill
 
@@ -304,6 +316,8 @@ class SkillManager:
                     instruction_markdown="",
                     scripts=meta.scripts,
                     resources=meta.resources,
+                    output_validators=meta.output_validators,
+                    runtime_dependencies=meta.runtime_dependencies,
                 )
             )
         return result
@@ -427,10 +441,42 @@ class SkillManager:
 
     def _parse_frontmatter(self, text: str) -> Dict[str, Any]:
         """
-        简化 frontmatter 解析器
+        解析 YAML frontmatter。
+
+        设计说明：
+        - 旧版逐行解析器无法正确处理多行 list/dict；
+        - 技能系统已经在多个地方使用结构化字段（如 output_validators），
+          因此这里优先使用真正的 YAML 解析；
+        - 若遇到历史脏数据或非法 YAML，再回退到旧版简化解析，保证兼容性。
         """
         if not text:
             return {}
+
+        for raw in text.splitlines():
+            if "\t" in raw:
+                logger.warning(
+                    f"{Fore.YELLOW}检测到 frontmatter 含 Tab 缩进，建议改为空格缩进，"
+                    "当前将尝试继续解析。"
+                    f"{Style.RESET_ALL}"
+                )
+                break
+
+        try:
+            parsed = yaml.safe_load(text)
+            if parsed is None:
+                return {}
+            if isinstance(parsed, dict):
+                return parsed
+            logger.warning(
+                f"{Fore.YELLOW}frontmatter 顶层不是对象，回退到简化解析器 | "
+                f"type={type(parsed).__name__}{Style.RESET_ALL}"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}YAML frontmatter 解析失败，回退到简化解析器 | "
+                f"error={exc}{Style.RESET_ALL}"
+            )
+
         data: Dict[str, Any] = {}
         for raw in text.splitlines():
             line = raw.strip()
@@ -522,7 +568,8 @@ class SkillManager:
             line = re.sub(r"^[-*+]\s+", "", line)
             line = re.sub(r"^\d+\.\s+", "", line)
             line = line.strip()
-            if line and line != "无":
+            normalized = line.lower()
+            if line and normalized not in {"无", "none", "n/a", "暂无"}:
                 rows.append(line)
         return rows
 
@@ -586,6 +633,30 @@ class SkillManager:
                 return full
         return None
 
+    def _parse_runtime_dependencies(self, raw_value: Any) -> List[SkillRuntimeDependency]:
+        """
+        解析 SKILL.md 中声明的 runtime_dependencies。
+        """
+        if raw_value is None:
+            return []
+
+        items = raw_value if isinstance(raw_value, list) else [raw_value]
+        dependencies: List[SkillRuntimeDependency] = []
+        for item in items:
+            if not isinstance(item, dict):
+                logger.warning(
+                    f"{Fore.YELLOW}跳过非法 runtime_dependency（应为对象）: {item}{Style.RESET_ALL}"
+                )
+                continue
+            try:
+                dependencies.append(SkillRuntimeDependency(**item))
+            except Exception as exc:
+                logger.warning(
+                    f"{Fore.YELLOW}runtime_dependency 解析失败，已跳过 | "
+                    f"payload={item} | error={exc}{Style.RESET_ALL}"
+                )
+        return dependencies
+
     def _safe_format(self, *, template: str, values: Dict[str, Any]) -> str:
         class _SafeDict(dict):
             def __missing__(self, key: str) -> str:
@@ -609,6 +680,10 @@ class SkillManager:
             "\n".join(f"- {p}" for p in skill.resources) if skill.resources else "- 无"
         )
         input_text = json.dumps(inputs, ensure_ascii=False, indent=2, default=str)
+        skill_dir = (
+            str(Path(skill.source_path).resolve().parent)
+            if skill.source_path else "（未知）"
+        )
 
         return f"""你正在执行技能：{skill.skill_id}
 
@@ -624,6 +699,9 @@ class SkillManager:
 可用脚本：
 {scripts_text}
 
+技能工作目录：
+{skill_dir}
+
 用户请求：
 {user_request}
 
@@ -632,6 +710,7 @@ class SkillManager:
 
 请严格遵循技能执行指令完成任务。
 若存在脚本或资源，请在需要时合理使用。
+若需要执行 scripts/ 下脚本或安装技能依赖，必须把 shell_exec 的 `working_dir` 设置为上方“技能工作目录”。
 最后仅输出对用户有价值的执行结果。"""
 
     def _ensure_list(self, value: Any) -> List[str]:
