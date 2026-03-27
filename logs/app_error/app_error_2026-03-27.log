@@ -98,3 +98,158 @@ I'm currently focused on the initial steps. The primary goal is to execute a sea
 **Reviewing the Context**
 
 I've taken a look at the conversation history, noting the user's goal to search WeChat articles. Initial attempts to run the search script failed, specifically due t...[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.providers.openai:chat:185 - [31mAPI 返回错误，无有效回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.providers.openai:chat:217 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.inference:infer:338 - [31m[req-000001] 推理请求失败: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.agents.planning:create_plan:239 - [31m创建计划失败: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.providers.openai:chat:185 - [31mAPI 返回错误，无有效回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.providers.openai:chat:217 - [31mOpenAI 对话请求失败: ValueError: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.llm_hub.inference:infer:338 - [31m[req-000002] 推理请求失败: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:52:24 | ERROR    | app.agents.reflection:reflect:224 - [31m反思失败（LLM 调用异常）: API 返回错误，无法获取回复内容: status=439, msg=「Your API Token has expired. API Tokens have a validity period of 7 days. You can reset your token at https://platform.iflow.cn/docs/api-key-management.」[0m
+2026-03-27 14:54:38 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:54:38 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:54:38 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:54:38 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:54:38 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:54:48 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:54:48 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:54:48 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000002] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:54:48 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:54:48 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:55:32 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:55:32 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:55:32 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:55:32 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:55:32 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:56:33 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:56:33 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:56:33 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:56:33 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:56:33 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:57:20 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:57:20 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:57:20 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:57:20 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:57:20 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:58:57 | ERROR    | app.llm_hub.providers.openai:stream:310 - [31mOpenAI 流式请求失败: Connection error.[0m
+2026-03-27 14:58:57 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: Connection error.[0m
+2026-03-27 14:58:57 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000001] 流式推理请求失败: Connection error.[0m
+2026-03-27 14:58:57 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: Connection error.[0m
+2026-03-27 14:58:57 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: Connection error.[0m
+2026-03-27 14:59:24 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 14:59:24 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000002] 流式推理请求失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 14:59:24 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 14:59:24 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 15:00:50 | ERROR    | app.llm_hub.streaming:stream_response:206 - [31m流式响应处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 15:00:50 | ERROR    | app.llm_hub.inference:infer_stream:408 - [31m[req-000003] 流式推理请求失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 15:00:50 | ERROR    | app.services.chat_service:stream_chat:218 - [31m流式对话处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 15:00:50 | ERROR    | app.api.endpoints.chat:generate_stream:180 - [31m【对话接口】流式对话请求处理失败: can only concatenate str (not "NoneType") to str[0m
+2026-03-27 15:10:09 | ERROR    | app.tools.builtin.shell:execute:302 - [31m[ShellExecutorTool] 命令执行超时（>60s）: 'npm install --no-save cheerio'[0m
+2026-03-27 15:21:42 | ERROR    | app.tools.builtin.shell:execute:302 - [31m[ShellExecutorTool] 命令执行超时（>60s）: 'npm install cheerio'[0m
+2026-03-27 15:23:12 | ERROR    | app.tools.builtin.browser:_act:373 - [BrowserTool] 页面交互失败: Page.click: Timeout 10000ms exceeded.
+Call log:
+  - waiting for locator(".news-box .tit a")
+
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=7, pipe_handle=41)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/spawn.py", line 135, in _main
+    return self._bootstrap(parent_sentinel)
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+  File "/Users/yuye/miniconda3/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 712, in run_until_complete
+    self.run_forever()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 683, in run_forever
+    self._run_once()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/base_events.py", line 2040, in _run_once
+    handle._run()
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/langgraph/_internal/_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1070, in execute_node_wrapper
+    return await self._execute_node(state, stream_callback)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/langgraph_executor.py", line 1718, in _execute_node
+    execution_result = await self.execution_engine.execute_plan(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 648, in execute_plan
+    step_result = await self._execute_step(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 1299, in _execute_step
+    return await self._execute_skill(step, context, agent, prev_results)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/agents/execution.py", line 2519, in _execute_skill
+    response = await self.llm_hub.infer(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/inference.py", line 303, in infer
+    raw_response, prompt_messages = await self._handle_tool_calling_loop(
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/inference.py", line 488, in _handle_tool_calling_loop
+    tool_results = await self._tool_gateway.execute_tool_calls(current_response)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 281, in execute_tool_calls
+    result = await self._execute_single_call(tool_call, context)
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/llm_hub/tool_gateway.py", line 606, in _execute_single_call
+    result = await asyncio.wait_for(
+
+  File "/Users/yuye/miniconda3/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+
+  File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/browser.py", line 180, in execute
+    return await self._act(params=params, timeout=timeout)
+
+> File "/Users/yuye/YeahWork/AIAgent项目/ai-agent/app/tools/builtin/browser.py", line 315, in _act
+    await self._page.click(selector, timeout=timeout)
+
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/async_api/_generated.py", line 9931, in click
+    await self._impl_obj.click(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_page.py", line 854, in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_frame.py", line 566, in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+  File "/Users/yuye/Library/Caches/pypoetry/virtualenvs/ai-agent-LLASaBNZ-py3.13/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+
+playwright._impl._errors.TimeoutError: Page.click: Timeout 10000ms exceeded.
+Call log:
+  - waiting for locator(".news-box .tit a")
+
+2026-03-27 15:34:04 | ERROR    | app.agents.planning:_parse_plan:490 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-03-27 15:34:04 | ERROR    | app.agents.planning:_parse_plan:491 - [31mLLM 输出: <think>
+用户要求我基于历史记录制定本轮执行计划。回顾历史：
+- 第0轮：用户要求执行 Node.js 脚本搜索微信公众号文章
+- 执行失败：undici 依赖与 Node.js v18.14.0 不兼容，报 `ReferenceError: File is not defined`
+- 反思结论指出：问题在于环境依赖，建议尝试更新 undici、使用 Python 实现、或修复环境
+
+本轮...[0m
+2026-03-27 15:37:54 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:634 - [31m工具调用超时: spawn_agent (>300.0s)[0m
+2026-03-27 15:58:03 | ERROR    | app.agents.planning:_parse_plan:490 - [31mJSON 解析失败: Unterminated string starting at: line 14 column 18 (char 364)[0m
+2026-03-27 15:58:03 | ERROR    | app.agents.planning:_parse_plan:491 - [31mLLM 输出: <think>
+命令执行成功，返回了9条搜索结果（请求10条但只找到9条）。我需要将这些结果整理后以 final_answer 的形式返回给用户。
+</think>
+
+{
+  "steps": [
+    {
+      "action": "tool",
+      "tool_name": "shell_exec",
+      "params": {
+        "command": "...[0m
