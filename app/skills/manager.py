@@ -122,6 +122,11 @@ class SkillManager:
                     input_names = list(input_defs.keys())
                     when_to_use = self._parse_markdown_list(sections.get("when_to_use", ""))
                     scripts = self._parse_markdown_list(sections.get("scripts", ""))
+                    if not scripts:
+                        # 兼容外部下载技能：若未显式声明“脚本”章节，但正文/代码块中
+                        # 已直接出现 `scripts/...` 路径，则尽量恢复该信息。
+                        # 这样路由层才能正确推断该技能通常依赖 shell_exec。
+                        scripts = self._infer_scripts_from_body(body)
                     resources = self._parse_markdown_list(sections.get("resources", ""))
 
                     required_tools = self._ensure_list(fm.get("required_tools"))
@@ -543,10 +548,10 @@ class SkillManager:
         normalized = normalized.replace("（", "(").replace("）", ")")
 
         mapping = {
-            "when_to_use": ["when to use", "何时使用", "使用场景"],
-            "inputs": ["inputs", "输入参数", "输入"],
-            "instructions": ["instructions", "执行指令", "指令", "执行步骤"],
-            "scripts": ["scripts", "脚本"],
+            "when_to_use": ["when to use", "何时使用", "使用场景", "适用场景"],
+            "inputs": ["inputs", "输入参数", "输入", "参数说明", "参数配置"],
+            "instructions": ["instructions", "执行指令", "指令", "执行步骤", "工作流程"],
+            "scripts": ["scripts", "脚本", "执行脚本"],
             "resources": ["resources", "资源"],
         }
         for key, aliases in mapping.items():
@@ -590,6 +595,35 @@ class SkillManager:
             if name:
                 inputs[name] = description
         return inputs
+
+    def _infer_scripts_from_body(self, body: str) -> List[str]:
+        """
+        从技能正文中推断脚本路径。
+
+        设计目的：
+        - 兼容未严格遵循标准章节的外部技能；
+        - 只要正文或代码块里已明确引用 `scripts/...`，就恢复为 scripts 元数据；
+        - 避免命令型技能被误判为“纯 Prompt 技能”而暴露给无 shell_exec 权限的 Agent。
+        """
+        text = body or ""
+        if not text:
+            return []
+
+        pattern = re.compile(
+            r"(?<![\w/.-])((?:\./)?scripts/[A-Za-z0-9_./-]+\.(?:js|mjs|cjs|py|sh|bash|zsh|ts))"
+        )
+        seen: set[str] = set()
+        inferred: List[str] = []
+        for match in pattern.finditer(text):
+            raw_path = match.group(1).strip()
+            if not raw_path:
+                continue
+            normalized = raw_path[2:] if raw_path.startswith("./") else raw_path
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            inferred.append(normalized)
+        return inferred
 
     def _build_param_schemas(
         self,

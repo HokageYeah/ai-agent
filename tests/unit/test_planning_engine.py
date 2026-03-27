@@ -99,7 +99,7 @@ async def test_planning_engine_with_mock_llm():
     mock_response = """```json
 {
   "steps": [
-    {"action": "tool", "tool_name": "search", "params": {"query": "test"}},
+    {"action": "tool", "tool_name": "mock_tool", "params": {"query": "test"}},
     {"action": "final_answer", "content": "Search completed"}
   ],
   "reasoning": "Use search tool to complete task"
@@ -327,7 +327,7 @@ async def test_planning_engine_retry_when_truncated_output():
         content="""
 {
   "steps": [
-    {"action": "tool", "tool_name": "python_executor", "params": {"code": "print('ok')"}},
+    {"action": "tool", "tool_name": "mock_tool", "params": {"query": "ok"}},
     {"action": "final_answer", "content": "根据执行结果回答用户"}
   ],
   "reasoning": "重试后输出简短可解析计划"
@@ -358,3 +358,86 @@ async def test_planning_engine_retry_when_truncated_output():
     assert plan.steps[0].action == "tool"
     assert plan.steps[1].action == "final_answer"
     assert plan.reasoning == "重试后输出简短可解析计划"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_block_unauthorized_tool_from_plan():
+    """规划阶段应拦截未授权工具，避免把非法计划带到执行阶段。"""
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {"action": "tool", "tool_name": "http_request", "params": {"url": "https://example.com"}},
+    {"action": "final_answer", "content": "done"}
+  ],
+  "reasoning": "尝试直接请求网页"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        child_agents=["general_agent"],
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请抓取一个网页内容",
+        available_tools=[MockTool()],
+        available_skills=[],
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "final_answer"
+    assert plan.reasoning == "计划校验失败"
+    assert "不在当前 Agent 授权范围内" in plan.steps[0].params["content"]
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_wrap_flattened_tool_args_into_params():
+    """规划阶段应把扁平工具参数归一化到 params，兼容直接工具 action 输出。"""
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {
+      "action": "mock_tool",
+      "query": "华为 Mate 60 Pro 512GB",
+      "top_k": 5
+    }
+  ],
+  "reasoning": "直接调用工具"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="测试工具参数归一化",
+        available_tools=[MockTool()],
+        available_skills=[],
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "mock_tool"
+    assert plan.steps[0].params["params"]["query"] == "华为 Mate 60 Pro 512GB"
+    assert plan.steps[0].params["params"]["top_k"] == 5

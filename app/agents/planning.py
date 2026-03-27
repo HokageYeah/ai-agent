@@ -232,6 +232,13 @@ class PlanningEngine:
                 if not self._is_json_parse_failed_plan(retry_plan):
                     plan = retry_plan
 
+            plan = self._validate_plan_capabilities(
+                agent=agent,
+                plan=plan,
+                available_tools=available_tools,
+                available_skills=available_skills,
+            )
+
             logger.info(f"{Fore.GREEN}计划创建成功，共 {len(plan.steps)} 个步骤{Style.RESET_ALL}")
             return plan
 
@@ -468,6 +475,162 @@ class PlanningEngine:
             lines.append(base)
 
         return "\n".join(lines)
+
+    def _validate_plan_capabilities(
+        self,
+        *,
+        agent: Agent,
+        plan: Plan,
+        available_tools: List[Tool],
+        available_skills: List[Skill],
+    ) -> Plan:
+        """
+        对规划结果做能力边界校验与轻量标准化。
+
+        设计原因：
+        - 即使 Prompt 只暴露了授权工具/技能，LLM 仍可能在 JSON 中编造未授权能力；
+        - 若不在规划公共层阻断，错误会延迟到执行阶段才暴露，浪费一整轮执行/反思；
+        - 因此这里统一收口，保证“计划产物”本身就满足当前 Agent 的权限边界。
+        """
+        allowed_actions = {"tool", "skill", "delegate", "final_answer"}
+        allowed_tool_names = {
+            str(tool.name).strip()
+            for tool in (available_tools or [])
+            if str(getattr(tool, "name", "")).strip()
+        }
+        allowed_skill_ids = {
+            str(skill.skill_id).strip()
+            for skill in (available_skills or [])
+            if str(getattr(skill, "skill_id", "")).strip()
+        }
+        allowed_agent_ids = {
+            str(agent_id).strip()
+            for agent_id in (agent.child_agents or [])
+            if isinstance(agent_id, str) and str(agent_id).strip()
+        }
+
+        normalized_steps: List[PlanStep] = []
+        invalid_reasons: List[str] = []
+
+        for index, step in enumerate(plan.steps, start=1):
+            action = str(step.action or "").strip()
+            params = dict(step.params or {})
+
+            # 兼容旧输出：若工具名被直接写成 action，则标准化为 action="tool"。
+            if action not in allowed_actions and action in allowed_tool_names:
+                logger.warning(
+                    f"{Fore.YELLOW}[规划引擎] 检测到工具名被误写为 action，"
+                    f"已自动标准化: {action}{Style.RESET_ALL}"
+                )
+                params.setdefault("tool_name", action)
+                action = "tool"
+
+            if action not in allowed_actions:
+                invalid_reasons.append(f"第{index}步 action='{action}' 不受支持")
+                continue
+
+            if action == "tool":
+                tool_name = str(params.get("tool_name", "") or "").strip()
+                if not tool_name:
+                    invalid_reasons.append(f"第{index}步缺少 tool_name")
+                    continue
+                if tool_name not in allowed_tool_names:
+                    invalid_reasons.append(
+                        f"第{index}步工具 '{tool_name}' 不在当前 Agent 授权范围内"
+                    )
+                    continue
+                params = self._normalize_step_args_payload(
+                    action="tool",
+                    params=params,
+                )
+
+            elif action == "skill":
+                skill_id = str(params.get("skill_id", "") or "").strip()
+                if not skill_id:
+                    invalid_reasons.append(f"第{index}步缺少 skill_id")
+                    continue
+                if skill_id not in allowed_skill_ids:
+                    invalid_reasons.append(
+                        f"第{index}步技能 '{skill_id}' 当前不可用"
+                    )
+                    continue
+                params = self._normalize_step_args_payload(
+                    action="skill",
+                    params=params,
+                )
+
+            elif action == "delegate":
+                agent_id = str(params.get("agent_id", "") or "").strip()
+                if not agent_id:
+                    invalid_reasons.append(f"第{index}步缺少 agent_id")
+                    continue
+                if agent_id not in allowed_agent_ids:
+                    invalid_reasons.append(
+                        f"第{index}步子 Agent '{agent_id}' 不在当前可委派列表中"
+                    )
+                    continue
+
+            normalized_steps.append(PlanStep(action=action, **params))
+
+        if invalid_reasons:
+            logger.warning(
+                f"{Fore.YELLOW}[规划引擎] 计划校验失败，将阻断无效计划执行 | "
+                f"agent={agent.name} | reasons={invalid_reasons}{Style.RESET_ALL}"
+            )
+            return Plan(
+                steps=[
+                    PlanStep(
+                        action="final_answer",
+                        content=(
+                            "当前规划结果不合法，需要重新规划。原因："
+                            + "；".join(invalid_reasons)
+                            + "。如需使用受限能力，请改为委派给具备对应权限的子 Agent。"
+                        ),
+                    )
+                ],
+                reasoning="计划校验失败",
+            )
+
+        return Plan(steps=normalized_steps, reasoning=plan.reasoning)
+
+    def _normalize_step_args_payload(
+        self,
+        *,
+        action: str,
+        params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        规范化步骤参数结构，兼容 LLM 输出的扁平参数写法。
+
+        兼容场景：
+        - 标准写法：{"action":"tool","tool_name":"x","params":{"a":1}}
+        - 脏写法：{"action":"tool","tool_name":"x","a":1}
+        - 直接工具 action 被标准化后：{"action":"send_message","content":"..."}
+
+        统一收口后，执行层总能读到 `step.params["params"]`。
+        """
+        normalized = dict(params or {})
+        control_keys_map = {
+            "tool": {"tool_name"},
+            "skill": {"skill_id"},
+        }
+        control_keys = control_keys_map.get(action)
+        if not control_keys:
+            return normalized
+
+        nested_params = normalized.get("params")
+        merged_params = dict(nested_params) if isinstance(nested_params, dict) else {}
+        for key, value in list(normalized.items()):
+            if key in control_keys or key == "params":
+                continue
+            merged_params.setdefault(key, value)
+
+        normalized["params"] = merged_params
+        for key in list(normalized.keys()):
+            if key in control_keys or key == "params":
+                continue
+            normalized.pop(key, None)
+        return normalized
 
     def _parse_plan(self, llm_output: str) -> Plan:
         """解析 LLM 返回的计划。"""

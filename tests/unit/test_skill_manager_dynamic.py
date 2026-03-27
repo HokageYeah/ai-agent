@@ -121,6 +121,41 @@ output_validators:
     assert skill.output_validators[0]["type"] == "must_contain_any"
 
 
+def test_should_parse_parameter_alias_and_infer_scripts_from_body(tmp_path):
+    skill_dir = tmp_path / "wechat_like_skill"
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "search_wechat.js").write_text("console.log('ok')\n", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: wechat_like_skill
+description: 模拟未严格按标准章节编写的外部技能。
+---
+# 适用场景
+- 搜索公众号文章
+
+## 参数说明
+- query：搜索关键词
+
+## 工作流程
+```bash
+node scripts/search_wechat.js "关键词" -n 1
+```
+""",
+        encoding="utf-8",
+    )
+
+    manager = SkillManager(skills_root=tmp_path, auto_discover=True)
+    meta = manager.list_skill_metadata()[0]
+    skill = manager.get_skill("wechat_like_skill")
+
+    assert meta["inputs"] == ["query"]
+    assert meta["input_descriptions"]["query"] == "搜索关键词"
+    assert meta["scripts"] == ["scripts/search_wechat.js"]
+    assert skill is not None
+    assert "query" in skill.param_schemas
+
+
 @pytest.mark.asyncio
 async def test_execute_skill_runtime(tmp_path):
     _write_demo_skill(tmp_path)

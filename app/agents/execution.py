@@ -1117,6 +1117,39 @@ class ExecutionEngine:
 
         return pattern.sub(_replace, text)
 
+    def _extract_placeholder_source_from_step_result(
+        self,
+        step_result: Dict[str, Any],
+    ) -> Any:
+        """
+        为占位符替换提取“最适合作为后续输入”的结果载荷。
+
+        设计原因：
+        - delegate 步骤返回的通常是 ExecutionResult 风格包装：
+          {"success": true, "result": "...", "step_results": [...]}
+        - 若直接把整个包装对象喂给 `{{last_tool_result}}`，后续步骤常得到一大段 JSON，
+          或在没有 tool/skill 的情况下直接变成空字符串；
+        - 这里统一优先抽取其中真正的业务结果，让“委派 -> 技能/工具”链路更稳定。
+        """
+        if not isinstance(step_result, dict):
+            return None
+
+        payload = step_result.get("result")
+        if not isinstance(payload, dict):
+            return payload
+
+        looks_like_execution_wrapper = (
+            "result" in payload and any(
+                key in payload for key in ("step_results", "error", "user_rejected_tools")
+            )
+        )
+        if looks_like_execution_wrapper:
+            nested_result = payload.get("result")
+            if nested_result not in (None, ""):
+                return nested_result
+
+        return payload
+
     def _resolve_step_placeholders(
         self,
         step: PlanStep,
@@ -1132,7 +1165,7 @@ class ExecutionEngine:
         - {{first_search_result_url}} - 第一个搜索结果的 URL
         - {{first_search_result_title}} - 第一个搜索结果的标题
         - {{first_search_result}} - 第一个搜索结果的完整信息
-        - {{last_tool_result}} - 最后一个工具的执行结果
+        - {{last_tool_result}} - 最后一个可复用步骤结果（含 tool / skill / delegate）
         - {{last_tool_result_url}} - 最后一个工具结果中的 URL（如果存在）
         
         Args:
@@ -1152,6 +1185,7 @@ class ExecutionEngine:
         search_result_title = None
         search_result_snippet = None
         last_tool_result = None
+        last_delegate_result = None
         
         for result in prev_results:
             if not result.get("success"):
@@ -1168,12 +1202,16 @@ class ExecutionEngine:
                         search_result_title = first_result.get("title")
                         search_result_snippet = first_result.get("snippet")
             
-            # 记录最后一个工具/技能结果，作为 {{last_tool_result}} 的替换来源
-            # NOTE: 同时覆盖 skill 类型，是因为 LLM 经常规划 text_writing(skill) → file_write(tool) 的两步链。
-            # 若只记录 action=="tool"，则 text_writing 的输出永远不会成为 last_tool_result，
-            # 导致 file_write 步骤的 content 参数占位符被替换为空字符串，触发"文件内容不能为 None"错误。
-            if result.get("action") in ("tool", "skill"):
-                last_tool_result = result.get("result")
+            # 记录最后一个可复用步骤结果，作为 {{last_tool_result}} 的替换来源。
+            # 这里同时纳入 delegate：
+            # - 很多真实链路是 “delegate 查数据 -> skill/tool 继续处理”；
+            # - 若只认 tool/skill，后续步骤里的 {{last_tool_result}} 会被替换为空，
+            #   造成技能参数丢失或工具收到空字符串。
+            if result.get("action") in ("tool", "skill", "delegate"):
+                extracted_result = self._extract_placeholder_source_from_step_result(result)
+                last_tool_result = extracted_result
+                if result.get("action") == "delegate":
+                    last_delegate_result = extracted_result
         
         # 如果没有搜索结果，检查是否可以从任何工具结果中提取 URL
         if not search_result_url and last_tool_result:
@@ -1194,6 +1232,8 @@ class ExecutionEngine:
             "first_search_result": first_search_result,
             "last_tool_result": last_tool_result,
             "last_tool_result_url": search_result_url or "",
+            "last_step_result": last_tool_result,
+            "last_delegate_result": last_delegate_result,
         }
         
         # 对 params 中的每个参数进行占位符替换
@@ -1379,7 +1419,10 @@ class ExecutionEngine:
                - 无 → 普通工具，直接调用即可
         """
         tool_name = step.params.get("tool_name")
-        params = step.params.get("params", {})
+        params = self._extract_step_runtime_params(
+            step=step,
+            control_keys={"tool_name"},
+        )
 
         logger.info(
             f"{Fore.CYAN}[执行工具] 准备调用工具: {tool_name} "
@@ -2187,7 +2230,10 @@ class ExecutionEngine:
             Dict[str, Any]: 执行结果
         """
         skill_id = step.params.get("skill_id")
-        params = step.params.get("params", {})
+        params = self._extract_step_runtime_params(
+            step=step,
+            control_keys={"skill_id"},
+        )
         
         # ====== 【调试日志】显示技能调用前的参数 ======
         logger.info(f"{Fore.CYAN}调用技能: {skill_id}, 原始参数: {params}{Style.RESET_ALL}")
@@ -2403,6 +2449,19 @@ class ExecutionEngine:
                 str(x).strip() for x in (skill.optional_tools or [])
                 if isinstance(x, str) and str(x).strip()
             }
+            if not (skill_required_tools or skill_optional_tools):
+                inferred_required_tools, inferred_optional_tools = (
+                    self._infer_implicit_skill_tools(skill)
+                )
+                if inferred_required_tools or inferred_optional_tools:
+                    skill_required_tools = inferred_required_tools
+                    skill_optional_tools = inferred_optional_tools
+                    logger.info(
+                        f"{Fore.CYAN}[执行引擎] 技能 {skill_id} 未声明 required_tools/optional_tools，"
+                        "已根据 scripts/runtime_dependencies 推断工具白名单: "
+                        f"required={sorted(skill_required_tools)} | "
+                        f"optional={sorted(skill_optional_tools)}{Style.RESET_ALL}"
+                    )
 
             # 设计说明：
             # - file_write 等敏感工具在技能内部被强制禁用（需由外层计划显式调用并触发确认）。
@@ -2559,6 +2618,67 @@ class ExecutionEngine:
                 "action": "skill",
                 "skill_id": skill_id
             }
+
+    def _extract_step_runtime_params(
+        self,
+        *,
+        step: PlanStep,
+        control_keys: set[str],
+    ) -> Dict[str, Any]:
+        """
+        在执行阶段提取步骤参数，并兼容历史/脏结构中的扁平参数写法。
+
+        设计原因：
+        - 正常计划会把真实参数放进 `params` 字段；
+        - 但 LLM、旧测试、历史缓存计划有时会把参数直接铺平在步骤对象顶层；
+        - 执行层作为最终边界，需要做一次兜底归一化，避免工具/技能收到空参数。
+        """
+        raw_params = dict(step.params or {})
+        nested_params = raw_params.get("params")
+        merged_params = dict(nested_params) if isinstance(nested_params, dict) else {}
+
+        for key, value in raw_params.items():
+            if key in control_keys or key == "params":
+                continue
+            merged_params.setdefault(key, value)
+
+        return merged_params
+
+    def _infer_implicit_skill_tools(self, skill: Any) -> tuple[set[str], set[str]]:
+        """
+        为“未声明工具白名单”的技能推断一个更保守的默认工具集。
+
+        设计原因：
+        - 外部下载技能经常只写脚本示例，却遗漏 required_tools/optional_tools；
+        - 若执行阶段直接开放当前 Agent 的全部非敏感工具，LLM 很容易误用 browser、
+          skill_install、http_request 等无关能力，导致技能跑偏；
+        - 因此这里根据 scripts/runtime_dependencies 做通用推断，优先收敛到命令执行链路。
+        """
+        inferred_required: set[str] = set()
+        inferred_optional: set[str] = set()
+
+        scripts = list(getattr(skill, "scripts", []) or [])
+        runtime_dependencies = list(getattr(skill, "runtime_dependencies", []) or [])
+
+        if scripts:
+            inferred_required.add("shell_exec")
+
+        for dependency in runtime_dependencies:
+            dep_tool = str(getattr(dependency, "tool_name", "") or "").strip()
+            dep_type = str(getattr(dependency, "type", "") or "").strip().lower()
+            if dep_tool:
+                inferred_required.add(dep_tool)
+                continue
+            if dep_type in {"npm", "shell", "python"}:
+                inferred_required.add("shell_exec")
+
+        # 命令型技能常见地会配合读取输出文件或查看目录结果，
+        # 这些工具仍明显比浏览器/安装器/网络请求更贴近技能本身。
+        if "shell_exec" in inferred_required:
+            inferred_optional.update({"file_read", "list_dir"})
+
+        inferred_optional -= inferred_required
+        return inferred_required, inferred_optional
     
     async def _delegate_to_agent(
         self,

@@ -5,6 +5,8 @@
 测试执行引擎的各项功能
 """
 
+from types import SimpleNamespace
+
 import pytest
 from app.agents.base import Agent, AgentConfig
 from app.agents.planning import Plan, PlanStep
@@ -57,6 +59,47 @@ class PayloadFailTool(Tool):
         return {"success": False, "error": "业务失败示例"}
 
 
+class NamedTool(Tool):
+    """按名称生成 schema 的通用测试工具"""
+
+    def __init__(self, tool_name: str):
+        self._tool_name = tool_name
+
+    @property
+    def name(self) -> str:
+        return self._tool_name
+
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name=self._tool_name,
+            description=f"{self._tool_name} test tool",
+            parameters={"type": "object", "properties": {}}
+        )
+
+    async def execute(self, params: dict):
+        return f"{self._tool_name} result"
+
+
+class EchoParamsTool(Tool):
+    """返回收到参数的测试工具"""
+
+    @property
+    def name(self) -> str:
+        return "echo_params_tool"
+
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name="echo_params_tool",
+            description="Echo params tool",
+            parameters={"type": "object", "properties": {}}
+        )
+
+    async def execute(self, params: dict):
+        return params
+
+
 @pytest.mark.asyncio
 async def test_execution_result_creation():
     """测试创建执行结果"""
@@ -84,7 +127,7 @@ async def test_execution_engine_execute_tool():
     tool_hub.register_tool(test_tool)
     
     # 创建技能管理器
-    skill_manager = SkillManager()
+    skill_manager = SkillManager(auto_discover=False)
     
     # 创建 Mock LLM
     mock_llm = MockLLM()
@@ -119,8 +162,10 @@ async def test_execution_engine_execute_tool():
     
     # 验证结果
     assert result.success is True
-    assert result.result == "Task completed"
     assert len(result.step_results) == 2
+    assert result.step_results[0]["action"] == "tool"
+    assert result.step_results[0]["result"] == "tool result"
+    assert result.step_results[1]["action"] == "final_answer"
 
 
 @pytest.mark.asyncio
@@ -130,14 +175,22 @@ async def test_execution_engine_execute_skill():
     tool_hub = ToolHub()
     
     # 创建技能管理器
-    skill_manager = SkillManager()
+    class DummySkillManager:
+        def __init__(self, skill):
+            self._skill = skill
+
+        def get_skill(self, skill_id):
+            if skill_id == self._skill.skill_id:
+                return self._skill
+            return None
+
     test_skill = Skill(
         skill_id="test_skill",
         name="Test Skill",
         description="A test skill",
         prompt_template="Execute {task}"
     )
-    skill_manager.register_skill(test_skill)
+    skill_manager = DummySkillManager(test_skill)
     
     # 创建 Mock LLM
     mock_llm = MockLLM(responses={}, delay=0.01)
@@ -182,7 +235,7 @@ async def test_execution_engine_execute_skill():
 async def test_execution_engine_nonexistent_tool():
     """测试执行不存在的工具"""
     tool_hub = ToolHub()
-    skill_manager = SkillManager()
+    skill_manager = SkillManager(auto_discover=False)
     mock_llm = MockLLM()
     registry = ModelRegistry()
     inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
@@ -222,8 +275,9 @@ async def test_execution_engine_should_propagate_tool_payload_failure():
     """测试工具 payload 中 success=false 时，步骤应标记失败"""
     tool_hub = ToolHub()
     tool_hub.register_tool(PayloadFailTool())
-    skill_manager = SkillManager()
+    skill_manager = SkillManager(auto_discover=False)
     mock_llm = MockLLM()
+    mock_llm.default_response = "Task completed"
     registry = ModelRegistry()
     inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
 
@@ -258,7 +312,7 @@ async def test_execution_engine_should_propagate_tool_payload_failure():
 async def test_execution_engine_empty_plan():
     """测试执行空计划"""
     tool_hub = ToolHub()
-    skill_manager = SkillManager()
+    skill_manager = SkillManager(auto_discover=False)
     mock_llm = MockLLM()
     registry = ModelRegistry()
     inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
@@ -291,7 +345,7 @@ async def test_execution_engine_empty_plan():
 async def test_resolve_step_placeholders_supports_dotted_last_tool_result():
     """测试占位符解析支持点路径（如 {{last_tool_result.content}}）"""
     tool_hub = ToolHub()
-    skill_manager = SkillManager()
+    skill_manager = SkillManager(auto_discover=False)
     mock_llm = MockLLM()
     registry = ModelRegistry()
     inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
@@ -326,3 +380,147 @@ async def test_resolve_step_placeholders_supports_dotted_last_tool_result():
 
     assert step.params["params"]["archive_path"] == "{{last_tool_result.content}}"
     assert resolved.params["params"]["archive_path"] == "/tmp/find-skills.zip"
+
+
+@pytest.mark.asyncio
+async def test_resolve_step_placeholders_should_use_delegate_result_as_last_tool_result():
+    """测试委派结果也可作为 {{last_tool_result}} 的占位符来源。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    step = PlanStep(
+        action="skill",
+        skill_id="wechat-article-search",
+        params={
+            "keyword": "{{last_tool_result}}",
+        }
+    )
+    prev_results = [
+        {
+            "success": True,
+            "action": "delegate",
+            "agent_id": "order_agent",
+            "result": {
+                "success": True,
+                "result": "华为 Mate 60 Pro 512GB",
+                "step_results": [],
+                "error": None,
+            },
+        }
+    ]
+
+    resolved = execution_engine._resolve_step_placeholders(step, prev_results)
+
+    assert resolved.params["params"]["keyword"] == "华为 Mate 60 Pro 512GB"
+
+
+@pytest.mark.asyncio
+async def test_execute_skill_should_infer_script_tool_constraints_from_metadata():
+    """脚本型技能未声明工具时，应收敛到 shell_exec 相关工具而非开放整套 Agent 工具。"""
+    tool_hub = ToolHub()
+    for tool_name in ("shell_exec", "file_read", "list_dir", "browser", "skill_install"):
+        tool_hub.register_tool(NamedTool(tool_name))
+
+    class DummySkillManager:
+        def __init__(self, skill):
+            self._skill = skill
+
+        def get_skill(self, skill_id):
+            if skill_id == self._skill.skill_id:
+                return self._skill
+            return None
+
+    class CaptureLLMHub:
+        def __init__(self):
+            self.last_messages = None
+            self.last_config = None
+
+        async def infer(self, messages, config):
+            self.last_messages = messages
+            self.last_config = config
+            return SimpleNamespace(content="搜索成功")
+
+    test_skill = Skill(
+        skill_id="script_skill",
+        name="Script Skill",
+        description="依赖脚本执行的技能",
+        prompt_template="请搜索 {query}",
+        scripts=["scripts/search_wechat.js"],
+    )
+    skill_manager = DummySkillManager(test_skill)
+    llm_hub = CaptureLLMHub()
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=llm_hub
+    )
+
+    agent = Agent(
+        agent_id="general_agent",
+        name="General Agent",
+        description="General test agent",
+        role="Test role",
+        available_tools=["shell_exec", "file_read", "list_dir", "browser", "skill_install"],
+        agent_config=AgentConfig(execution_model="mock-model"),
+    )
+
+    result = await execution_engine._execute_skill(
+        step=PlanStep(
+            action="skill",
+            skill_id="script_skill",
+            params={"query": "华为 Mate 60 Pro"},
+        ),
+        context={"task": "搜索公众号文章"},
+        agent=agent,
+        prev_results=[],
+    )
+
+    tool_names = [
+        execution_engine._extract_tool_name_from_schema(schema)
+        for schema in (llm_hub.last_config.tools or [])
+    ]
+
+    assert result["success"] is True
+    assert set(tool_names) == {"shell_exec", "file_read", "list_dir"}
+    assert "browser" not in tool_names
+    assert "skill_install" not in tool_names
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_should_support_flattened_step_params():
+    """执行阶段应兼容扁平参数写法，避免工具收到空参数。"""
+    tool_hub = ToolHub()
+    tool_hub.register_tool(EchoParamsTool())
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    result = await execution_engine._execute_tool(
+        step=PlanStep(
+            action="tool",
+            tool_name="echo_params_tool",
+            content="进度通知",
+            message_type="progress",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["result"]["content"] == "进度通知"
+    assert result["result"]["message_type"] == "progress"
