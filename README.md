@@ -49,7 +49,7 @@
 │   ├── skills/           # 通过大语言模型做二次包装的高级技能库统筹 
 │   │   ├── installer.py # 技能安装服务（统一处理 Skills CLI 安装与工作区落地）
 │   │   ├── manager.py   # 动态技能管理器（扫描/路由元信息/懒加载）
-│   │   ├── skills_md/   # 默认技能工作区（可由 AGENT_WORKSPACE_DIR 配置覆盖）
+│   │   ├── skills_md/   # 默认技能源码/安装工作区（可由 AGENT_WORKSPACE_DIR 配置覆盖）
 │   │   └── library/     # 历史兼容目录（逐步迁移中）
 │   ├── tools/            # Python 硬编码底层能力库封装框架
 │   │   └── builtin/     # 内置计算器、爬虫、系统时间获取等真实工具代码执行区
@@ -139,10 +139,12 @@ graph TD
 
 ### 技能安装与工作区
 
-- **统一工作区入口**：`.env` 中新增 `AGENT_WORKSPACE_DIR`，当前默认值为 `app/skills/skills_md`。这个目录不仅承载技能安装结果，后续本地记忆或其它可持久化运行时资产也可以统一收敛到这里。
+- **统一技能源码工作区入口**：`.env` 中新增 `AGENT_WORKSPACE_DIR`，当前默认值为 `app/skills/skills_md`。该目录用于技能安装结果落地、技能扫描与技能源码读取，是技能的静态工作区。
+- **运行产物目录与技能源码目录分离**：技能执行过程中若需要生成 JSON、临时文件、导出文件或其它运行态资产，统一写入 `workspace/artifacts/skills/<skill_id>/`，而不是回写到技能源码目录。
 - **安装优先走结构化工具**：安装技能时不再推荐让 LLM 自由拼接 `shell_exec` 命令，而是优先使用 `skill_install` 工具。
 - **兼容历史命令**：若历史记忆或用户输入中仍出现 `npx skills install ...`，安装服务会自动规范化为 `npx skills add ...` 后再执行。
 - **与动态加载衔接**：技能被复制到工作区后，不需要手动改代码；`SkillManager` 会在下一次 `list_skill_metadata()` / `load_skill()` 时自动感知目录变化并刷新索引。
+- **分离原因**：技能一旦安装完成，默认应视为稳定输入；运行态产物外置到 `workspace/artifacts`，可以避免技能源码被污染，降低“技能安装后又被执行过程改写”的架构风险。
 
 ```mermaid
 flowchart TD
@@ -154,6 +156,13 @@ flowchart TD
     F --> G[后续 SkillManager 自动检测目录变化]
     G --> H[技能进入 discover / route / lazy load 主链路]
 ```
+
+### 规划输出恢复与结果复用边界
+
+- **轻度 JSON 漂移兼容**：规划解析公共层兼容轻度格式漂移，例如 Python 字面量风格、尾逗号、包裹在 Markdown 或 `<think>` 中的 JSON 片段，避免把本可恢复的结果直接判成失败。
+- **截断型恢复**：当规划结果疑似因长度被截断时，统一走 `retry_after_length` 做短计划重试。
+- **非截断型结构修复**：当规划结果不是有效 JSON、但又不是截断问题时，统一走 `repair_after_invalid_json` 仅修复结构，不重新发散规划语义，减少中间轨迹出现“解析计划失败”的假 `final_answer`。
+- **上游结果复用硬约束**：若后续步骤需要继续处理上一步工具/技能/委派返回的 HTML、文本或 JSON，必须通过 `{{last_tool_result}}`、`{{last_tool_result.content}}`、`{{last_delegate_result}}` 等占位符复用上游结果；禁止在 `python_executor` 中手工重写上游样本数据。
 
 
 ## 🛡️ 错误感知与自我纠错机制
@@ -385,7 +394,7 @@ sequenceDiagram
      
      data: {"event": "complete", ...}
      ```
-   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_start` / `delegate_start` / `skill_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `user_confirm_required` / `user_confirm_result` / `sub_agent_start` / `sub_agent_end` / `final_answer` / `complete`。其中 `step_complete` 在步骤为合成最终答案时可带 `data.answer` 供前端展示具体答案；子 Agent 相关事件带 `is_sub_agent`、`sub_agent_id`、`sub_agent_name` 便于区块展示。
+   - **支持事件类型**: `plan_start` / `plan_complete` / `step_start` / `tool_start` / `delegate_start` / `skill_start` / `tool_complete` / `skill_complete` / `delegate_complete` / `step_complete` / `execute_complete` / `reflection_start` / `reflection_complete` / `error_analysis_start` / `error_analysis` / `step_error` / `user_confirm_required` / `user_confirm_result` / `sub_agent_start` / `sub_agent_end` / `final_answer` / `complete`。其中中间事件会统一做公共层清洗：去除 `<think>`、压缩超长包装对象、优先展示用户可见摘要；`step_complete` 在步骤为合成最终答案时会把真实合成文本放到 `data.result`，`final_answer` 事件仍通过 `data.answer` 提供最终答案；子 Agent 相关事件带 `is_sub_agent`、`sub_agent_id`、`sub_agent_name` 便于区块展示。
 
 6. **用户确认敏感操作（流式执行中需确认时调用）**
    - **请求端点**: `POST /api/v1/agents/confirm/{confirm_id}`
@@ -462,7 +471,7 @@ sequenceDiagram
 - **Agent 列表与执行**：浏览所有可用 Agent，发起任务并实时查看执行轨迹
 - **Agent 思考与执行轨迹可视化**：以时间轴卡片的形式，实时展示 Agent 执行的每一步：
   - 📋 规划阶段：可视化展示 LLM 生成的执行计划和推理过程
-  - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）；「合成最终答案」/「合成答案」下展示后端返回的**具体答案**（`step_complete` 的 `data.answer`）
+  - ⚡ 执行阶段：逐步展示工具调用（含数据库查询结果表格）、技能调用、子 Agent 委派（含子步骤明细）；「合成最终答案」/「合成答案」下展示后端返回的**真实合成答案**（`step_complete` 的 `data.result`，最终收口事件为 `final_answer.data.answer`）
   - 🔐 用户确认：敏感操作（如写文件）前弹出确认框，调用 `POST /agents/confirm/{confirm_id}` 允许或拒绝
   - 🔴 错误分析阶段：当步骤失败时，实时展示 LLM 根因分析卡片（根因、建议、纠正方案）
   - 🔍 反思阶段：展示反思结论与是否重新规划的决策
@@ -571,7 +580,7 @@ OPENAI_API_KEY=sk-xxxxxxx
 OPENAI_BASE_URL='https://apis.iflow.cn/v1'
 DEFAULT_MODEL='deepseek-v3.2'
 
-# Agent 工作区（默认技能安装目录）
+# Agent 工作区（默认技能源码/安装目录）
 AGENT_WORKSPACE_DIR='app/skills/skills_md'
 
 # 数据库等配置按需修改 (如果你要用到涉及 DB 的额外组件)
@@ -583,7 +592,7 @@ DB_NAME=wx_public_dev
 ```
 
 说明：
-- 修改 `AGENT_WORKSPACE_DIR` 后，技能扫描目录和技能安装落地点会一起切换。
+- 修改 `AGENT_WORKSPACE_DIR` 后，技能扫描目录和技能安装落地点会一起切换；技能运行态产物仍统一写入 `workspace/artifacts/skills/<skill_id>/`。
 - 若你调整了 `.env` 中的模型代理地址或工作区路径，请重启服务以确保新配置生效。
 
 ### 3. 主项目启动

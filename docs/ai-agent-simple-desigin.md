@@ -602,7 +602,7 @@ class SkillManager:
 1. **统一配置入口**  
    - `.env` 新增 `AGENT_WORKSPACE_DIR`
    - 默认值为 `app/skills/skills_md`
-   - 该目录当前承载技能安装结果，后续本地记忆等持久化资产也可以复用该工作区
+   - 该目录承载技能安装结果、技能扫描与技能源码读取，属于技能的静态工作区
 
 2. **结构化安装优先**  
    - 规划阶段遇到“安装技能”任务时，优先规划 `skill_install`
@@ -614,7 +614,12 @@ class SkillManager:
    - 成功后再复制到 Agent 工作区
    - 这样既兼容 Skills CLI 约定，又保证本项目技能扫描目录稳定可控
 
-4. **与动态加载衔接**  
+4. **运行态产物目录分离**  
+   - 技能执行过程产生的 JSON、HTML、临时导出文件、脚本中间产物等，统一落到 `workspace/artifacts/skills/<skill_id>/`
+   - 禁止写回 `skills_md/<skill_id>/` 等技能源码目录，避免“技能安装后又被运行期改写”
+   - 该分层是公共执行边界，不针对单个 skill 定制
+
+5. **与动态加载衔接**  
    - 技能复制进工作区后，`SkillManager` 无需手动注册
    - 后续 `list_skill_metadata()` / `load_skill()` 会自动检测目录变化并刷新索引
 
@@ -870,6 +875,15 @@ class PlanningEngine:
         
         return self._parse_plan(result)
 ```
+
+#### 8.3.1 规划输出恢复机制（公共层）
+
+规划阶段的稳定性处理不应依赖单个技能或单条日志，而应在公共解析边界统一收口：
+
+- **轻度漂移兼容**：`_load_json_like_payload()` / `_try_literal_eval_payload()` 兼容 Python 字面量风格、尾逗号、Markdown 代码块、`<think>...</think>` 包裹等轻度格式漂移。
+- **截断型修复**：若模型输出疑似因长度截断导致 JSON 不完整，统一走 `retry_after_length`，让模型仅返回更短、更规整的计划 JSON。
+- **非截断型结构修复**：若 JSON 解析失败但不是截断问题，统一走 `repair_after_invalid_json`，目标是修复结构而不是重新自由规划，减少中间轨迹中出现“解析计划失败”的伪 `final_answer`。
+- **复用上游结果约束**：若后续需要对上一步 `tool` / `skill` / `delegate` 的 HTML、文本或 JSON 继续处理，必须通过 `{{last_tool_result}}`、`{{last_tool_result.content}}`、`{{last_delegate_result}}` 等占位符引用；禁止在 `python_executor` 中手工重写上游数据样本。
 
 ### 8.4 执行引擎
 
@@ -1203,7 +1217,16 @@ tools = [
 - **运行时上下文注入**：对需依赖运行时上下文的工具（如 `spawn_agent`、`send_message`、`python_executor`），执行引擎在 `_execute_tool` 中检测工具的 `update_context` 方法，若存在则在执行前注入当前 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`user_rejected_tools`、`user_inputs_cache`，避免子 Agent 事件无法推流、输入弹窗无法唤醒或同一配置被重复询问。
 - **事件**：委派前发送 `sub_agent_start`（含 `sub_agent_id`、`sub_agent_name`、`task`），委派后发送 `sub_agent_end`（含 `success`）；子 Agent 内部所有 SSE 事件在 payload 中附带 `is_sub_agent: true`、`sub_agent_id`、`sub_agent_name`，前端可据此做区块展示与配色区分。
 - **子 Agent 执行结果约定**：`execute_with_callback` 的返回结构与 `ExecutionResult.to_dict()` 一致，使用 **`success`（布尔）** 表示是否成功，**不要**使用 `status == "success"` 等字符串判断；错误信息放在 `error` 字段。委派步骤的 `step_result` 会携带 `success`、`result`、`error`，供错误收集与前端展示。
-- **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本），主 Agent 的 `step_complete` 事件中 `action=final_answer` 时携带 `answer` 字段，供前端在「合成最终答案」下展示具体答案。
+- **合成答案**：子 Agent 的 `final_answer` 步骤结果会写回 `step_result.result`（真实合成文本）；`step_complete(action=final_answer)` 使用 `data.result` 展示真实合成答案，最终收口事件 `final_answer` 再通过 `data.answer` 提供最终答案，避免中间步骤仍显示规划模板。
+
+#### 8.11.1 SSE 中间事件公共清洗边界
+
+为避免在单个 skill、单个工具或单条日志上做补丁，流式事件在公共边界统一做结果整形：
+
+- **去掉推理噪声**：通过 `sanitize_model_payload()` 统一剥离 `<think>...</think>` 等不应直接暴露给前端的推理块。
+- **抽取用户可见正文**：通过 `extract_user_visible_result()` / `extract_user_visible_preview()` 从技能结果、子 Agent 结果、`python_executor` 包装对象中提取真正对用户有意义的正文或摘要。
+- **中间事件摘要化**：`tool_complete`、`skill_complete`、`delegate_complete`、普通 `step_complete` 优先展示摘要/预览，避免超长嵌套 `step_results` 或整段包装 JSON 污染界面。
+- **最终答案保持完整**：仅中间轨迹做摘要化，最终 `final_answer` 仍保留完整用户可见答案，保证“过程可读、结果完整”。
 
 ---
 
@@ -1662,7 +1685,7 @@ app/
 │   ├── installer.py    # 技能安装服务（Skills CLI -> 工作区）
 │   ├── manager.py      # 技能管理器
 │   ├── skills.py       # 兼容层/辅助加载器
-│   ├── skills_md/      # 默认技能工作区（可由 AGENT_WORKSPACE_DIR 覆盖）
+│   ├── skills_md/      # 默认技能源码/安装工作区（可由 AGENT_WORKSPACE_DIR 覆盖）
 │   │   └── <skill_name>/
 │   │       ├── SKILL.md
 │   │       ├── scripts/
@@ -1852,8 +1875,10 @@ httpx = "^0.26.0"
 
 > ✅ **已完成（v1.2）**：错误感知自我纠错机制 — 包括执行错误收集（`error_context`）、LLM 根因分析（`_analyze_errors` + `error_analysis`）、规划阶段工具 Schema 白名单过滤（防止 LLM 重复规划禁用工具）、以及前端 SSE 实时推送错误分析结果（`error_analysis_start` / `error_analysis` 事件）。
 
-> ✅ **已完成（v1.3）**：用户确认流程（敏感工具执行前需用户确认，`/agents/confirm`、`user_rejected_tools`）；子 Agent 流式与确认透传（`sub_agent_start`/`sub_agent_end`、`is_sub_agent`、合成答案 `answer`）；跨迭代规划上下文（`planning_context`、`reflection_history`）；迭代防循环熔断（无可执行动作、重复反思时结束）。
+> ✅ **已完成（v1.3）**：用户确认流程（敏感工具执行前需用户确认，`/agents/confirm`、`user_rejected_tools`）；子 Agent 流式与确认透传（`sub_agent_start`/`sub_agent_end`、`is_sub_agent`、合成答案透传）；跨迭代规划上下文（`planning_context`、`reflection_history`）；迭代防循环熔断（无可执行动作、重复反思时结束）。
 
 > ✅ **已完成（v1.4）**：子 Agent 委派统一路径（`action: "delegate"` 与 `action: "tool", tool_name: "spawn_agent"` 均优先经 **SpawnAgentTool** 执行，并对其注入 `stream_callback`/`pending_confirmations`/`user_rejected_tools`）；执行引擎对支持 `update_context` 的工具做运行时上下文注入；子 Agent 执行结果统一使用 `ExecutionResult.to_dict()` 的 `success`（布尔）与 `error` 字段，`execute_with_callback` 据此返回，避免误报“Unknown error”；前端轨迹对事件重排序，使「工具/技能完成」在「委派子 Agent」之前展示，符合“先执行本层再委派”的阅读顺序。
 
 > ✅ **已完成（v1.5）**：技能系统完成动态加载重构（`skills_md/*/SKILL.md` 文件系统发现、`SkillMetadata` 路由、执行阶段懒加载）；规划阶段仅注入候选技能元信息，执行阶段按 `required_tools/optional_tools` 进行工具白名单收敛并屏蔽敏感工具隐式调用；独立技能执行接口（`/api/v1/skills/{skill_id}/execute`）与主执行链路在工具过滤与缺失必需工具快速失败策略上保持一致。
+
+> ✅ **已完成（v1.6）**：公共层收口进一步增强。技能源码目录与运行态产物目录分离（运行产物统一写入 `workspace/artifacts/skills/<skill_id>/`，避免污染已安装技能）；规划阶段增加 JSON 轻度漂移兼容、`retry_after_length` 截断重试与 `repair_after_invalid_json` 结构修复重试；流式边界统一去除 `<think>`、压缩中间包装对象，并保证 `step_complete(action=final_answer)` 展示真实合成答案而不是规划模板。
