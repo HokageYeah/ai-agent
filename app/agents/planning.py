@@ -16,6 +16,7 @@
 更新时间: 2026-03-13（提示词抽离到 prompt/plan，使用 Jinja2 渲染）
 """
 
+import ast
 import json
 import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -229,6 +230,18 @@ class PlanningEngine:
                     tools=tools,
                 )
                 # 仅当重试解析成功时替换原计划，避免覆盖原始兜底结果。
+                if not self._is_json_parse_failed_plan(retry_plan):
+                    plan = retry_plan
+            elif self._is_json_parse_failed_plan(plan):
+                logger.warning(
+                    f"{Fore.YELLOW}[规划引擎] 检测到非截断型 JSON 解析失败，"
+                    f"将自动触发一次 JSON 修复重试。{Style.RESET_ALL}"
+                )
+                retry_plan = await self._retry_plan_after_invalid_json(
+                    agent=agent,
+                    messages=messages,
+                    raw_output=response.content or "",
+                )
                 if not self._is_json_parse_failed_plan(retry_plan):
                     plan = retry_plan
 
@@ -687,7 +700,7 @@ class PlanningEngine:
         """
         payload = extract_json_payload(llm_output)
         try:
-            parsed = json.loads(payload)
+            parsed = self._load_json_like_payload(payload)
         except json.JSONDecodeError:
             semi_structured_plan = self._extract_semistructured_plan(llm_output)
             if semi_structured_plan:
@@ -708,6 +721,52 @@ class PlanningEngine:
             return semi_structured_plan
 
         raise json.JSONDecodeError("规划输出中未找到可执行的 steps 数组", llm_output, 0)
+
+    def _load_json_like_payload(self, payload: str) -> Any:
+        """
+        尽量把“接近 JSON”的文本恢复为结构化对象。
+
+        公共修复目标：
+        1. 兼容尾逗号、Python 字面量 dict/list 等轻度格式漂移；
+        2. 避免规划层因为微小格式问题直接退化到“JSON 解析失败”；
+        3. 保持为公共解析能力，而不是针对某个模型输出做特判。
+        """
+        text = (payload or "").strip()
+        if not text:
+            raise json.JSONDecodeError("空规划输出", payload or "", 0)
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as original_exc:
+            # 兜底 1：去掉常见的 JSON 尾逗号
+            trailing_comma_fixed = re.sub(r",(\s*[}\]])", r"\1", text)
+            if trailing_comma_fixed != text:
+                try:
+                    return json.loads(trailing_comma_fixed)
+                except json.JSONDecodeError:
+                    pass
+
+            # 兜底 2：兼容 Python 风格字面量（单引号 / True / False / None）
+            literal_parsed = self._try_literal_eval_payload(text)
+            if literal_parsed is not None:
+                return literal_parsed
+
+            raise original_exc
+
+    def _try_literal_eval_payload(self, payload: str) -> Optional[Any]:
+        """
+        尝试使用 Python 字面量语法恢复结构化载荷。
+
+        说明：
+        - 某些模型会输出 `{'steps': [...], 'reasoning': '...'}` 这类 Python dict；
+        - 对规划层来说，这仍属于“结构完整，只是语法轻度漂移”；
+        - 这里统一在公共解析层兜底，减少无意义重规划。
+        """
+        try:
+            parsed = ast.literal_eval(payload)
+        except (ValueError, SyntaxError):
+            return None
+        return parsed if isinstance(parsed, (dict, list)) else None
 
     def _extract_semistructured_plan(self, llm_output: str) -> Optional[Dict[str, Any]]:
         """
@@ -858,6 +917,72 @@ class PlanningEngine:
                     PlanStep(
                         action="final_answer",
                         content="解析计划失败，且重试生成短计划时发生异常",
+                    )
+                ],
+                reasoning="JSON 解析失败",
+            )
+
+    async def _retry_plan_after_invalid_json(
+        self,
+        agent: Agent,
+        messages: List[Dict[str, Any]],
+        raw_output: str,
+    ) -> Plan:
+        """
+        当规划输出不是有效 JSON，但看起来并非“长度截断”时，触发一次结构修复重试。
+
+        设计目标：
+        - 将“轻度跑偏的格式问题”收口在规划公共层，不让它污染执行/反思主链路；
+        - 让模型专注做“JSON 修复”，而不是重新自由发挥整轮规划；
+        - 避免中间轨迹出现“解析计划失败”的假 final_answer 噪声。
+        """
+        try:
+            from app.llm_hub.inference import InferenceConfig
+
+            repair_prompt = self.prompt_manager.render_prompt(
+                "repair_after_invalid_json",
+                raw_output=raw_output[:12000],
+            )
+            retry_messages = list(messages) + [{"role": "user", "content": repair_prompt}]
+            retry_config = InferenceConfig(
+                model=agent.agent_config.planning_model,
+                temperature=0.1,
+                max_tokens=1536,
+                tools=[],
+            )
+            logger.info(
+                f"{Fore.BLUE}[规划引擎] 触发 JSON 修复重试："
+                f"messages条数={len(retry_messages)}{Style.RESET_ALL}"
+            )
+            retry_response = await self.llm_hub.infer(messages=retry_messages, config=retry_config)
+            logger.info(f"{Fore.GREEN}[规划引擎] JSON 修复重试返回内容预览:{Style.RESET_ALL}")
+            logger.info(
+                f"{Fore.GREEN}"
+                f"{retry_response.content[:800] if retry_response.content else '（空响应）'}"
+                f"{Style.RESET_ALL}"
+            )
+
+            retry_plan = self._parse_plan(retry_response.content)
+            if self._is_json_parse_failed_plan(retry_plan):
+                logger.error(
+                    f"{Fore.RED}[规划引擎] JSON 修复重试后仍未恢复有效计划，"
+                    f"保留原兜底结果。{Style.RESET_ALL}"
+                )
+            else:
+                logger.info(
+                    f"{Fore.GREEN}[规划引擎] JSON 修复重试成功，解析到 {len(retry_plan.steps)} 个步骤。"
+                    f"{Style.RESET_ALL}"
+                )
+            return retry_plan
+        except Exception as exc:
+            logger.error(
+                f"{Fore.RED}[规划引擎] JSON 修复重试发生异常: {exc}{Style.RESET_ALL}"
+            )
+            return Plan(
+                steps=[
+                    PlanStep(
+                        action="final_answer",
+                        content="解析计划失败，且 JSON 修复重试时发生异常",
                     )
                 ],
                 reasoning="JSON 解析失败",

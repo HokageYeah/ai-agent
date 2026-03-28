@@ -359,6 +359,84 @@ def test_run_memory_failed_tool_call_should_keep_error_detail():
     assert "工具返回详情" in str(tool_messages[-1]["content"])
 
 
+def test_normalize_final_result_payload_should_extract_user_visible_text():
+    """最终结果规范化时应只保留用户可见正文，并同步清洗 step_results / reflection。"""
+    executor = _build_executor()
+
+    normalized = executor._normalize_final_result_payload(
+        {
+            "success": True,
+            "result": {
+                "success": True,
+                "result": "<think>内部推理</think>\n最终给用户的文章列表",
+                "step_results": [
+                    {"action": "skill", "result": "<think>技能推理</think>\n技能输出正文"}
+                ],
+                "reflection": {
+                    "summary": "<think>反思推理</think>\n反思总结"
+                },
+                "agent_id": "general_agent",
+            },
+            "step_results": [
+                {"action": "delegate", "result": "<think>子Agent推理</think>\n子Agent结果"}
+            ],
+            "reflection": {
+                "summary": "<think>顶层反思</think>\n顶层总结"
+            },
+            "error": None,
+        }
+    )
+
+    assert normalized["result"] == "最终给用户的文章列表"
+    assert normalized["step_results"][0]["result"] == "子Agent结果"
+    assert normalized["reflection"]["summary"] == "顶层总结"
+
+
+def test_normalize_stream_step_payload_should_compact_delegate_wrapper():
+    """中间 SSE 事件应压缩委派包装结果，只保留可读摘要与精简轨迹。"""
+    executor = _build_executor()
+
+    normalized = executor._normalize_stream_step_payload(
+        {
+            "success": True,
+            "action": "delegate",
+            "agent_id": "general_agent",
+            "result": {
+                "success": True,
+                "result": "<think>内部推理</think>\n最终给用户的文章列表",
+                "step_results": [
+                    {
+                        "action": "skill",
+                        "skill_id": "wechat-article-search",
+                        "result": "<think>技能推理</think>\n技能输出正文",
+                    },
+                    {
+                        "action": "tool",
+                        "tool_name": "http_request",
+                        "result": {
+                            "success": True,
+                            "status_code": 200,
+                            "url": "https://example.com",
+                            "content": "<think>工具推理</think>\n" + ("A" * 1800),
+                        },
+                    },
+                ],
+                "reflection": {
+                    "summary": "<think>反思推理</think>\n反思总结"
+                },
+                "agent_name": "通用助手",
+            },
+        }
+    )
+
+    assert normalized["result"] == "最终给用户的文章列表"
+    assert normalized["step_results"][0]["result"] == "技能输出正文"
+    assert normalized["step_results"][1]["result"]["status_code"] == 200
+    assert "content_preview" in normalized["step_results"][1]["result"]
+    assert "（内容已截断）" in normalized["step_results"][1]["result"]["content_preview"]
+    assert normalized["reflection"]["summary"] == "反思总结"
+
+
 @pytest.mark.parametrize(
     "task, expected",
     [

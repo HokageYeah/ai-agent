@@ -361,6 +361,77 @@ async def test_planning_engine_retry_when_truncated_output():
 
 
 @pytest.mark.asyncio
+async def test_planning_engine_should_parse_python_literal_payload():
+    """规划解析应兼容 Python 风格字面量 dict/list。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    plan = planning_engine._parse_plan(
+        """{
+  'steps': [
+    {'action': 'tool', 'tool_name': 'mock_tool', 'params': {'query': '郑州教育'}},
+    {'action': 'final_answer', 'content': '根据结果回答用户'}
+  ],
+  'reasoning': '兼容 Python 字面量'
+}"""
+    )
+
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "mock_tool"
+    assert plan.reasoning == "兼容 Python 字面量"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_retry_when_invalid_json_not_truncated():
+    """测试：非截断型 JSON 失败时，也会触发一次结构修复重试。"""
+    first_invalid = _StubInferenceResult(
+        content="""
+这里是计划草稿：
+{steps:[{action:'tool',tool_name:'mock_tool',params:{query:'郑州教育'}},{action:'final_answer',content:'根据结果回答用户'}],reasoning:'先调用工具'}
+""",
+        finish_reason="stop",
+    )
+    second_valid = _StubInferenceResult(
+        content="""
+{
+  "steps": [
+    {"action": "tool", "tool_name": "mock_tool", "params": {"query": "郑州教育"}},
+    {"action": "final_answer", "content": "根据结果回答用户"}
+  ],
+  "reasoning": "修复后的严格 JSON 计划"
+}
+""",
+        finish_reason="stop",
+    )
+    llm_hub = _SequenceLLMHub([first_invalid, second_valid])
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请搜索郑州教育公众号文章",
+        available_tools=[MockTool()],
+        available_skills=[],
+    )
+
+    assert llm_hub.call_count == 2
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[1].action == "final_answer"
+    assert plan.reasoning == "修复后的严格 JSON 计划"
+
+
+@pytest.mark.asyncio
 async def test_planning_engine_should_block_unauthorized_tool_from_plan():
     """规划阶段应拦截未授权工具，避免把非法计划带到执行阶段。"""
     llm_hub = _SequenceLLMHub(

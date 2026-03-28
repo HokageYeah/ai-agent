@@ -4,7 +4,8 @@
 1. 只返回 JSON，不要输出 markdown、解释、代码块标记。
 2. 禁止在 `params` 或 `task` 中粘贴大段原始数据（如完整 rows）或超长代码。
 3. 若需要 `python_executor`，`code` 仅保留核心逻辑，优先使用占位符（如 {% raw %}`{{last_tool_result}}`{% endraw %}）引用上游结果，不要把上游数据硬编码进代码。
-4. `steps` 保持最小必要步骤，单个字符串字段尽量简短（建议不超过 1200 字符）。
-5. 必须满足既有 action 规范：只允许 `tool` / `skill` / `delegate` / `final_answer`。
+4. 若需要对上一步返回的 HTML/文本/JSON 做解析、排序、过滤或提取，必须直接引用 {% raw %}`{{last_tool_result}}` / `{{last_tool_result.content}}`{% endraw %}，禁止在代码里手工重写上游返回的数据样本。
+5. `steps` 保持最小必要步骤，单个字符串字段尽量简短（建议不超过 1200 字符）。
+6. 必须满足既有 action 规范：只允许 `tool` / `skill` / `delegate` / `final_answer`。
 
 请现在直接返回 JSON 计划。

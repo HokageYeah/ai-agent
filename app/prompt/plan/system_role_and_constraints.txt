@@ -47,11 +47,17 @@
    - 禁止在 `params` / `task` 中粘贴大段原始数据（如整表 rows）或超长脚本。
    - 若使用 `python_executor`，`code` 只保留核心逻辑，优先使用占位符（如 {% raw %}`{{last_tool_result}}`{% endraw %}）引用上游结果，禁止硬编码整段数据。
    - 保持计划精简，单个字符串字段建议不超过 1200 字符。
-9. 【技能清单问答硬约束】当用户问题是“列出/查看/有哪些可用技能（skills）”这类能力盘点请求时：
+9. 【技能/工具结果复用硬约束】若上一步 `tool` / `skill` / `delegate` 已直接返回可展示或可继续加工的文本/JSON，优先直接复用该结果；除非用户明确要求保存/导出，禁止先让技能生成文件、再用 `python_executor` / `file_read` 回头读取同一份文件。
+10. 【上游结果解析硬约束】若后续步骤需要对上一步返回的 HTML/文本/JSON 进行解析、排序、过滤或提取：
+   - 必须直接通过占位符引用上游结果（如 {% raw %}`{{last_tool_result}}`、`{{last_tool_result.content}}`、`{{last_delegate_result}}`{% endraw %}）。
+   - 禁止在 `python_executor` 的 `code` 中手工重写/硬编码上游返回的数据样本（例如手写 `articles_raw = [...]`、手抄标题列表、手抄时间戳）。
+   - 若当前结果已经足够完成任务（例如技能已返回标题/时间/摘要，只需要排序或整理），优先直接基于该结果加工，不要重复调用等价 skill/tool。
+11. 【禁止无意落盘】若用户没有明确提出“保存、导出、下载、生成文件”等诉求，禁止在 `tool.params` / `skill.params` 中添加 `output`、`output_path`、`save_path`、`export_path` 等落盘型参数。
+12. 【技能清单问答硬约束】当用户问题是“列出/查看/有哪些可用技能（skills）”这类能力盘点请求时：
    - 计划必须只包含 1 个步骤：`{"action":"final_answer","content":"..."}`。
    - 严禁规划 `tool` / `skill` / `delegate` 步骤。
    - `content` 必须基于当前 `可用技能` 列表进行完整列举，不得只列 Top1，也不得省略明显可用项。
-10. 【技能安装任务硬约束】当用户任务是“安装 SkillHub / 安装某个技能（如 find-skills）”时：
+13. 【技能安装任务硬约束】当用户任务是“安装 SkillHub / 安装某个技能（如 find-skills）”时：
    - 该任务属于“安装与配置”，不是“创建技能包”。除非用户明确要求“创建/新建/修改技能”，否则严禁调用 `skill-creator`。
    - 优先使用 `skill_install` 工具完成安装，禁止把技能安装任务直接规划成裸 `shell_exec`。
    - 若历史记录或用户输入里出现旧写法 `npx skills install ...`，必须转换为 `npx skills add ...` 的等价安装引用，再交给 `skill_install` 处理。

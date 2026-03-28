@@ -1,0 +1,24 @@
+上一轮规划输出不是有效 JSON。请你不要重新自由发挥任务，而是只做“结构修复”：
+
+1. 目标是把原始规划恢复成严格可解析的 JSON。
+2. 只允许输出以下结构：
+{
+  "steps": [
+    {"action": "tool", "tool_name": "工具名称", "params": {...}},
+    {"action": "skill", "skill_id": "技能ID", "params": {...}},
+    {"action": "delegate", "agent_id": "子AgentID", "task": "委派任务"},
+    {"action": "final_answer", "content": "最终答案"}
+  ],
+  "reasoning": "推理过程"
+}
+3. `action` 只能是 `tool` / `skill` / `delegate` / `final_answer` 之一。
+4. 如果原文里把工具名直接写成了 action，请标准化成 `{"action":"tool","tool_name":"..."}`。
+5. 若需要 `python_executor` 继续处理上一步返回的 HTML/文本/JSON，`code` 必须通过占位符引用上游结果（如 `{{last_tool_result}}` / `{{last_tool_result.content}}`），禁止把上游数据手工重写成数组、字典、时间戳列表等硬编码样本。
+6. 若上一步结果已经足够回答、排序、过滤或整理，请直接复用，不要重复调用等价工具/技能。
+7. 若实在无法恢复，请输出一个最小兜底计划：
+{"steps":[{"action":"final_answer","content":"解析计划失败，LLM 返回的不是有效的 JSON 格式"}],"reasoning":"JSON 解析失败"}
+
+原始输出如下：
+{{ raw_output }}
+
+请只返回 JSON，不要包含其他文本。

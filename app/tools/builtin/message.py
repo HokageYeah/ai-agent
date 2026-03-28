@@ -22,6 +22,7 @@ from colorama import Fore, Style
 from loguru import logger
 
 from app.tools.base import Tool, ToolSchema
+from app.utils.llm_output_parser import sanitize_model_payload
 
 
 async def send_agent_message(
@@ -92,7 +93,9 @@ async def send_agent_message(
         message_data["progress"] = progress
 
     if extra_data:
-        message_data.update(extra_data)
+        # 公共边界清洗：统一去掉 `<think>` 等内部推理噪声，
+        # 避免中间 SSE 事件把模型思维链直接暴露到前端。
+        message_data.update(sanitize_model_payload(extra_data))
 
     event_data = {
         "event": "agent_message",
@@ -443,4 +446,3 @@ class MessageAgentTool(Tool):
                 f"{Fore.GREEN}[用户输入缓存-Message] ✅ 已写入 db_config: "
                 f"字段={list(db_fields.keys())}{Style.RESET_ALL}"
             )
-

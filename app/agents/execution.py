@@ -29,7 +29,9 @@ from app.agents.planning import Plan, PlanStep
 from app.core.config import get_default_model
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
+from app.utils.llm_output_parser import extract_user_visible_result
 from app.utils.prompt_manager import PromptManager
+from app.utils.resource_path import get_project_root
 
 
 class ExecutionResult:
@@ -778,9 +780,16 @@ class ExecutionEngine:
                             f"{Fore.CYAN}[执行引擎] 直接使用 final_answer.content 作为最终结果"
                             f"（长度={len(template)}）{Style.RESET_ALL}"
                         )
-                        final_result = template
+                        final_result = extract_user_visible_result(template)
                     else:
                         final_result = "执行完成，但没有产生具体结果。"
+
+                    # 关键收口：将“真实合成后的最终答案”回写到 final_answer 步骤结果中。
+                    # 否则 SSE 的 step_complete(final_answer) 事件只能拿到规划模板
+                    # （如“根据以上结果回答用户”），与最终 final_answer 事件不一致。
+                    if template and template != final_result:
+                        step_result["template"] = template
+                    step_result["result"] = final_result
 
                     logger.info(
                         f"{Fore.GREEN}执行完成，获得最终答案{Style.RESET_ALL}"
@@ -910,7 +919,7 @@ class ExecutionEngine:
                 messages=[{"role": "user", "content": synthesis_prompt}],
                 config=config
             )
-            answer = response.content.strip()
+            answer = extract_user_visible_result(response.content)
             logger.info(
                 f"{Fore.GREEN}[执行引擎] LLM 答案合成完成，"
                 f"长度: {len(answer)} 字符{Style.RESET_ALL}"
@@ -922,13 +931,13 @@ class ExecutionEngine:
                 f"{Fore.RED}[执行引擎] LLM 答案合成失败，回退到原始数据拼接: {e}{Style.RESET_ALL}"
             )
             # 合成失败时降级：把原始工具结果直接拼接返回
-            return "\n\n".join(
+            return extract_user_visible_result("\n\n".join(
                 f"【{r.get('tool_name') or r.get('action', '')}】\n"
                 + (_json.dumps(r["result"], ensure_ascii=False, indent=2, default=str)
                    if isinstance(r["result"], dict) else str(r["result"]))
                 for r in tool_results
                 if r.get("result")
-            ) or template or "执行完成，但未能生成最终答案。"
+            )) or template or "执行完成，但未能生成最终答案。"
 
     async def _synthesize_from_context(
         self,
@@ -997,7 +1006,7 @@ class ExecutionEngine:
                 messages=[{"role": "user", "content": synthesis_prompt}],
                 config=config
             )
-            answer = response.content.strip()
+            answer = extract_user_visible_result(response.content)
             logger.info(
                 f"{Fore.GREEN}[执行引擎] 兜底上下文合成完成，"
                 f"答案长度: {len(answer)} 字符，"
@@ -1960,6 +1969,87 @@ class ExecutionEngine:
             )
             return None
 
+    def _resolve_skill_runtime_dir(self, skill) -> Path:
+        """
+        解析技能运行产物目录。
+
+        设计原因：
+        - `app/skills/skills_md/<skill_id>` 应视为“技能包源码/安装目录”；
+        - 运行期产物（JSON、截图、临时文件等）不应再写回技能源码目录；
+        - 统一落到 `workspace/artifacts/skills/<skill_id>/`，避免污染已安装技能。
+        """
+        skill_id = str(getattr(skill, "skill_id", "") or "unknown-skill").strip() or "unknown-skill"
+        runtime_dir = get_project_root() / "workspace" / "artifacts" / "skills" / skill_id
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        return runtime_dir
+
+    def _task_requests_persistent_output(self, task: str) -> bool:
+        """
+        判断用户是否明确要求把结果落盘/导出。
+        """
+        text = (task or "").strip().lower()
+        if not text:
+            return False
+        markers = (
+            "保存", "另存", "写入", "落盘", "导出", "下载", "生成文件",
+            "save", "export", "write to file", "save to file", "download"
+        )
+        return any(marker in text for marker in markers)
+
+    def _looks_like_file_path(self, value: str) -> bool:
+        """
+        粗略判断字符串是否像文件路径，避免把普通 output_mode 等参数误判为路径。
+        """
+        text = (value or "").strip()
+        if not text or "\n" in text:
+            return False
+        if "/" in text or "\\" in text:
+            return True
+        return bool(re.search(r"\.[A-Za-z0-9]{1,8}$", text))
+
+    def _normalize_skill_output_params(
+        self,
+        *,
+        params: Dict[str, Any],
+        runtime_dir: Optional[Path],
+        task: str,
+        skill_id: str,
+    ) -> Dict[str, Any]:
+        """
+        规范技能中的输出路径参数，避免无意把运行期产物写回技能源码目录。
+        """
+        normalized = dict(params or {})
+        output_like_keys = {
+            "output", "output_path", "save_path", "export_path",
+            "artifact_path", "result_path", "report_path",
+        }
+        wants_persistence = self._task_requests_persistent_output(task)
+
+        for key in list(normalized.keys()):
+            raw_value = normalized.get(key)
+            if key not in output_like_keys or not isinstance(raw_value, str):
+                continue
+            if not self._looks_like_file_path(raw_value):
+                continue
+
+            if not wants_persistence:
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 检测到技能 {skill_id} 在非落盘任务中携带输出路径参数，"
+                    f"已自动移除: {key}={raw_value}{Style.RESET_ALL}"
+                )
+                normalized.pop(key, None)
+                continue
+
+            if runtime_dir and not Path(raw_value).is_absolute():
+                rewritten = str((runtime_dir / Path(raw_value).name).resolve())
+                normalized[key] = rewritten
+                logger.info(
+                    f"{Fore.CYAN}[执行引擎] 技能 {skill_id} 的输出路径已重定向到运行产物目录: "
+                    f"{key}={rewritten}{Style.RESET_ALL}"
+                )
+
+        return normalized
+
     async def _invoke_skill_internal_tool(
         self,
         *,
@@ -2351,6 +2441,13 @@ class ExecutionEngine:
                     safe_params["word_count"] = "适中"
 
             skill_dir = self._resolve_skill_working_dir(skill)
+            skill_runtime_dir = self._resolve_skill_runtime_dir(skill)
+            safe_params = self._normalize_skill_output_params(
+                params=safe_params,
+                runtime_dir=skill_runtime_dir,
+                task=context.get("task", "") if context else "",
+                skill_id=skill_id,
+            )
             dependency_ok, dependency_messages, dependency_error = (
                 await self._ensure_skill_runtime_dependencies(
                     skill=skill,
@@ -2400,15 +2497,18 @@ class ExecutionEngine:
             prompt = (
                 f"【当前用户任务】\n{current_task or '（未提供）'}\n\n"
                 f"【技能参数（JSON）】\n{params_json}\n\n"
-                f"【技能工作目录】\n{str(skill_dir) if skill_dir else '（未知）'}\n\n"
+                f"【技能源码目录】\n{str(skill_dir) if skill_dir else '（未知）'}\n\n"
+                f"【技能运行产物目录】\n{str(skill_runtime_dir)}\n\n"
                 f"【运行时依赖预检结果】\n{dependency_summary}\n\n"
                 "【执行硬约束】\n"
                 "1. 若技能参数已包含完成任务所需信息（例如 location），必须直接执行，不要向用户重复询问同一参数。\n"
                 "2. 优先使用可用工具获取真实结果，再给出结论。\n"
                 "3. 若工具调用失败，明确说明失败原因与下一步建议，不要编造结果。\n\n"
                 "4. 若 shell_exec / python_executor / 其他工具报出“缺少命令、缺少模块、缺少包、command not found、Cannot find module”等依赖错误，"
-                "应优先在当前技能工作目录内自动补齐依赖并重试一次，而不是直接放弃。\n"
-                "5. 若调用 shell_exec 执行技能脚本或依赖命令，必须把 working_dir 设为上方“技能工作目录”。\n\n"
+                "应优先在当前技能源码目录内自动补齐依赖并重试一次，而不是直接放弃。\n"
+                "5. 若调用 shell_exec 执行 scripts/ 下脚本或依赖命令，必须把 working_dir 设为上方“技能源码目录”。\n"
+                "6. 除非用户明确要求“保存/导出/生成文件”，否则禁止创建任何输出文件，也不要传递 output/save/path 这类落盘参数。\n"
+                "7. 若确实需要创建临时文件或导出文件，只能写入上方“技能运行产物目录”，禁止写回技能源码目录。\n\n"
                 f"{prompt}"
             )
             
@@ -2600,11 +2700,12 @@ class ExecutionEngine:
                     "skill_id": skill_id
                 }
 
+            cleaned_content = extract_user_visible_result(response.content or "")
             logger.info(f"{Fore.GREEN}技能 {skill_id} 执行成功{Style.RESET_ALL}")
             
             return {
                 "success": True,
-                "result": response.content,
+                "result": cleaned_content,
                 "action": "skill",
                 "skill_id": skill_id
             }

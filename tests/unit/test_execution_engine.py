@@ -6,6 +6,7 @@
 """
 
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 from app.agents.base import Agent, AgentConfig
@@ -309,6 +310,48 @@ async def test_execution_engine_should_propagate_tool_payload_failure():
 
 
 @pytest.mark.asyncio
+async def test_execution_engine_should_write_real_final_answer_back_to_step_result(monkeypatch):
+    """final_answer 步骤完成后，应把真实合成结果回写到步骤结果中。"""
+    tool_hub = ToolHub()
+    tool_hub.register_tool(TestTool())
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    async def fake_synthesize_answer(*args, **kwargs):
+        return "这是合成后的真实最终答案"
+
+    monkeypatch.setattr(execution_engine, "_synthesize_answer", fake_synthesize_answer)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role"
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(action="tool", tool_name="test_tool", params={}),
+            PlanStep(action="final_answer", content="根据以上结果回答用户"),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(agent, plan)
+
+    assert result.result == "这是合成后的真实最终答案"
+    assert result.step_results[1]["action"] == "final_answer"
+    assert result.step_results[1]["result"] == "这是合成后的真实最终答案"
+    assert result.step_results[1]["template"] == "根据以上结果回答用户"
+
+
+@pytest.mark.asyncio
 async def test_execution_engine_empty_plan():
     """测试执行空计划"""
     tool_hub = ToolHub()
@@ -421,6 +464,39 @@ async def test_resolve_step_placeholders_should_use_delegate_result_as_last_tool
     resolved = execution_engine._resolve_step_placeholders(step, prev_results)
 
     assert resolved.params["params"]["keyword"] == "华为 Mate 60 Pro 512GB"
+
+
+def test_normalize_skill_output_params_should_avoid_unrequested_persistence_and_rewrite_requested_output():
+    """未明确要求保存时应移除 output；明确要求保存时相对路径应改写到运行产物目录。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    runtime_dir = Path("/tmp/wechat-runtime-test")
+
+    removed = execution_engine._normalize_skill_output_params(
+        params={"query": "郑州发布 教育", "output": "zz_education_articles.json"},
+        runtime_dir=runtime_dir,
+        task="搜索郑州发布微信公众号教育相关文章给我",
+        skill_id="wechat-article-search",
+    )
+    assert "output" not in removed
+
+    rewritten = execution_engine._normalize_skill_output_params(
+        params={"query": "郑州发布 教育", "output": "zz_education_articles.json"},
+        runtime_dir=runtime_dir,
+        task="搜索后请保存成 json 文件",
+        skill_id="wechat-article-search",
+    )
+    assert rewritten["output"] == str((runtime_dir / "zz_education_articles.json").resolve())
 
 
 @pytest.mark.asyncio

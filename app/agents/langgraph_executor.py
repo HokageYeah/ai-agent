@@ -36,7 +36,12 @@ from app.memory.session_memory import get_session_memory, extract_summary_from_r
 import asyncio
 
 from app.tools.builtin.message import send_agent_message
-from app.utils.llm_output_parser import extract_json_payload
+from app.utils.llm_output_parser import (
+    extract_json_payload,
+    sanitize_model_payload,
+    extract_user_visible_result,
+    extract_user_visible_preview,
+)
 from app.utils.prompt_manager import PromptManager
 
 
@@ -936,6 +941,125 @@ class LangGraphAgentExecutor:
             "iteration": iteration,
             "data": message_data
         }
+
+    def _normalize_final_result_payload(
+        self,
+        final_result: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        统一清洗最终结果，确保对外边界始终返回“用户可读正文”。
+
+        设计原因：
+        - 某些链路会把子 Agent 包装对象、step_results、reflection 一并冒泡到最终答案；
+        - SSE / 非流式 API / 下一轮规划上下文都应共享同一套清洗规则，避免各处各修各的。
+        """
+        if not isinstance(final_result, dict):
+            return final_result
+
+        normalized = dict(final_result)
+        original_result = normalized.get("result")
+        normalized["result"] = (
+            None if original_result is None else extract_user_visible_result(original_result)
+        )
+        normalized["step_results"] = sanitize_model_payload(normalized.get("step_results", []) or [])
+        if "reflection" in normalized:
+            normalized["reflection"] = sanitize_model_payload(normalized.get("reflection"))
+        if normalized.get("error") is not None:
+            normalized["error"] = extract_user_visible_result(normalized.get("error"))
+        return normalized
+
+    def _summarize_nested_stream_step_result(
+        self,
+        step_result: Dict[str, Any],
+        *,
+        result_limit: int = 600,
+    ) -> Dict[str, Any]:
+        """
+        将嵌套 step_result 收敛为适合 SSE 轨迹展示的摘要结构。
+
+        设计目标：
+        - 避免 delegate/tool 等步骤把完整包装对象、超长 HTML、反思全文直接塞进前端；
+        - 统一在流式边界做结果整形，而不是在单个 skill/tool 上单点补丁；
+        - 同时保留排障所需的 action / success / result / error 等关键信息。
+        """
+        sanitized = sanitize_model_payload(step_result or {})
+        if not isinstance(sanitized, dict):
+            return {"result": extract_user_visible_preview(sanitized, limit=result_limit)}
+
+        summary = {
+            key: value
+            for key, value in sanitized.items()
+            if key not in {"result", "step_results", "reflection"}
+        }
+
+        if "result" in sanitized:
+            summary["result"] = extract_user_visible_preview(
+                sanitized.get("result"),
+                limit=result_limit,
+            )
+        if sanitized.get("error") is not None:
+            summary["error"] = extract_user_visible_preview(
+                sanitized.get("error"),
+                limit=result_limit,
+            )
+        return summary
+
+    def _normalize_stream_step_payload(
+        self,
+        step_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        统一规范化步骤级 SSE 事件载荷。
+
+        解决的公共问题：
+        1. delegate_complete / tool_complete 常夹带超长包装对象，污染轨迹面板；
+        2. `<think>` 可能残留在中间事件里；
+        3. final_answer 的 step_complete 需要展示真实最终答案，而不是规划模板。
+        """
+        sanitized = sanitize_model_payload(step_result or {})
+        if not isinstance(sanitized, dict):
+            return {"result": extract_user_visible_preview(sanitized)}
+
+        action = str(sanitized.get("action") or "unknown")
+        normalized = {
+            key: value
+            for key, value in sanitized.items()
+            if key not in {"result", "step_results", "reflection"}
+        }
+
+        if "result" in sanitized:
+            if action == "final_answer":
+                normalized["result"] = extract_user_visible_result(sanitized.get("result"))
+            else:
+                normalized["result"] = extract_user_visible_preview(sanitized.get("result"))
+
+        if sanitized.get("error") is not None:
+            normalized["error"] = extract_user_visible_preview(sanitized.get("error"))
+
+        nested_source = sanitized.get("result") if isinstance(sanitized.get("result"), dict) else {}
+        nested_step_results = []
+        if isinstance(nested_source, dict) and isinstance(nested_source.get("step_results"), list):
+            nested_step_results = nested_source.get("step_results") or []
+        elif isinstance(sanitized.get("step_results"), list):
+            nested_step_results = sanitized.get("step_results") or []
+
+        if nested_step_results:
+            normalized["step_results"] = [
+                self._summarize_nested_stream_step_result(item)
+                for item in nested_step_results[:4]
+            ]
+            if len(nested_step_results) > 4:
+                normalized["step_results_truncated"] = True
+
+        reflection = None
+        if isinstance(nested_source, dict):
+            reflection = nested_source.get("reflection")
+        if reflection is None:
+            reflection = sanitized.get("reflection")
+        if reflection is not None:
+            normalized["reflection"] = sanitize_model_payload(reflection)
+
+        return normalized
     
     async def _emit_stream_event(
         self,
@@ -1620,6 +1744,7 @@ class LangGraphAgentExecutor:
                 f"{Fore.CYAN}[实时步骤回调] 推送步骤 {step_idx}/{total} 事件: "
                 f"action={action}{Style.RESET_ALL}"
             )
+            stream_safe_step_result = self._normalize_stream_step_payload(step_result)
             
             if action == "tool":
                 # 工具调用完成事件
@@ -1628,7 +1753,7 @@ class LangGraphAgentExecutor:
                     message_type="progress",
                     content=f"工具调用完成: {step_result.get('tool_name', 'unknown')}",
                     progress={"stage": "tool_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
-                    extra_data=step_result
+                    extra_data=stream_safe_step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 工具完成事件已推送: "
@@ -1641,7 +1766,7 @@ class LangGraphAgentExecutor:
                     message_type="progress",
                     content=f"委派子Agent完成: {step_result.get('agent_id', 'unknown')}",
                     progress={"stage": "delegate_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
-                    extra_data=step_result
+                    extra_data=stream_safe_step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 委派完成事件已推送: "
@@ -1654,7 +1779,7 @@ class LangGraphAgentExecutor:
                     message_type="progress",
                     content=f"技能使用完成: {step_result.get('skill_id', 'unknown')}",
                     progress={"stage": "skill_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
-                    extra_data=step_result
+                    extra_data=stream_safe_step_result
                 )
                 logger.info(
                     f"{Fore.GREEN}[实时步骤回调] 技能完成事件已推送: "
@@ -1680,7 +1805,7 @@ class LangGraphAgentExecutor:
                     content=f"步骤 {step_idx}/{total} 完成: {step_name}",
                     progress={"stage": "step_complete", "iteration": _iter_ref, "current": step_idx, "total": total},
                     extra_data={
-                        **step_result,
+                        **stream_safe_step_result,
                         "step_name": step_name,
                         "message": f"步骤 {step_idx}/{total} 完成: {step_name}"
                     }
@@ -1786,7 +1911,7 @@ class LangGraphAgentExecutor:
         })
         
         # 无论执行成功或失败（如被用户拒绝），都保存在状态中供后续反思
-        state["final_result"] = execution_result.to_dict()
+        state["final_result"] = self._normalize_final_result_payload(execution_result.to_dict())
 
         # NOTE: 将执行步骤的结果写入 run_memory（工具/技能/委派/最终答案各自的格式）
         #       这样反思阶段 LLM 通过 messages 数组能直接看到本轮所有工具调用及其结果
@@ -2125,6 +2250,7 @@ class LangGraphAgentExecutor:
         # 将反思结果保存到 final_result (作为字典)
         if state["final_result"]:
             state["final_result"]["reflection"] = reflection_result.to_dict()
+            state["final_result"] = self._normalize_final_result_payload(state["final_result"])
         
         return state
     
@@ -2560,9 +2686,13 @@ class LangGraphAgentExecutor:
                     logger.error(f"{Fore.RED}[会话记忆] 提取/写入任务摘要失败: {e}{Style.RESET_ALL}")
 
             # 返回最终结果
+            normalized_final_result = self._normalize_final_result_payload(
+                final_state.get("final_result")
+            )
+
             return {
                 "success": True,
-                "result": final_state.get("final_result"),
+                "result": normalized_final_result,
                 "iterations": final_state["iterations"],
                 "messages": serialized_messages
             }
@@ -2664,7 +2794,9 @@ class LangGraphAgentExecutor:
             )
 
             total_iterations = final_state.get("iterations", 0)
-            final_result = final_state.get("final_result")
+            final_result = self._normalize_final_result_payload(
+                final_state.get("final_result")
+            )
 
             logger.info(
                 f"{Fore.GREEN}[子Agent] execute_with_callback 完成，"
@@ -2988,7 +3120,7 @@ class LangGraphAgentExecutor:
         
         # 获取最终状态和结果
         final_state = final_state_holder.get("result", {})
-        final_result = final_state.get("final_result")
+        final_result = self._normalize_final_result_payload(final_state.get("final_result"))
         total_iterations = final_state.get("iterations", 0)
         
         logger.info(

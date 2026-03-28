@@ -13,8 +13,9 @@ LLM 输出解析辅助工具
 
 from __future__ import annotations
 
+import json
 import re
-from typing import Optional
+from typing import Optional, Any
 
 
 def strip_think_blocks(text: str) -> str:
@@ -26,6 +27,123 @@ def strip_think_blocks(text: str) -> str:
     - 这些内容既不属于最终 JSON，也容易干扰后续正则/括号扫描。
     """
     return re.sub(r"<think>[\s\S]*?</think>", "", text or "", flags=re.IGNORECASE).strip()
+
+
+def sanitize_model_payload(payload: Any) -> Any:
+    """
+    递归清洗模型/Agent 载荷中的推理噪声。
+
+    设计目标：
+    1. 技能、子 Agent、反思结果里若混入 `<think>`，统一在公共层去除；
+    2. 保持原有结构（dict/list）不变，避免只对某个 action/skill 做特判；
+    3. 供执行阶段、SSE 返回、记忆写入等多个边界复用。
+    """
+    if isinstance(payload, str):
+        return strip_think_blocks(payload)
+    if isinstance(payload, list):
+        return [sanitize_model_payload(item) for item in payload]
+    if isinstance(payload, dict):
+        return {key: sanitize_model_payload(value) for key, value in payload.items()}
+    return payload
+
+
+def extract_user_visible_result(payload: Any) -> str:
+    """
+    从复杂执行结果中提取最适合直接展示给用户的正文字符串。
+
+    典型输入：
+    - 技能原始文本（可能带 `<think>`）
+    - 子 Agent / ExecutionResult 风格包装字典
+    - python_executor 风格结果（`result` / `output`）
+    """
+    sanitized = sanitize_model_payload(payload)
+    unwrapped = _unwrap_execution_like_payload(sanitized)
+
+    if unwrapped is None:
+        return ""
+    if isinstance(unwrapped, str):
+        return unwrapped.strip()
+    if isinstance(unwrapped, dict):
+        for key in ("content", "text", "message", "summary", "output", "result"):
+            value = unwrapped.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    try:
+        return json.dumps(unwrapped, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        return str(unwrapped).strip()
+
+
+def compact_user_visible_text(text: str, limit: int = 1200) -> str:
+    """
+    将用户可见文本压缩为适合日志/SSE 事件展示的预览。
+
+    设计目标：
+    1. 避免中间轨迹事件塞入超长 HTML / Markdown，污染前端展示；
+    2. 保留足够的可读上下文，便于排障；
+    3. 作为公共边界能力，供 SSE、日志摘要、嵌套 step_results 复用。
+    """
+    cleaned = strip_think_blocks(text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit] + "\n...（内容已截断）"
+
+
+def extract_user_visible_preview(payload: Any, limit: int = 1200) -> Any:
+    """
+    从复杂执行结果中提取“适合中间事件展示”的预览载荷。
+
+    与 extract_user_visible_result 的区别：
+    - extract_user_visible_result 面向最终答案，优先返回完整正文；
+    - 本函数面向中间轨迹/SSE 事件，优先返回精简预览，避免超长载荷污染界面。
+    """
+    sanitized = sanitize_model_payload(payload)
+    unwrapped = _unwrap_execution_like_payload(sanitized)
+
+    if unwrapped is None:
+        return ""
+    if isinstance(unwrapped, str):
+        return compact_user_visible_text(unwrapped, limit=limit)
+    if isinstance(unwrapped, list):
+        previews = [
+            extract_user_visible_preview(item, limit=max(200, limit // 2))
+            for item in unwrapped[:3]
+        ]
+        if len(unwrapped) > 3:
+            previews.append(f"...（其余 {len(unwrapped) - 3} 项已省略）")
+        return previews
+    if isinstance(unwrapped, dict):
+        preview: dict[str, Any] = {}
+        for key in (
+            "success",
+            "status_code",
+            "status_text",
+            "content_type",
+            "response_time_ms",
+            "url",
+            "truncated",
+            "download_path",
+            "result_type",
+        ):
+            value = unwrapped.get(key)
+            if value not in (None, ""):
+                preview[key] = value
+
+        for key in ("content", "text", "message", "summary", "output", "result"):
+            value = unwrapped.get(key)
+            if isinstance(value, str) and value.strip():
+                preview_key = "content_preview" if key == "content" else f"{key}_preview"
+                preview[preview_key] = compact_user_visible_text(value, limit=limit)
+                break
+
+        if preview:
+            return preview
+
+    try:
+        rendered = json.dumps(unwrapped, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        rendered = str(unwrapped)
+    return compact_user_visible_text(rendered, limit=limit)
 
 
 def extract_first_fenced_block(text: str) -> Optional[str]:
@@ -73,6 +191,41 @@ def extract_json_payload(llm_output: str) -> str:
         return json_array
 
     return text
+
+
+def _unwrap_execution_like_payload(payload: Any) -> Any:
+    """
+    递归剥离 ExecutionResult / 子 Agent / python_executor 常见包装层。
+    """
+    current = payload
+
+    for _ in range(8):
+        if not isinstance(current, dict):
+            break
+
+        nested_result = current.get("result")
+        looks_like_execution_wrapper = (
+            "result" in current and any(
+                key in current
+                for key in ("step_results", "reflection", "error", "user_rejected_tools", "agent_id", "agent_name")
+            )
+        )
+        if looks_like_execution_wrapper and nested_result not in (None, ""):
+            current = nested_result
+            continue
+
+        if nested_result not in (None, "") and set(current.keys()).issubset({"success", "result", "output", "error", "result_type"}):
+            current = nested_result
+            continue
+
+        nested_output = current.get("output")
+        if nested_result in (None, "") and nested_output not in (None, ""):
+            current = nested_output
+            continue
+
+        break
+
+    return current
 
 
 def _extract_first_balanced_segment(
