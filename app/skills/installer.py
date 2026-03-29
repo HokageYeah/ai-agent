@@ -44,6 +44,16 @@ FRONTMATTER_NAME_PATTERN = re.compile(
     r"(?m)^name:\s*([A-Za-z0-9._-]+)\s*$"
 )
 
+# Skills CLI `npx skills find` 输出中，文档说明文本会包含示例占位符如 `owner/repo@skill`。
+# 这些占位符符合 INSTALL_REF_PATTERN 的正则，但并非真实可安装的引用，必须过滤掉。
+# 这里维护一个已知占位符黑名单，防止误选。
+INSTALL_REF_PLACEHOLDER_SET: frozenset = frozenset({
+    "owner/repo@skill",
+    "user/repo@skill",
+    "org/repo@skill",
+    "your/repo@skill",
+})
+
 
 @dataclass
 class ParsedSkillInstallRequest:
@@ -69,7 +79,7 @@ class SkillInstallerService:
     def __init__(
         self,
         workspace_dir: Optional[str | Path] = None,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 300,
     ):
         self.workspace_dir = (
             resolve_agent_workspace_dir(str(workspace_dir))
@@ -81,6 +91,49 @@ class SkillInstallerService:
             f"{Fore.CYAN}[SkillInstallerService] 初始化完成 | "
             f"workspace={self.workspace_dir} | timeout={self.timeout_seconds}s{Style.RESET_ALL}"
         )
+
+    def is_skill_installed(self, skill_slug: str) -> Optional[str]:
+        """
+        检查工作区中是否已安装指定技能。
+
+        设计目的：
+        - 在发起任何网络安装之前，先通过本地文件系统快速判断技能是否已存在；
+        - 避免 LLM 在规划阶段对已安装技能重复触发 skill_install，节省大量耗时；
+        - 比较时通过 _normalize_name 做规范化（忽略大小写和连字符/下划线差异），
+          避免因格式差异导致误判"未安装"。
+
+        匹配逻辑（优先级依次降低）：
+        1. 将 skill_slug 从 owner/repo@skill 或 pkg@skill 中提取 skill 部分；
+        2. 规范化后与 workspace_dir 中所有包含 SKILL.md 的子目录名比较；
+        3. 若任一子目录名的规范化值匹配，则视为已安装。
+
+        Args:
+            skill_slug: 技能标识，支持 slug / owner/repo@skill 等格式
+
+        Returns:
+            已安装的技能目录绝对路径字符串，若未安装则返回 None
+        """
+        if not self.workspace_dir.exists():
+            return None
+
+        # 提取真正的技能名称（从 owner/repo@skill 中取 @后部分）
+        effective_slug = self._extract_skill_name_from_package_ref(skill_slug)
+        normalized_slug = self._normalize_name(effective_slug)
+
+        for entry in self.workspace_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            # 只考虑包含 SKILL.md 的合法技能目录
+            if not (entry / SKILL_FILE_NAME).exists():
+                continue
+            if self._normalize_name(entry.name) == normalized_slug:
+                logger.debug(
+                    f"{Fore.CYAN}[SkillInstallerService] 本地技能匹配命中: "
+                    f"slug='{skill_slug}' -> dir='{entry.name}'{Style.RESET_ALL}"
+                )
+                return str(entry)
+
+        return None
 
     async def install(
         self,
@@ -100,6 +153,32 @@ class SkillInstallerService:
             skill_name: 可选的目标技能名（主要给 URL / 多技能仓库场景使用）
             overwrite: 目标已存在时是否覆盖
         """
+        # ── 快速预检：技能已存在时幂等返回，避免不必要的网络安装 ──────────────
+        # 这一步在所有其他处理之前完成，节省大量时间（尤其是 LLM 在规划阶段误触发时）。
+        # 注意：若 overwrite=True 则需要继续执行覆盖安装，不做提前返回。
+        if not overwrite:
+            existing_path = self.is_skill_installed(package)
+            if existing_path:
+                skill_dir_name = Path(existing_path).name
+                logger.info(
+                    f"{Fore.GREEN}[SkillInstallerService] 技能 '{package}' 已安装于工作区，"
+                    f"幂等跳过安装 | path={existing_path}{Style.RESET_ALL}"
+                )
+                skill_file = Path(existing_path) / SKILL_FILE_NAME
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "already_installed": True,
+                    "skill_name": skill_dir_name,
+                    "installed_path": existing_path,
+                    "skill_file": str(skill_file),
+                    "workspace_dir": str(self.workspace_dir),
+                    "message": (
+                        f"技能 '{package}' 已安装在工作区 '{skill_dir_name}'，"
+                        f"无需重复安装。如需更新请设置 overwrite=True。"
+                    ),
+                }
+
         try:
             parsed = self._normalize_request(package=package, skill_name=skill_name)
         except ValueError as exc:
@@ -1045,12 +1124,25 @@ class SkillInstallerService:
         return (value or "").strip().lower().replace("_", "-")
 
     def _extract_install_refs(self, text: str) -> List[str]:
-        """从 CLI 输出中提取全部唯一的 `owner/repo@skill` 引用。"""
+        """
+        从 CLI 输出中提取全部唯一的 `owner/repo@skill` 引用。
+
+        设计注意：
+        - Skills CLI 文档说明文本中常包含如 `owner/repo@skill` 的示例占位符；
+        - 这些占位符符合正则但并非真实可安装的引用，需要通过黑名单过滤掉；
+        - 这样可避免将文档示例误当成真实候选引用导致安装失败的 Bug。
+        """
         refs: List[str] = []
         seen: set[str] = set()
         for match in INSTALL_REF_PATTERN.finditer(text or ""):
             ref = match.group(1).strip()
             if not ref or ref in seen:
+                continue
+            # 过滤已知文档占位符，避免误选为真实安装引用
+            if ref in INSTALL_REF_PLACEHOLDER_SET:
+                logger.debug(
+                    f"{Fore.YELLOW}[SkillInstallerService] 过滤已知占位符引用: {ref}{Style.RESET_ALL}"
+                )
                 continue
             seen.add(ref)
             refs.append(ref)

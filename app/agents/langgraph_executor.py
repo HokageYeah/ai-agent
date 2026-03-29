@@ -459,20 +459,99 @@ class LangGraphAgentExecutor:
         ]
         return any(re.search(pattern, task_l) for pattern in install_patterns)
 
+    def _is_explicitly_requesting_skill_by_id(
+        self,
+        task: str,
+        candidate_skill_ids: "set[str]",
+    ) -> "set[str]":
+        """
+        通用检测：用户是否在任务中明确点名了某个具体的技能 ID。
+
+        设计原因（框架级）：
+        - 当用户显式说"请使用 find-skills 技能"或"用 weather 技能查天气"时，
+          即使该技能因当前 Agent 工具不足而被过滤，也不应向用户谎称"该技能不存在"；
+        - 正确行为：识别出用户点名的技能在系统中确实存在（只是当前 Agent 不能直接执行），
+          然后委派给具备完整工具的子 Agent（如 general_agent）来代为执行。
+        - 通用性：此方法适用于所有 Agent、所有技能，不绑定任何具体技能 ID。
+
+        检测模式（中英文混合）：
+        - "使用 X 技能"、"用 X 技能"、"调用 X 技能"
+        - "use X skill"、"call X"、"run X skill"
+        - 任务中直接包含技能 ID 字符串（精确词匹配）
+
+        Args:
+            task: 用户任务描述
+            candidate_skill_ids: 候选技能 ID 集合（通常为工具不兼容技能的 ID）
+
+        Returns:
+            Set[str]: 在任务中被明确点名的技能 ID 集合（若无则为空集）
+        """
+        if not task or not candidate_skill_ids:
+            return set()
+
+        task_lower = task.lower().strip()
+        matched: set = set()
+
+        for skill_id in candidate_skill_ids:
+            if not skill_id:
+                continue
+            sid_lower = skill_id.lower()
+
+            # ── 精确词匹配：任务中直接包含技能 ID（不区分大小写）──
+            # 允许前后是空白、标点或技能/skill 关键词
+            if sid_lower in task_lower:
+                matched.add(skill_id)
+                continue
+
+            # ── 中文点名模式：用...技能、使用...技能、调用...技能 ──
+            cn_patterns = [
+                rf"(使用|用|调用|执行|运行|启动|通过|借助)\s*{re.escape(sid_lower)}\s*(技能|skill)?",
+                rf"{re.escape(sid_lower)}\s*(技能|skill)",
+            ]
+            if any(re.search(p, task_lower) for p in cn_patterns):
+                matched.add(skill_id)
+                continue
+
+            # ── 英文点名模式：use/run/call/execute X skill ──
+            en_patterns = [
+                rf"(use|run|call|execute|invoke)\s+{re.escape(sid_lower)}\s*(skill)?",
+                rf"{re.escape(sid_lower)}\s+skill",
+            ]
+            if any(re.search(p, task_lower) for p in en_patterns):
+                matched.add(skill_id)
+
+        if matched:
+            logger.info(
+                f"{Fore.YELLOW}[能力兜底委派] 检测到用户明确点名了工具不兼容技能: "
+                f"{sorted(matched)}{Style.RESET_ALL}"
+            )
+        return matched
+
+
     def _build_capability_gap_delegate_plan(
         self,
         agent: Agent,
         task: str,
         available_tools: List[Any],
+        tool_incompatible_skills: "Optional[List[Any]]" = None,
     ) -> Optional[Plan]:
         """
-        为“当前 Agent 缺少关键能力，但可委派给 general_agent”的场景生成强制委派计划。
+        为"当前 Agent 缺少关键能力，但可委派给 general_agent"的场景生成强制委派计划。
 
         设计原因：
         - 顶层协调 Agent 的职责是路由，不应该因为自己没 `shell_exec` / `skill_install`
-          就直接给用户回复“做不到”；
+          就直接给用户回复"做不到"；
         - 当任务明显属于命令执行 / 技能安装，而当前 Agent 又具备
           `spawn_agent -> general_agent` 路径时，直接构造委派计划比依赖 LLM 更稳。
+
+        【框架级新增路径】工具不兼容技能点名委派：
+        - 如果用户明确点名要使用某个技能（如"使用 find-skills 技能"），
+          而该技能存在于系统中但因当前 Agent 工具不足被过滤，
+          则应委派给 general_agent（具备完整工具）执行，而不是宣称"该技能不存在"。
+        - 此路径覆盖所有协调型 Agent + 所有工具受限技能，不绑定任何具体技能 ID。
+
+        Args:
+            tool_incompatible_skills: 系统中存在但因当前 Agent 工具不足被隐藏的技能列表
         """
         if not agent or not task:
             return None
@@ -486,6 +565,46 @@ class LangGraphAgentExecutor:
         can_delegate = "spawn_agent" in available_tool_names and "general_agent" in child_agents
         if not can_delegate:
             return None
+
+        # ── 新增路径：用户明确点名了某个工具不兼容技能 ──
+        # 场景：用户说"请使用 find-skills 技能 查找..."，但 find-skills 需要 shell_exec
+        #       当前 Agent 没有 shell_exec，所以 find-skills 被过滤出可用技能列表
+        # 正确行为：委派给 general_agent（具备 shell_exec 等完整工具），而非宣称"该技能不存在"
+        if tool_incompatible_skills:
+            incompatible_ids = {
+                str(getattr(s, "skill_id", "")).strip()
+                for s in tool_incompatible_skills
+                if getattr(s, "skill_id", None)
+            }
+            explicitly_requested = self._is_explicitly_requesting_skill_by_id(
+                task=task, candidate_skill_ids=incompatible_ids
+            )
+            if explicitly_requested:
+                skill_names = sorted(explicitly_requested)
+                reasoning = (
+                    f"当前 Agent '{agent.name}' 识别到用户明确点名了技能 {skill_names}。"
+                    f"这些技能在系统中存在，但因当前 Agent 缺少必要工具（如 shell_exec）而无法直接执行。"
+                    "根据多 Agent 委派架构，应通过 spawn_agent 将任务委派给具备完整工具能力的 "
+                    "general_agent 执行，而不是向用户宣称该技能不存在。"
+                )
+                logger.info(
+                    f"{Fore.YELLOW}[能力兜底委派] 用户点名了工具不兼容技能，自动委派: "
+                    f"skills={skill_names}, agent={agent.agent_id}{Style.RESET_ALL}"
+                )
+                return Plan(
+                    steps=[
+                        PlanStep(
+                            action="delegate",
+                            agent_id="general_agent",
+                            task=task.strip(),
+                        ),
+                        PlanStep(
+                            action="final_answer",
+                            content="根据以上执行结果回答用户",
+                        ),
+                    ],
+                    reasoning=reasoning,
+                )
 
         is_command_task = self._is_explicit_system_command_task(task)
         is_install_task = self._is_skill_install_request(task)
@@ -752,37 +871,50 @@ class LangGraphAgentExecutor:
         )
         return selected
 
-    def _resolve_available_skills(self, agent: Agent, task: str) -> List[Any]:
+    def _resolve_available_skills(
+        self, agent: Agent, task: str
+    ) -> "tuple[List[Any], List[Any]]":
         """
         解析 Agent 当前任务可用技能列表。
 
         规则：
         1. 如果 Agent 显式配置了 available_skills（手动白名单），优先使用白名单
         2. 否则走动态技能路由（metadata Top-K）
+
+        【框架级修复】返回 Tuple(available_skills, tool_incompatible_skills)：
+        - available_skills：当前 Agent 可直接使用的技能（对规划 LLM 可见）
+        - tool_incompatible_skills：系统中存在但因工具不足被隐藏的技能（对规划 LLM 不可见）
+        - 规划层（_build_capability_gap_delegate_plan）利用 tool_incompatible_skills
+          判断是否应向下委派，而不是向用户宣称"该技能不存在"
+
+        Returns:
+            Tuple[List[Any], List[Any]]: (可用技能列表, 工具不兼容技能列表)
         """
         if not self.skill_manager:
-            return []
+            return [], []
 
         all_skills = self.skill_manager.list_skills()
         if not all_skills:
-            return []
+            return [], []
 
         # 普通任务下启用受限技能门禁，避免误召回高影响技能。
-        # NOTE: 清单查询也应用门禁，保证“当前意图下可用技能”口径一致。
-        routable_skills = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
-        routable_skills = self._filter_tool_incompatible_skills(
+        # NOTE: 清单查询也应用门禁，保证"当前意图下可用技能"口径一致。
+        intent_filtered = self._filter_intent_restricted_skills(task=task, all_skills=all_skills)
+
+        # 工具兼容性过滤：现在返回 (compatible, incompatible) 二元组
+        routable_skills, tool_incompatible_skills = self._filter_tool_incompatible_skills(
             agent=agent,
-            all_skills=routable_skills,
+            all_skills=intent_filtered,
         )
 
-        # 技能清单查询：应向模型暴露“全部可用技能”以便直接列举，
+        # 技能清单查询：应向模型暴露"全部可用技能"以便直接列举，
         # 避免 Top-K 路由把上下文缩成 1~2 个技能导致回答失真。
         if self._is_skill_inventory_query(task):
             logger.info(
                 f"{Fore.BLUE}[技能路由] 检测到技能清单查询意图，返回门禁后的可用技能: "
                 f"{[s.skill_id for s in routable_skills]}{Style.RESET_ALL}"
             )
-            return routable_skills
+            return routable_skills, tool_incompatible_skills
 
         manual_ids = [x for x in (agent.available_skills or []) if isinstance(x, str) and x.strip()]
         if manual_ids:
@@ -791,21 +923,22 @@ class LangGraphAgentExecutor:
                 f"{Fore.BLUE}[技能路由] Agent '{agent.name}' 使用手动技能白名单: "
                 f"{[s.skill_id for s in selected]}{Style.RESET_ALL}"
             )
-            return selected
+            return selected, tool_incompatible_skills
 
-        # 默认动态模式
-        return self._route_skills_by_metadata(
+        # 默认动态模式：Top-K 路由只在 routable_skills 中筛选，不暴露不兼容技能
+        available = self._route_skills_by_metadata(
             task=task,
             agent=agent,
             all_skills=routable_skills,
             top_k=3,
         )
+        return available, tool_incompatible_skills
 
     def _filter_tool_incompatible_skills(
         self,
         agent: Agent,
         all_skills: List[Any],
-    ) -> List[Any]:
+    ) -> "tuple[List[Any], List[Any]]":
         """
         过滤掉当前 Agent 无法满足必需工具的技能。
 
@@ -813,9 +946,18 @@ class LangGraphAgentExecutor:
         - 某些技能（如 find-skills）必须依赖 `shell_exec` 才能返回真实结果；
         - 若把这类技能暴露给只负责委派、没有对应工具的 Agent，
           很容易出现“工具为空却继续生成内容”的假执行结果。
+
+        【框架级修复说明】返回值从 List 变为 Tuple(compatible, incompatible)：
+        - compatible_skills：当前 Agent 可直接使用的技能
+        - incompatible_skills：系统中存在但因当前 Agent 工具不足而被隐藏的技能
+        - 调用方可利用 incompatible_skills 判断是否应委派而非直接告知“技能不存在”
+        - 此修复适用于所有协调型 Agent + 所有工具受限技能的通用场景
+
+        Returns:
+            Tuple[List[Any], List[Any]]: (兼容技能列表, 不兼容技能列表)
         """
         if not all_skills:
-            return []
+            return [], []
 
         agent_allowed_tools = {
             str(tool_name).strip()
@@ -823,11 +965,13 @@ class LangGraphAgentExecutor:
             if isinstance(tool_name, str) and str(tool_name).strip()
         }
         if not agent_allowed_tools:
-            return all_skills
+            # 无工具限制时，所有技能都兼容，不兼容列表为空
+            return all_skills, []
 
         # 与执行引擎保持一致：敏感工具不会因为在 required_tools 中声明就阻断技能路由。
         sensitive_required_tools = {"file_write"}
         compatible_skills: List[Any] = []
+        incompatible_skills: List[Any] = []  # 因工具不足被隐藏的技能对象（保留引用供规划层使用）
         hidden_skills: List[str] = []
 
         for skill in all_skills:
@@ -853,6 +997,8 @@ class LangGraphAgentExecutor:
                 hidden_skills.append(
                     f"{getattr(skill, 'skill_id', 'unknown')}缺少{missing_tools}"
                 )
+                # 记录不兼容技能对象，供规划层判断是否应委派给具备能力的子 Agent
+                incompatible_skills.append(skill)
                 continue
 
             # 兼容外部下载技能：
@@ -879,6 +1025,8 @@ class LangGraphAgentExecutor:
                 hidden_skills.append(
                     f"{getattr(skill, 'skill_id', 'unknown')}缺少['shell_exec(兼容模式推断)']"
                 )
+                # 兼容模式推断的不兼容技能也纳入不兼容列表
+                incompatible_skills.append(skill)
                 continue
             compatible_skills.append(skill)
 
@@ -887,7 +1035,7 @@ class LangGraphAgentExecutor:
                 f"{Fore.BLUE}[技能路由] 已按工具可达性隐藏技能: {hidden_skills}{Style.RESET_ALL}"
             )
 
-        return compatible_skills
+        return compatible_skills, incompatible_skills
     
     def _create_stream_event(
         self,
@@ -1285,18 +1433,30 @@ class LangGraphAgentExecutor:
                 f"可用工具 {before_count}->{len(available_tools)}{Style.RESET_ALL}"
             )
 
-        available_skills = self._resolve_available_skills(agent=agent, task=task)
+        # 解包二元组：available_skills 用于规划 LLM，tool_incompatible_skills 用于委派检测
+        # 说明：_resolve_available_skills 现在返回 (可用技能, 工具不兼容技能) 二元组
+        # tool_incompatible_skills：系统中存在但因当前 Agent 工具不足被过滤的技能
+        # 规划阶段将其传入 _build_capability_gap_delegate_plan 以支持"点名委派"路径
+        available_skills, tool_incompatible_skills = self._resolve_available_skills(
+            agent=agent, task=task
+        )
 
         logger.info(
             f"{Fore.BLUE}[Plan Node] Agent '{agent.name}' "
             f"可用工具: {[t.name for t in available_tools]} | "
             f"可用技能: {[s.skill_id for s in available_skills]}{Style.RESET_ALL}"
         )
+        if tool_incompatible_skills:
+            logger.info(
+                f"{Fore.YELLOW}[Plan Node] 工具不兼容技能（系统存在但当前 Agent 无法直接执行）: "
+                f"{[s.skill_id for s in tool_incompatible_skills]}{Style.RESET_ALL}"
+            )
 
         forced_delegate_plan = self._build_capability_gap_delegate_plan(
             agent=agent,
             task=task,
             available_tools=available_tools,
+            tool_incompatible_skills=tool_incompatible_skills,
         )
         if forced_delegate_plan is not None:
             plan = forced_delegate_plan
@@ -1354,6 +1514,8 @@ class LangGraphAgentExecutor:
                 planning_context["last_final_result"] = state.get("final_result")
 
             # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
+            # 注意：stream_callback 透传到规划引擎，规划引擎会在规划 LLM 内部工具调用时
+            # 通过该回调向前端推送 SSE 进度事件，解决规划阶段工具调用"前端黑盒"问题。
             plan = await self.planning_engine.create_plan(
                 agent=agent,
                 task=task,
@@ -1364,7 +1526,8 @@ class LangGraphAgentExecutor:
                 reflection_history=current_reflection_history if current_reflection_history else None,
                 # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
                 run_memory=state.get("run_memory"),
-                iteration=iteration
+                iteration=iteration,
+                stream_callback=stream_callback,
             )
 
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")

@@ -118,6 +118,7 @@ class PlanningEngine:
         #       而非把错误/反思历史文字拼接到 prompt，提升 LLM 对上下文的理解准确度。
         run_memory: Optional[Any] = None,
         iteration: int = 0,
+        stream_callback: Optional[Any] = None,
     ) -> Plan:
         """
         创建执行计划
@@ -169,12 +170,58 @@ class PlanningEngine:
                     f"授权 {len(tools)}/{len(all_schemas)} 个（过滤掉了未授权工具）{Style.RESET_ALL}"
                 )
 
+            # 若上层传入了 stream_callback，则构建规划阶段工具调用的 SSE 通知回调。
+            # 设计原因：
+            # - 规划 LLM 在生成 JSON 计划前，可能会多次调用工具（search / browser 等）；
+            # - 这些工具调用发生在推理层（inference.py）的 tool_calling_loop 内部，
+            #   原来完全透明，用户在前端看不到任何进度（可能等待数分钟无反馈）；
+            # - 通过注入 tool_call_callback，框架可以在每次工具调用完成后向前端推送事件。
+            planning_tool_callback = None
+            if stream_callback is not None:
+                from app.tools.builtin.message import send_agent_message
+
+                async def _planning_tool_callback(
+                    tool_name: str,
+                    params: dict,
+                    result: object,
+                    success: bool,
+                ) -> None:
+                    """规划阶段工具调用 SSE 通知回调（内嵌闭包，捕获 stream_callback 和 iteration）。"""
+                    status_label = "✅ 完成" if success else "❌ 失败"
+                    await send_agent_message(
+                        stream_callback=stream_callback,
+                        message_type="progress",
+                        content=f"规划中调用工具: {tool_name} {status_label}",
+                        progress={
+                            "stage": "plan_tool_call",
+                            "iteration": iteration,
+                            "tool_name": tool_name,
+                            "success": success,
+                        },
+                        extra_data={
+                            "tool_name": tool_name,
+                            "is_planning_phase": True,
+                        },
+                    )
+                    logger.debug(
+                        f"{Fore.CYAN}[规划引擎] 规划阶段工具回调已触发: "
+                        f"tool={tool_name}, success={success}{Style.RESET_ALL}"
+                    )
+
+                planning_tool_callback = _planning_tool_callback
+                logger.debug(
+                    f"{Fore.CYAN}[规划引擎] 规划阶段 SSE 工具回调已绑定 "
+                    f"(iteration={iteration}){Style.RESET_ALL}"
+                )
+
             config = InferenceConfig(
                 model=agent.agent_config.planning_model,
                 temperature=0.7,
                 # 规划阶段需要稳定输出可解析 JSON，适当提高上限，降低被截断风险。
                 max_tokens=3072,
                 tools=tools,
+                # 注入规划阶段工具调用回调，使前端可见规划期间的工具调用进度
+                tool_call_callback=planning_tool_callback,
             )
 
             if run_memory is not None:

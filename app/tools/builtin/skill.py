@@ -23,7 +23,7 @@ class SkillInstallTool(Tool):
     def __init__(
         self,
         installer: Optional[SkillInstallerService] = None,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 300,
     ):
         self._name = "skill_install"
         self._description = (

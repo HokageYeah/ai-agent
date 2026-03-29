@@ -90,13 +90,26 @@ LLM Hub (统一推理)
 [技能发现] SkillManager.discover_skills()
   └─ 扫描 Agent 工作区中的 */SKILL.md（默认 app/skills/skills_md，可由 AGENT_WORKSPACE_DIR 配置覆盖），建立轻量元数据索引
   ↓
-[技能路由] _route_skills_by_metadata()
+[意图门禁过滤] _filter_intent_restricted_skills()
+  └─ 受限技能（如 skill-creator、dynamic_probe）只在明确意图下才暴露，避免普通任务误召回
+  ↓
+[工具兼容性过滤] _filter_tool_incompatible_skills()
+  └─ 返回二元组 (compatible_skills, incompatible_skills)：
+     - compatible_skills：当前 Agent 工具满足要求的技能 → 进入后续路由
+     - incompatible_skills：系统中存在但当前 Agent 工具不足的技能 → 保留引用供规划层感知
+  ↓
+[能力缺口兜底委派检测] _build_capability_gap_delegate_plan()
+  └─ 新路径：若用户明确点名了 incompatible_skills 中的某个技能（如"请使用 find-skills 技能"），
+     且当前 Agent 具备 spawn_agent + general_agent 委派能力，则直接生成委派计划，
+     跳过 LLM 规划，避免向用户宣称"该技能不存在"
+  ↓
+[技能路由] _route_skills_by_metadata()（仅对 compatible_skills 生效）
   └─ 第一阶段（规则预筛）：
      - 基于任务文本 + 技能 metadata（when_to_use/tags/inputs/description）打分
      - `skill_boost_rules` 由 metadata 动态构建（非写死技能映射），并做通用词抑制
      - 输出 Top-K 候选技能
   ↓
-[规划] PlanningEngine 仅看到“已筛选技能”的轻量信息（非全文 Prompt）
+[规划] PlanningEngine 仅看到"已筛选 compatible 技能"的轻量信息（非全文 Prompt）
   └─ 第二阶段（LLM 决策）：由 LLM 在候选技能中决定是否调用技能、调用哪个技能及参数
   ↓
 [执行] ExecutionEngine._execute_skill()
@@ -105,7 +118,6 @@ LLM Hub (统一推理)
   ↓
 返回技能结果 / 继续执行后续步骤（如 file_write、final_answer）
 ```
-
 ### 2.4 技能安装数据流（已落地）
 
 ```
@@ -574,11 +586,15 @@ class SkillManager:
 
 1. **规划前路由**（`langgraph_executor.py`）  
    - `list_skills()` 获取候选技能轻量视图  
-   - `_route_skills_by_metadata()` 采用“规则预筛 + LLM 决策”的混合模式：  
-     - 规则预筛：基于任务文本、`when_to_use`、`tags`、`inputs`、`description` 打分  
-     - `skill_boost_rules` 由 `_build_dynamic_skill_boost_rules()` 基于技能 metadata 动态构建，不再写死具体技能映射  
-     - 对跨技能高频通用词做抑制、对低频区分词做增强，降低误召回  
-   - 仅 Top-K 技能进入 Planning Prompt，降低噪声和 token 成本
+   - `_filter_intent_restricted_skills()`：意图门禁，过滤受限技能（如 skill-creator、dynamic_probe）  
+   - `_filter_tool_incompatible_skills()`：工具兼容性过滤，**返回二元组 `(compatible_skills, incompatible_skills)`**：  
+     - `compatible_skills`：进入后续路由的技能，对规划 LLM 可见  
+     - `incompatible_skills`：系统中存在但当前 Agent 工具不足的技能，对规划 LLM **不可见**，但保留引用供能力缺口检测使用  
+   - `_build_capability_gap_delegate_plan()` 在 LLM 规划前执行三类快速委派检测：  
+     1. **工具不兼容技能点名委派**（新增）：用户明确点名了某个在 `incompatible_skills` 中的技能，且当前 Agent 有 `spawn_agent + general_agent` 委派能力 → 直接构造委派计划，跳过 LLM 规划  
+     2. **显式命令任务委派**：任务是 shell/npx 等系统命令执行，当前 Agent 缺少 shell_exec → 委派  
+     3. **技能安装委派**：安装任务 + 当前 Agent 缺少 skill_install → 委派  
+   - `_route_skills_by_metadata()`：`skill_boost_rules` 由 metadata 动态构建（非写死技能映射），并做通用词抑制，输出 Top-K 候选技能  
    - LLM 规划阶段在候选集中做最终决策：是否调用技能、调用哪个技能、参数如何填写
 
 2. **执行时懒加载**（`execution.py`）  
@@ -594,9 +610,8 @@ class SkillManager:
 
 4. **独立技能 API 路径一致性**（`/api/v1/skills/{skill_id}/execute`）  
    - 直调技能入口同样按 `required_tools/optional_tools` 过滤工具定义  
-   - 缺失必需工具会快速返回错误，防止“带病运行”  
+   - 缺失必需工具会快速返回错误，防止"带病运行"  
    - 敏感工具（如 `file_write`）默认不允许在技能内部隐式触发
-
 ### 6.6 技能安装与 Agent 工作区
 
 1. **统一配置入口**  
@@ -629,15 +644,26 @@ class SkillManager:
 flowchart TD
     A[用户任务] --> B[SkillManager.discover_skills]
     B --> C[list_skill_metadata]
-    C --> D[_route_skills_by_metadata 规则预筛 Top-K]
-    D --> E[PlanningEngine: LLM 在候选集中做最终技能决策]
+    C --> D1[_filter_intent_restricted_skills
+意图门禁过滤]
+    D1 --> D2[_filter_tool_incompatible_skills
+返回 compatible + incompatible 二元组]
+    D2 --> CGap{用户明确点名了
+incompatible 中的技能?}
+    CGap -->|是 + 可委派| Delegate[直接构造委派计划
+跳过 LLM 规划
+委派给 general_agent]
+    CGap -->|否| D3[_route_skills_by_metadata
+规则预筛 Top-K compatible 技能]
+    D3 --> E[PlanningEngine: LLM 在候选集中做最终技能决策]
     E --> F[ExecutionEngine _execute_skill]
-    F --> G[load_skill(skill_id) 懒加载完整技能]
+    F --> G[load_skill skill_id 懒加载完整技能]
     G --> H[按技能工具白名单过滤可用工具]
     H --> I[LLM 执行技能指令]
     I --> J[返回技能结果/进入后续工具步骤]
+    Delegate --> K[子 Agent general_agent 执行技能]
+    K --> J
 ```
-
 ---
 
 ## 7. Workflow Engine（工作流引擎）
@@ -1882,3 +1908,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.5）**：技能系统完成动态加载重构（`skills_md/*/SKILL.md` 文件系统发现、`SkillMetadata` 路由、执行阶段懒加载）；规划阶段仅注入候选技能元信息，执行阶段按 `required_tools/optional_tools` 进行工具白名单收敛并屏蔽敏感工具隐式调用；独立技能执行接口（`/api/v1/skills/{skill_id}/execute`）与主执行链路在工具过滤与缺失必需工具快速失败策略上保持一致。
 
 > ✅ **已完成（v1.6）**：公共层收口进一步增强。技能源码目录与运行态产物目录分离（运行产物统一写入 `workspace/artifacts/skills/<skill_id>/`，避免污染已安装技能）；规划阶段增加 JSON 轻度漂移兼容、`retry_after_length` 截断重试与 `repair_after_invalid_json` 结构修复重试；流式边界统一去除 `<think>`、压缩中间包装对象，并保证 `step_complete(action=final_answer)` 展示真实合成答案而不是规划模板。
+
+> ✅ **已完成（v1.7）**：框架级技能工具兼容性委派增强。`_filter_tool_incompatible_skills()` 由单返回值 `List` 升级为二元组 `(compatible_skills, incompatible_skills)`，`_resolve_available_skills()` 同步升级返回 Tuple；新增通用技能点名检测方法 `_is_explicitly_requesting_skill_by_id()`，支持中英文混合模式的技能 ID 识别；`_build_capability_gap_delegate_plan()` 新增"工具不兼容技能点名委派"路径：当用户明确点名了某个因工具不足被过滤的系统级技能时，协调型 Agent 自动向 `general_agent` 委派任务，而不是向用户宣称"该技能不存在"。此修复适用于所有协调型 Agent + 所有工具受限技能，为框架通用能力，不绑定任何具体技能 ID 或业务逻辑。

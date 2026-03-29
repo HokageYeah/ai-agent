@@ -125,15 +125,20 @@ graph TD
 
 ## 🧠 技能系统重构（动态加载模式）
 
-当前技能系统已完成从“代码硬注册”向“文件系统动态加载”的升级，核心链路如下：
+当前技能系统已完成从"代码硬注册"向"文件系统动态加载"的升级，核心链路如下：
 
 1. **技能发现**：`SkillManager.discover_skills()` 扫描 Agent 工作区中的 `*/SKILL.md`，默认目录为 `app/skills/skills_md`，也可通过 `.env` 中的 `AGENT_WORKSPACE_DIR` 覆盖，构建轻量元数据索引。  
-2. **混合路由（规则预筛 + LLM 决策）**：`langgraph_executor._route_skills_by_metadata()` 先做规则打分筛选 Top-K，再由 LLM 在候选集中做最终技能决策。  
-3. **动态加权规则**：`skill_boost_rules` 不再写死；系统基于 `skill_id/name/tags/inputs/when_to_use/description` 自动构建关键词加权规则，并对跨技能高频通用词做抑制。  
-4. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文；LLM 决定是否调用技能、调用哪个技能及参数。  
-5. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
-6. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
-7. **安装闭环**：当任务目标是“安装技能”时，系统优先使用内置 `skill_install` 工具，经 `SkillInstallerService` 调用 Skills CLI，将安装结果先落到临时 `CODEX_HOME/skills`，再复制到 Agent 工作区；后续 `SkillManager` 在下一次访问时会自动检测目录变化并重载索引。
+2. **意图门禁过滤**：`_filter_intent_restricted_skills()` 对受限技能（如 skill-creator、dynamic_probe）做意图感知门禁，避免普通任务误召回高影响技能。  
+3. **工具兼容性过滤（二元组）**：`_filter_tool_incompatible_skills()` 返回 `(compatible_skills, incompatible_skills)` 二元组：
+   - `compatible_skills`：当前 Agent 工具满足要求 → 进入规划候选集，对 LLM 可见  
+   - `incompatible_skills`：系统中存在但当前 Agent 工具不足 → 对 LLM **不可见**，但规划层保留引用用于委派检测  
+4. **工具不兼容技能点名委派（框架级）**：若用户明确点名了某个 `incompatible_skills` 中的技能（如"请使用 find-skills 技能"），且当前 Agent 具备 `spawn_agent + general_agent` 委派能力，则直接构造委派计划跳过 LLM 规划，由 `general_agent` 代为执行，而不是向用户宣称"该技能不存在"。此机制适用于所有协调型 Agent 与所有工具受限技能。  
+5. **混合路由（规则预筛 + LLM 决策）**：`langgraph_executor._route_skills_by_metadata()` 先做规则打分筛选 Top-K（仅对 compatible_skills），再由 LLM 在候选集中做最终技能决策。  
+6. **动态加权规则**：`skill_boost_rules` 不再写死；系统基于 `skill_id/name/tags/inputs/when_to_use/description` 自动构建关键词加权规则，并对跨技能高频通用词做抑制。  
+7. **规划阶段**：Planning Prompt 只看到候选技能的元信息，不加载技能正文；LLM 决定是否调用技能、调用哪个技能及参数。  
+8. **执行阶段**：`ExecutionEngine._execute_skill()` 通过 `skill_manager.get_skill()` 懒加载目标技能全文与资源。  
+9. **工具收敛**：技能执行时按 `required_tools/optional_tools`、Agent 工具白名单、敏感工具过滤、用户拒绝工具过滤进行交集收敛，降低工具循环风险。  
+10. **安装闭环**：当任务目标是"安装技能"时，系统优先使用内置 `skill_install` 工具，经 `SkillInstallerService` 调用 Skills CLI，将安装结果先落到临时 `CODEX_HOME/skills`，再复制到 Agent 工作区；后续 `SkillManager` 在下一次访问时会自动检测目录变化并重载索引。
 
 > 说明：详细重构方案见 [docs/skills_reload.md](docs/skills_reload.md)。
 
@@ -144,7 +149,7 @@ graph TD
 - **安装优先走结构化工具**：安装技能时不再推荐让 LLM 自由拼接 `shell_exec` 命令，而是优先使用 `skill_install` 工具。
 - **兼容历史命令**：若历史记忆或用户输入中仍出现 `npx skills install ...`，安装服务会自动规范化为 `npx skills add ...` 后再执行。
 - **与动态加载衔接**：技能被复制到工作区后，不需要手动改代码；`SkillManager` 会在下一次 `list_skill_metadata()` / `load_skill()` 时自动感知目录变化并刷新索引。
-- **分离原因**：技能一旦安装完成，默认应视为稳定输入；运行态产物外置到 `workspace/artifacts`，可以避免技能源码被污染，降低“技能安装后又被执行过程改写”的架构风险。
+- **分离原因**：技能一旦安装完成，默认应视为稳定输入；运行态产物外置到 `workspace/artifacts`，可以避免技能源码被污染，降低"技能安装后又被执行过程改写"的架构风险。
 
 ```mermaid
 flowchart TD

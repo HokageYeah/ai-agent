@@ -43,7 +43,8 @@ class InferenceConfig:
         system_prompt: Optional[str] = None,
         context: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        provider: Optional[str] = None  # 强制指定供应商
+        provider: Optional[str] = None,  # 强制指定供应商
+        tool_call_callback: Optional[Any] = None,  # 工具调用回调，用于在推理层工具调用时通知上层（如规划阶段 SSE 推送）
     ):
         """
         初始化推理配置
@@ -57,6 +58,10 @@ class InferenceConfig:
             context: 上下文信息
             tools: 可用工具定义
             provider: 强制指定供应商 (可选)
+            tool_call_callback: 可选的工具调用通知回调。
+                签名：async def callback(tool_name: str, params: dict, result: dict, success: bool) -> None
+                在工具调用循环每次执行工具后调用，供上层（如规划引擎）向前端推送进度事件。
+                不传或为 None 时不生效，保持向后兼容。
         """
         resolved_provider = (provider or "").strip().lower()
         self.model = model or get_default_model(
@@ -69,6 +74,9 @@ class InferenceConfig:
         self.context = context or []
         self.tools = tools or []
         self.provider = provider
+        # 工具调用回调：在规划 LLM 内部工具调用循环时，通知上层发送 SSE 事件
+        # 这是解决"规划阶段工具调用不可见"问题的关键扩展点，不影响原有推理流程
+        self.tool_call_callback = tool_call_callback
         
         logger.info(
             f"{Fore.BLUE}创建推理配置: model={self.model}, stream={stream}, "
@@ -300,12 +308,16 @@ class InferenceEngine:
                     f"tool_gateway={type(self._tool_gateway).__name__}, "
                     f"tools_count={len(config.tools)}{Style.RESET_ALL}"
                 )
+                # 将 config 中的 tool_call_callback 传递到工具调用循环。
+                # 这样规划引擎可以在 config 中注入回调，当规划 LLM 内部调用工具时，
+                # 框架能够主动向前端推送 SSE 事件，让用户看到规划阶段的工具进度。
                 raw_response, prompt_messages = await self._handle_tool_calling_loop(
                     initial_response=raw_response,
                     messages=prompt_messages,
                     provider=provider,
                     provider_config=provider_config,
-                    request_id=request_id
+                    request_id=request_id,
+                    tool_call_callback=getattr(config, "tool_call_callback", None),
                 )
             else:
                 if self._tool_gateway is None:
@@ -416,7 +428,8 @@ class InferenceEngine:
         messages: List[Dict[str, Any]],
         provider: LLMProvider,
         provider_config: Dict[str, Any],
-        request_id: str
+        request_id: str,
+        tool_call_callback: Optional[Any] = None,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         工具调用循环处理器（Tool Calling Loop）
@@ -436,6 +449,10 @@ class InferenceEngine:
             provider: LLM 供应商实例
             provider_config: 供应商配置参数
             request_id: 请求 ID（用于日志追踪）
+            tool_call_callback: 可选的工具调用通知回调。
+                当规划引擎通过 InferenceConfig 注入该回调时，
+                每次工具执行完成后都会调用它，使上层得以向前端推送 SSE 进度事件。
+                签名：async def cb(tool_name: str, params: dict, result: dict, success: bool) -> None
             
         Returns:
             Tuple[最终 LLM 响应, 更新后的消息列表]
@@ -503,6 +520,36 @@ class InferenceEngine:
                 f"{Fore.GREEN}[{request_id}] ✅ 工具调用执行完成，共 {len(tool_results)} 个结果{Style.RESET_ALL}"
             )
             
+            # ── 步骤 B.5: 若上层注入了工具调用回调，则通知上层每个工具的执行结果 ──
+            # 这是规划阶段 SSE 事件推送的核心扩展点：
+            # - 规划引擎可通过 InferenceConfig.tool_call_callback 注入回调；
+            # - 当规划 LLM 内部调用工具时（如 search、browser），此处会触发回调；
+            # - 上层回调负责向前端推送 SSE 事件，让用户看到规划阶段的工具进度；
+            # - 回调失败不影响主流程（异常被捕获并忽略）。
+            if tool_call_callback is not None:
+                for tool_result in tool_results:
+                    try:
+                        result_content = tool_result.to_dict().get("content", "")
+                        success = tool_result.status.value == "success"
+                        if asyncio.iscoroutinefunction(tool_call_callback):
+                            await tool_call_callback(
+                                tool_name=tool_result.tool_name,
+                                params={},
+                                result=result_content,
+                                success=success,
+                            )
+                        else:
+                            tool_call_callback(
+                                tool_name=tool_result.tool_name,
+                                params={},
+                                result=result_content,
+                                success=success,
+                            )
+                    except Exception as cb_exc:
+                        logger.debug(
+                            f"{Fore.YELLOW}[{request_id}] 工具调用回调执行异常（不影响主流程）: {cb_exc}{Style.RESET_ALL}"
+                        )
+
             # ── 步骤 C: 将工具执行结果追加到对话历史 ───────────────────────
             # 每个工具结果对应一条 role=tool 的消息，包含 tool_call_id 和执行内容
             for tool_result in tool_results:
