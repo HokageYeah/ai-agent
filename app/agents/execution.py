@@ -120,6 +120,53 @@ class ExecutionEngine:
                 f"运行时将回退内置提示词{Style.RESET_ALL}"
             )
 
+    @staticmethod
+    def _collect_failed_step_results(step_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        收集本轮失败步骤（排除 final_answer 自身）。
+
+        设计原因：
+        - 规划里的 final_answer 可能仍是乐观模板；
+        - 若前序工具/技能已失败，再沿用“已成功安装”之类模板，会把最终答案、
+          反思输入和错误判断一起带偏。
+        """
+        return [
+            step_result
+            for step_result in (step_results or [])
+            if isinstance(step_result, dict)
+            and step_result.get("action") != "final_answer"
+            and step_result.get("success") is False
+        ]
+
+    @staticmethod
+    def _build_failed_execution_message(step_results: List[Dict[str, Any]]) -> str:
+        """
+        为失败链路构造稳定、可观测的最终结果文案。
+
+        这里明确输出“任务未完成”，避免把规划阶段的成功模板继续传给后续链路。
+        """
+        failed_steps = ExecutionEngine._collect_failed_step_results(step_results)
+        if not failed_steps:
+            return "执行过程中出现错误，任务未完成。"
+
+        details: List[str] = []
+        for step_result in failed_steps[:3]:
+            label = (
+                step_result.get("tool_name")
+                or step_result.get("skill_id")
+                or step_result.get("agent_id")
+                or step_result.get("action")
+                or "未知步骤"
+            )
+            error_text = str(step_result.get("error") or "未知错误").strip() or "未知错误"
+            details.append(f"{label}: {error_text}")
+
+        suffix = ""
+        if len(failed_steps) > 3:
+            suffix = f" 等 {len(failed_steps)} 个失败步骤"
+
+        return "执行过程中出现错误，任务未完成。失败详情：" + "；".join(details) + suffix
+
     def _truncate_tool_error_text(self, value: Any, limit: int = 240) -> str:
         """
         截断工具错误文本，避免错误摘要把上下文挤爆。
@@ -706,6 +753,7 @@ class ExecutionEngine:
                 # 如果是 final_answer，先合成再返回
                 if step.action == "final_answer":
                     template = step.params.get("content", "")
+                    failed_step_results = self._collect_failed_step_results(step_results)
                     
                     # 收集本轮所有成功的工具/技能/委派结果（排除 final_answer 步骤本身）
                     tool_results = [
@@ -745,7 +793,13 @@ class ExecutionEngine:
                     # 获取会话历史上下文（用于兜底合成）
                     context_messages = (context or {}).get("context_messages", [])
                     
-                    if bool(tool_results):
+                    if failed_step_results:
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行引擎] 检测到本轮存在 {len(failed_step_results)} 个失败步骤，"
+                            f"final_answer 不再沿用规划模板，改为输出失败摘要{Style.RESET_ALL}"
+                        )
+                        final_result = self._build_failed_execution_message(step_results)
+                    elif bool(tool_results):
                         # 情况A：有前置工具结果 → 用工具结果驱动 LLM 合成
                         logger.info(
                             f"{Fore.BLUE}[执行引擎] 存在工具/委派执行结果，"
@@ -815,13 +869,29 @@ class ExecutionEngine:
             # 如果没有 final_answer，使用最后一个步骤的结果
             if final_result is None and step_results:
                 final_result = step_results[-1].get("result", "")
+
+            failed_step_results = self._collect_failed_step_results(step_results)
+            overall_success = not failed_step_results
+            overall_error = None
+            if failed_step_results:
+                overall_error = self._build_failed_execution_message(step_results)
+                if not final_result:
+                    final_result = overall_error
+                logger.warning(
+                    f"{Fore.YELLOW}[执行引擎] 计划执行结束，但存在 {len(failed_step_results)} 个失败步骤，"
+                    f"整体标记为 success=False{Style.RESET_ALL}"
+                )
             
-            logger.info(f"{Fore.GREEN}计划执行成功{Style.RESET_ALL}")
+            if overall_success:
+                logger.info(f"{Fore.GREEN}计划执行成功{Style.RESET_ALL}")
+            else:
+                logger.warning(f"{Fore.YELLOW}计划执行完成，但任务未成功达成{Style.RESET_ALL}")
             
             return ExecutionResult(
-                success=True,
+                success=overall_success,
                 result=final_result,
                 step_results=step_results,
+                error=overall_error,
                 user_rejected_tools=user_rejected_tools
             )
             

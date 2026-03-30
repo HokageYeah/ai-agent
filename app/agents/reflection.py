@@ -122,10 +122,11 @@ class ReflectionEngine:
         logger.info(
             f"{Fore.BLUE}开始反思任务执行结果{Style.RESET_ALL}"
         )
+        derived_exec_success = self._derive_execution_success(execution_result)
         # todo 一会解开注释
         # logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
         logger.info(
-            f"{Fore.CYAN}执行状态: {'成功' if execution_result.success else '失败'}{Style.RESET_ALL}"
+            f"{Fore.CYAN}执行状态: {'成功' if derived_exec_success else '失败'}{Style.RESET_ALL}"
         )
         
         # 查看是否携带错误上下文（多步骤失败场景）
@@ -227,11 +228,32 @@ class ReflectionEngine:
             #       - 执行成功 → success=True, needs_replanning=False（避免无效重试）
             #       - 执行失败 → success=False, needs_replanning=True（允许重试）
             return ReflectionResult(
-                success=execution_result.success,
-                needs_replanning=not execution_result.success,
+                success=derived_exec_success,
+                needs_replanning=not derived_exec_success,
                 feedback=f"反思 LLM 调用异常: {str(e)}",
-                summary=f"执行{'成功' if execution_result.success else '失败'}（反思无法完成）"
+                summary=f"执行{'成功' if derived_exec_success else '失败'}（反思无法完成）"
             )
+
+    def _build_reflection_result_preview(
+        self,
+        execution_result: Optional[ExecutionResult],
+        *,
+        derived_success: bool,
+    ) -> str:
+        """
+        构造传给反思提示词的“整体结果”预览。
+
+        当存在未恢复失败步骤时，显式提醒 LLM：当前结果只是临时输出，
+        不能把其中的成功措辞直接当成任务已完成。
+        """
+        preview = str(getattr(execution_result, "result", "") or "")[:300]
+        if preview and not derived_success:
+            return (
+                "注意：本轮存在未恢复的失败步骤，以下整体结果仅代表临时输出，"
+                "不能视为任务已成功完成。\n"
+                + preview
+            )
+        return preview
     
     def _build_reflection_system_prompt(self) -> str:
         """
@@ -253,6 +275,7 @@ class ReflectionEngine:
         这里只需补充说明整体执行状态和要求进行反思。
         """
         error_lines: List[str] = []
+        derived_success = self._derive_execution_success(execution_result)
         if error_context:
             for idx, err in enumerate(error_context, 1):
                 step_desc = err.get("step_desc", "未知步骤")
@@ -266,8 +289,11 @@ class ReflectionEngine:
 
         return self.prompt_manager.render_prompt(
             "iteration_trigger_with_errors",
-            execution_status="成功" if execution_result.success else "失败",
-            overall_result=str(execution_result.result)[:300],
+            execution_status="成功" if derived_success else "失败",
+            overall_result=self._build_reflection_result_preview(
+                execution_result,
+                derived_success=derived_success,
+            ),
             has_errors=bool(error_context),
             error_count=len(error_context) if error_context else 0,
             error_details="\n".join(error_lines),
@@ -293,6 +319,7 @@ class ReflectionEngine:
         logger.debug(f"{Fore.CYAN}构建反思 Prompt{Style.RESET_ALL}")
 
         error_lines: List[str] = []
+        derived_success = self._derive_execution_success(execution_result)
         if error_context:
             for idx, err in enumerate(error_context, 1):
                 step_desc = err.get("step_desc", "未知步骤")
@@ -310,8 +337,11 @@ class ReflectionEngine:
         return self.prompt_manager.render_prompt(
             "legacy_reflection_with_task",
             task=task,
-            execution_status="成功" if execution_result.success else "失败",
-            final_result=execution_result.result,
+            execution_status="成功" if derived_success else "失败",
+            final_result=self._build_reflection_result_preview(
+                execution_result,
+                derived_success=derived_success,
+            ),
             step_count=len(execution_result.step_results),
             error_message=execution_result.error if execution_result.error else "无",
             has_errors=bool(error_context),

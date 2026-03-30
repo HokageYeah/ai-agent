@@ -38,15 +38,19 @@ from colorama import Fore, Style
 class PythonExecutorTool(Tool):
     """
     Python 代码执行工具
-    
+
     继承自 Tool 抽象基类，提供安全的 Python 代码执行能力。
-    
+
+    planning_safe = False：
+        代码执行结果不确定，可能包含文件 I/O、网络调用或进程操作等副作用，
+        必须在 Execution Node 内执行，Reflection 才能正确评估。
+
     安全设计：
     1. 使用受限的全局和局部命名空间
     2. 禁用危险模块（os、sys、subprocess 等）
     3. 超时控制，防止无限循环
     4. 捕获所有异常，返回结构化错误
-    
+
     允许的模块：
     - math: 数学运算
     - random: 随机数生成
@@ -57,11 +61,14 @@ class PythonExecutorTool(Tool):
     - itertools: 迭代工具
     - functools: 函数工具
     - statistics: 统计函数
-    
+
     属性：
         name: 工具名称，固定为 "python_executor"
         description: 工具描述
     """
+
+    # 有副作用——代码执行结果不确定，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
     
     # 允许导入的安全模块白名单
     _ALLOWED_MODULES = {

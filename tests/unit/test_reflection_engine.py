@@ -256,3 +256,36 @@ async def test_reflection_engine_build_prompt():
     assert "Test task" in prompt
     assert "成功" in prompt or "Completed" in prompt
     assert "JSON" in prompt
+
+
+@pytest.mark.asyncio
+async def test_reflection_trigger_should_use_derived_failure_status_for_failed_steps():
+    """即便 execution_result.success=True，只要存在失败步骤，反思触发词也应标记为失败。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    execution_result = ExecutionResult(
+        success=True,
+        result="已成功安装 AI/科技类新闻技能 ai-news-zh（安装次数 21）。",
+        step_results=[
+            {"action": "tool", "tool_name": "skill_install", "success": False, "error": "package 不能为空"}
+        ],
+        error=None,
+    )
+
+    trigger = reflection_engine._build_reflection_trigger(
+        execution_result=execution_result,
+        error_context=[
+            {
+                "step_desc": "工具调用: skill_install",
+                "error_msg": "package 不能为空",
+                "error_type": "ToolError",
+                "suggestion": "检查安装参数",
+            }
+        ],
+    )
+
+    assert "当前轮执行状态: 失败" in trigger
+    assert "不能视为任务已成功完成" in trigger

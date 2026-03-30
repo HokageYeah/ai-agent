@@ -12,8 +12,11 @@ import pytest
 from app.agents.base import Agent, AgentConfig
 from app.agents.planning import Plan, PlanStep
 from app.agents.execution import ExecutionEngine, ExecutionResult
+from app.llm_hub.tool_gateway import ToolCallingGateway
 from app.tools.hub import ToolHub
 from app.tools.base import Tool, ToolSchema
+from app.tools.builtin.shell import ShellExecutorTool
+from app.tools.builtin.skill import SkillInstallTool
 from app.skills.base import Skill
 from app.skills.manager import SkillManager
 from app.core.llm_mock import MockLLM
@@ -99,6 +102,36 @@ class EchoParamsTool(Tool):
 
     async def execute(self, params: dict):
         return params
+
+
+class StubSkillInstaller:
+    """
+    统一安装服务桩对象。
+
+    设计原因：
+    - 当前问题的真实链路是 ExecutionEngine -> ToolCallingGateway ->
+      skill_install / shell_exec -> SkillInstallerService；
+    - 因此这里需要一个可观测的公共桩，验证“参数是否被兼容层正确收口”，
+      而不是只验证某个工具函数的局部返回值。
+    """
+
+    def __init__(self):
+        self.calls = []
+        self.timeout_seconds = 60
+
+    async def install(self, package, skill_name=None, overwrite=False):
+        self.calls.append(
+            {
+                "package": package,
+                "skill_name": skill_name,
+                "overwrite": overwrite,
+            }
+        )
+        return {
+            "success": True,
+            "message": "技能已安装到项目工作区",
+            "installed_path": f"/tmp/{skill_name or 'auto-skill'}",
+        }
 
 
 @pytest.mark.asyncio
@@ -266,9 +299,10 @@ async def test_execution_engine_nonexistent_tool():
     result = await execution_engine.execute_plan(agent, plan)
     
     # 验证结果
-    assert result.success is True  # 计划可以继续执行
+    assert result.success is False
     assert result.step_results[0]["success"] is False  # 但步骤失败
     assert "不存在" in result.step_results[0]["error"]
+    assert "任务未完成" in result.result
 
 
 @pytest.mark.asyncio
@@ -304,9 +338,170 @@ async def test_execution_engine_should_propagate_tool_payload_failure():
 
     result = await execution_engine.execute_plan(agent, plan)
 
-    assert result.success is True
+    assert result.success is False
     assert result.step_results[0]["success"] is False
     assert "业务失败示例" in result.step_results[0]["error"]
+    assert "任务未完成" in result.result
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_gateway_path_should_normalize_skill_install_aliases():
+    """
+    经过 ToolCallingGateway 的直调链路，也应兼容安装参数别名漂移。
+
+    覆盖线上真实故障：
+    - direct tool call 参数是 `{"source": "...", "skill_id": "..."}`
+    - 网关会 skip_validation=True，直接把参数交给工具 execute()
+    - 若兼容逻辑只停留在某个局部调用点，就会在真实执行链路里再次报
+      “package 不能为空”
+    """
+    tool_hub = ToolHub()
+    installer = StubSkillInstaller()
+    skill_install_tool = SkillInstallTool(installer=installer)
+    tool_hub.register_tool(skill_install_tool)
+
+    gateway = ToolCallingGateway()
+    gateway.register_tool(
+        skill_install_tool.name,
+        skill_install_tool,
+        skill_install_tool.schema.parameters,
+    )
+
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+        tool_gateway=gateway,
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+        available_tools=["skill_install"],
+    )
+    step = PlanStep(
+        action="tool",
+        tool_name="skill_install",
+        params={
+            "source": "inferen-sh/skills@newsletter-curation",
+            "skill_id": "newsletter-curation",
+        },
+    )
+
+    result = await execution_engine._execute_tool(step, agent=agent, context={})
+
+    assert result["success"] is True
+    assert result["result"]["success"] is True
+    assert installer.calls == [
+        {
+            "package": "inferen-sh/skills@newsletter-curation",
+            "skill_name": "newsletter-curation",
+            "overwrite": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_gateway_path_should_proxy_raw_skills_add_to_installer():
+    """
+    经过 ToolCallingGateway 的 shell_exec 直调链路，也应收口到统一安装服务。
+
+    覆盖线上真实故障：
+    - 当模型 fallback 到 `shell_exec("npx skills add ...")`
+    - 若没有在 Shell 工具公共层做代理，网关只会看到一个长时间阻塞的命令，
+      最终报 `Tool execution timed out (>300.0s)`
+    """
+    tool_hub = ToolHub()
+    installer = StubSkillInstaller()
+    shell_tool = ShellExecutorTool(skill_installer=installer)
+    tool_hub.register_tool(shell_tool)
+
+    gateway = ToolCallingGateway()
+    gateway.register_tool(shell_tool.name, shell_tool, shell_tool.schema.parameters)
+
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+        tool_gateway=gateway,
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+        available_tools=["shell_exec"],
+    )
+    step = PlanStep(
+        action="tool",
+        tool_name="shell_exec",
+        params={
+            "command": "npx skills add inferen-sh/skills@newsletter-curation 2>&1 || echo 'INSTALL_FAILED'",
+        },
+    )
+
+    result = await execution_engine._execute_tool(step, agent=agent, context={})
+
+    assert result["success"] is True
+    assert result["result"]["success"] is True
+    assert result["result"]["proxied_to_skill_install"] is True
+    assert installer.calls == [
+        {
+            "package": "inferen-sh/skills@newsletter-curation",
+            "skill_name": None,
+            "overwrite": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_should_not_expose_success_template_after_failed_step():
+    """当前序步骤失败时，final_answer 不应继续输出规划里的成功模板。"""
+    tool_hub = ToolHub()
+    tool_hub.register_tool(PayloadFailTool())
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role"
+    )
+
+    plan = Plan(
+        steps=[
+            PlanStep(action="tool", tool_name="payload_fail_tool", params={}),
+            PlanStep(action="final_answer", content="已成功安装目标技能"),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(agent, plan)
+
+    assert result.success is False
+    assert result.result != "已成功安装目标技能"
+    assert "payload_fail_tool" in result.result
+    assert "业务失败示例" in result.result
+    assert result.step_results[1]["result"] == result.result
 
 
 @pytest.mark.asyncio

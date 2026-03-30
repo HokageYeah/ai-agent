@@ -18,7 +18,17 @@ from app.tools.base import Tool, ToolSchema
 
 
 class SkillInstallTool(Tool):
-    """将外部技能包安装到项目工作区。"""
+    """
+    将外部技能包安装到项目工作区。
+
+    planning_safe = False：
+        安装操作会在磁盘落地文件（SKILL.md 目录），属于不可逆副作用。
+        必须在 Execution Node 内执行，以便 Reflection 引擎能观察到安装结果，
+        避免 Planning 阶段完成安装后 Reflection 误判"未安装"而触发无效重规划。
+    """
+
+    # 有副作用——磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,
@@ -70,10 +80,126 @@ class SkillInstallTool(Tool):
             },
         )
 
+    @staticmethod
+    def _pick_first_non_empty(
+        params: Dict[str, Any],
+        candidate_keys: list[str],
+    ) -> tuple[str, Optional[str]]:
+        """
+        从一组候选字段中选出第一个非空值。
+
+        设计原因：
+        - direct tool call 会跳过严格 schema 校验；
+        - LLM 在安装类任务中经常把 `package` 漂移写成 `reference`、`skill_id`
+          或 `package_ref`；
+        - 因此兼容逻辑应沉淀在工具层，而不是散落在各个调用点。
+        """
+        for key in candidate_keys:
+            value = params.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text, key
+        return "", None
+
+    @staticmethod
+    def _coerce_bool(value: Any) -> bool:
+        """把 LLM 常见的布尔漂移值统一归一化为 bool。"""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", ""}:
+            return False
+        return bool(value)
+
+    def _normalize_install_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        归一化技能安装参数，兼容规划阶段常见的字段别名漂移。
+
+        线上已观测到的真实案例：
+        - `package` 被写成 `reference`
+        - `package` 被写成 `source`
+        - `skill_name` 被写成 `skill_id`
+        """
+        raw_params = dict(params or {})
+
+        package, package_source = self._pick_first_non_empty(
+            raw_params,
+            [
+                "package",
+                "reference",
+                "source",
+                "package_ref",
+                "package_source",
+                "install_ref",
+                "skill_reference",
+                "install_source",
+                "ref",
+                "uri",
+                "url",
+                "repo",
+                "command",
+            ],
+        )
+        skill_name, skill_name_source = self._pick_first_non_empty(
+            raw_params,
+            [
+                "skill_name",
+                "target_skill",
+                "skill_id",
+                "name",
+                "slug",
+            ],
+        )
+
+        # 若 LLM 只给了 skill_id / slug，没有给 package，也允许继续走安装服务。
+        if not package:
+            package, package_source = self._pick_first_non_empty(
+                raw_params,
+                ["skill_id", "skill_name", "name", "slug"],
+            )
+
+        overwrite_source = "overwrite"
+        overwrite_value: Any = raw_params.get("overwrite")
+        if overwrite_value is None:
+            for alias in ("force", "replace"):
+                if alias in raw_params:
+                    overwrite_value = raw_params.get(alias)
+                    overwrite_source = alias
+                    break
+
+        alias_notes = []
+        if package_source and package_source != "package":
+            alias_notes.append(f"package<-{package_source}")
+        if skill_name_source and skill_name_source != "skill_name":
+            alias_notes.append(f"skill_name<-{skill_name_source}")
+        if overwrite_source != "overwrite":
+            alias_notes.append(f"overwrite<-{overwrite_source}")
+
+        return {
+            "package": package,
+            "skill_name": skill_name or None,
+            "overwrite": self._coerce_bool(overwrite_value),
+            "alias_notes": alias_notes,
+        }
+
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        package = str(params.get("package") or "").strip()
-        skill_name = str(params.get("skill_name") or "").strip() or None
-        overwrite = bool(params.get("overwrite", False))
+        normalized = self._normalize_install_params(params)
+        package = normalized["package"]
+        skill_name = normalized["skill_name"]
+        overwrite = normalized["overwrite"]
+
+        if normalized["alias_notes"]:
+            logger.info(
+                f"{Fore.CYAN}[SkillInstallTool] 检测到安装参数别名漂移，已自动归一化 | "
+                f"aliases={normalized['alias_notes']} | raw_keys={sorted((params or {}).keys())}"
+                f"{Style.RESET_ALL}"
+            )
 
         if not package:
             logger.warning(

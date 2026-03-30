@@ -35,16 +35,18 @@ MessageRole = Literal["system", "user", "assistant", "tool"]
 
 # 记忆条目类型（存储在 meta 中，用于过滤/调试，不传给 LLM）
 EntryType = Literal[
-    "plan",           # 规划产出快照
-    "tool_call",      # 工具调用 assistant 发起消息
-    "tool_result",    # 工具调用 tool 返回结果
-    "skill_call",     # 技能调用 assistant 发起
-    "skill_result",   # 技能调用结果
-    "delegate",       # 子 Agent 委派说明
-    "delegate_result",# 子 Agent 返回摘要
-    "user_action",    # 用户确认/拒绝操作
-    "reflection",     # 反思结论
-    "error",          # 错误记录（注入 tool_result 中体现）
+    "plan",             # 规划产出快照
+    "tool_call",        # 执行阶段工具调用 assistant 发起消息
+    "tool_result",      # 执行阶段工具调用 tool 返回结果
+    "plan_tool_call",   # 规划阶段工具调用 assistant 发起消息（planning tool-calling loop 产生）
+    "plan_tool_result", # 规划阶段工具调用 tool 返回结果（与 plan_tool_call 配对）
+    "skill_call",       # 技能调用 assistant 发起
+    "skill_result",     # 技能调用结果
+    "delegate",         # 子 Agent 委派说明
+    "delegate_result",  # 子 Agent 返回摘要
+    "user_action",      # 用户确认/拒绝操作
+    "reflection",       # 反思结论
+    "error",            # 错误记录（注入 tool_result 中体现）
 ]
 
 
@@ -309,6 +311,114 @@ class AgentRunMemory:
         logger.debug(
             f"{Fore.CYAN}[记忆写入] write_tool_call: tool={tool_name} "
             f"{status_text}, iteration={iteration}{Style.RESET_ALL}"
+        )
+
+    def write_planning_tool_call(
+        self,
+        iteration: int,
+        tool_name: str,
+        tool_args: dict,
+        tool_result: Any,
+        success: bool,
+        error_msg: str = "",
+        call_id: Optional[str] = None,
+    ) -> None:
+        """
+        记录规划阶段工具调用（planning tool-calling loop 内产生的工具交互）
+
+        为什么需要独立于 write_tool_call()：
+          - Planning 阶段的 LLM 在生成 JSON 计划前，会进入 tool-calling loop 调用只读工具
+            （如 search、http_request）来主动搜集信息。
+          - 这些调用的结果以前完全不写入 run_memory，导致 Reflection 存在信息盲区：
+              若 LLM 在规划 loop 中调用了某工具并拿到结果，Reflection 看不到，
+              可能误判"未完成"触发多余重规划，或无法正确理解规划期间积累的上下文。
+          - 写入后，Reflection 的 build_messages_for_reflection() 会通过
+            `iteration <= current_iteration` 条件自动包含这些消息，消除信息盲区。
+          - 使用独立的 entry_type="plan_tool_call" / "plan_tool_result" 标记，
+            便于调试时区分规划阶段与执行阶段的工具调用，但对 LLM 完全透明（meta 不传给 LLM）。
+
+        消息格式与 write_tool_call() 完全一致（OpenAI Function Calling 配对格式），
+        LLM 在 Reflection 时会将其理解为"发生在规划阶段的信息搜集"，有助于准确评估任务状态。
+
+        Args:
+            iteration:    当前迭代轮次（0-indexed）
+            tool_name:    工具名称（如 search、http_request）
+            tool_args:    工具入参字典
+            tool_result:  工具返回结果（任意类型）
+            success:      工具调用是否成功
+            error_msg:    失败时的错误说明（可选）
+            call_id:      工具调用 ID，不传时自动生成
+        """
+        call_id = call_id or f"ptc_{uuid.uuid4().hex[:10]}"
+
+        # ── 1. assistant 发起规划阶段工具调用 ─────────────────────────────────
+        args_str = json.dumps(tool_args, ensure_ascii=False, default=str)
+        if len(args_str) > 500:
+            args_str = args_str[:500] + "...}"
+
+        self._messages.append(AgentMemoryMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": args_str
+                }
+            }],
+            meta={
+                "iteration": iteration,
+                "entry_type": "plan_tool_call",
+                "tool_name": tool_name,
+                "success": success,
+                "timestamp": time.time(),
+                # 标记来源，调试时区分规划阶段 vs 执行阶段工具调用
+                "phase": "planning",
+            }
+        ))
+
+        # ── 2. tool 返回规划阶段工具结果 ─────────────────────────────────────
+        if isinstance(tool_result, (dict, list)):
+            result_str = json.dumps(tool_result, ensure_ascii=False, default=str)
+        else:
+            result_str = str(tool_result) if tool_result is not None else ""
+
+        if not success:
+            error_parts: list[str] = []
+            display_msg = str(error_msg or "").strip()
+            if display_msg:
+                error_parts.append(display_msg)
+            normalized_result = result_str.strip()
+            if normalized_result and normalized_result != display_msg:
+                error_parts.append(f"工具返回详情: {normalized_result}")
+            combined_error = "\n".join(part for part in error_parts if part).strip()
+            result_str = f"[ERROR] {combined_error or '规划阶段工具执行失败'}"
+
+        # 控制结果长度，避免 Prompt 爆长（规划阶段返回可能较长，适当截断）
+        if len(result_str) > 1500:
+            result_str = result_str[:1500] + "\n...（规划阶段工具结果已截断）"
+
+        self._messages.append(AgentMemoryMessage(
+            role="tool",
+            tool_call_id=call_id,
+            name=tool_name,
+            content=result_str,
+            meta={
+                "iteration": iteration,
+                "entry_type": "plan_tool_result",
+                "tool_name": tool_name,
+                "success": success,
+                "timestamp": time.time(),
+                "phase": "planning",
+            }
+        ))
+
+        status_text = "成功" if success else "失败"
+        logger.debug(
+            f"{Fore.CYAN}[记忆写入] write_planning_tool_call: "
+            f"tool={tool_name} {status_text}, iteration={iteration} "
+            f"(规划阶段工具调用已持久化至 run_memory){Style.RESET_ALL}"
         )
 
     def write_skill_call(
@@ -669,7 +779,13 @@ class AgentRunMemory:
         messages.append({"role": "user", "content": f"任务目标: {self.task}"})
 
         # ── 第四步：注入当前轮的执行记录（含工具调用结果，排除反思自身）──
-        # 包含当前轮的执行记录，但排除当前轮的 reflection 消息自身
+        # 包含范围：iteration <= current_iteration 的所有记录，排除当前轮的 reflection 本身。
+        # 这包括了：
+        #   - plan（规划产出快照）
+        #   - plan_tool_call / plan_tool_result（规划阶段工具调用，消除 Reflection 信息盲区）
+        #   - tool_call / tool_result（执行阶段工具调用）
+        #   - skill_call / skill_result / delegate / delegate_result / user_action
+        #   - 历史轮的 reflection（前几轮的反思结论，助力持续改进）
         # 为什么排除当前轮 reflection：反思评估是这次调用要产出的结果，不能作为输入
         history_msgs = [
             m.to_openai_dict()
@@ -681,11 +797,23 @@ class AgentRunMemory:
             )
         ]
 
+        # 统计各 entry_type 数量，便于调试时确认规划阶段工具调用是否已被注入
+        # 使用与上方相同的过滤条件，O(n) 复杂度，不重复扫描
+        entry_type_summary: dict[str, int] = {}
+        for m in self._messages:
+            if m.meta.get("iteration", 9999) <= current_iteration and not (
+                m.meta.get("iteration") == current_iteration
+                and m.meta.get("entry_type") == "reflection"
+            ):
+                et = m.meta.get("entry_type", "unknown")
+                entry_type_summary[et] = entry_type_summary.get(et, 0) + 1
+
         if history_msgs:
             messages.extend(history_msgs)
             logger.info(
                 f"{Fore.CYAN}[记忆读取] 反思引擎注入 {len(history_msgs)} 条记忆消息 "
-                f"(iteration <= {current_iteration}, 排除当前轮 reflection){Style.RESET_ALL}"
+                f"(iteration <= {current_iteration}, 排除当前轮 reflection) "
+                f"| 类型分布: {entry_type_summary}{Style.RESET_ALL}"
             )
 
         messages.append({"role": "user", "content": trigger_prompt})

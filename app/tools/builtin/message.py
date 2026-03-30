@@ -121,10 +121,18 @@ class MessageAgentTool(Tool):
     允许 Agent 在执行任务的过程中主动向用户发起消息沟通。
     支持通知、请求输入、请求确认、请求选择等多种模式，执行引擎会根据消息类型自动挂起并等待用户反馈。
 
+    planning_safe = False：
+        发送消息会触发前端 SSE 推送及用户输入挂起等外部交互，属于可感知副作用；
+        在 Planning 阶段调用会打断规划流程并引起用户困惑，
+        必须在 Execution Node 内执行。
+
     属性：
         name: 工具名称，固定为 "send_message"
         description: 工具描述
     """
+
+    # 有副作用——触发外部消息推送，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(self, stream_callback: Optional[Callable] = None):
         """

@@ -192,15 +192,32 @@ flowchart TD
     NewPlan --> E
 ```
 
-### 核心防线：工具 Schema 白名单过滤
+### 核心防线：工具 Schema 双层过滤 + Reflection 信息补全
 
-**根本性机制**：规划引擎在向 LLM 传递 function calling 工具列表时，**只传入该 Agent 有权限使用的工具 Schema**。这从根源上杜绝了 LLM 规划禁用工具的可能：
+**规划引擎向 LLM 传递 function calling 工具列表时，执行两层独立过滤**，同时将规划阶段工具调用结果写入 `run_memory`，消除 Reflection 信息盲区：
+
+**第一层：Agent 白名单过滤**（"是否授权给该 Agent"）
 
 | 位置                    | 机制                                                      | 效果                             |
 | ----------------------- | --------------------------------------------------------- | -------------------------------- |
-| `planning.py`           | `available_tools` 白名单过滤全量 `tool_hub.get_schemas()` | LLM 完全看不到禁用工具           |
+| `planning.py`           | `available_tools` 白名单过滤全量 `tool_hub.get_schemas()` | LLM 完全看不到未授权工具         |
 | `reflection.py`         | 同上，`reflect()` 增加 `available_tools` 参数             | 反思阶段也不会建议使用禁用工具   |
 | `langgraph_executor.py` | `_analyze_errors()` 生成结构化根因分析                    | 为重规划提供准确的错误原因与建议 |
+
+**第二层：`planning_safe` 副作用过滤**（"是否允许在规划 loop 中直接调用"）
+
+规划 LLM 在生成 JSON 计划前，会进入内部 tool-calling loop 调用工具搜集信息。第二层过滤只允许无副作用的只读工具进入该 loop，防止副作用工具绕过 Execution Node 在规划阶段被直接执行：
+
+| `planning_safe` 值 | 含义                             | 代表工具                                                              |
+| ------------------ | -------------------------------- | --------------------------------------------------------------------- |
+| `True`（默认）     | 只读探查工具，可在规划 loop 调用 | `search`、`http_request`、`file_read`、`list_dir`、`calculator`       |
+| `False`            | 有副作用，只能在执行阶段调用     | `skill_install`、`shell_exec`、`file_write`、`python_executor`、`browser`、`send_message`、`spawn_agent` |
+
+> 新增工具时，若有磁盘写入、命令执行、网络写入等副作用，必须在工具类上声明 `planning_safe: bool = False`。
+
+**规划阶段工具调用写入 run_memory**（消除 Reflection 信息盲区）
+
+规划 loop 中调用工具的结果同步写入 `AgentRunMemory`（`entry_type="plan_tool_call"`），Reflection 的 `build_messages_for_reflection()` 通过 `iteration <= current_iteration` 条件自动包含这些记录，消除"规划阶段做了什么 Reflection 看不见"的信息盲区，防止误判触发多余重规划。
 
 ### AgentState 新增字段
 

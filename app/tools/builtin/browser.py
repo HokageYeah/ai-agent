@@ -42,7 +42,15 @@ class BrowserTool(BaseFileTool):
     继承 BaseFileTool 的原因：
     1. 截图 / PDF 导出本质上是文件写入行为，直接复用既有路径校验逻辑更安全。
     2. 与 file_write / archive_extract 等工具保持一致的路径规范，降低 Agent 误写路径风险。
+
+    planning_safe = False：
+        浏览器操作可能触发表单提交、登录、点击等写入/交互副作用；
+        截图和 PDF 导出会在磁盘写文件，属于不可逆副作用，
+        必须在 Execution Node 内执行。
     """
+
+    # 有副作用——可触发交互操作及磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,

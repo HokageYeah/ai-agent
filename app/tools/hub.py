@@ -41,7 +41,7 @@ class ToolHub:
     def get_schemas(self) -> List[Dict[str, Any]]:
         """
         获取所有工具的 Schema 列表（用于 LLM function calling）
-        
+
         返回符合 OpenAI function calling 规范的格式：
         {
             "type": "function",
@@ -65,6 +65,23 @@ class ToolHub:
                 }
             })
         return schemas
+
+    def get_planning_safe_names(self) -> set:
+        """
+        获取所有 planning_safe=True 的工具名称集合。
+
+        设计原因：
+        - Planning 阶段的 LLM tool-calling loop 只应调用只读探查类工具，
+          防止副作用工具（如 skill_install、shell_exec、file_write）在规划阶段执行，
+          导致 Reflection 看不到执行记录，进而误判并触发多余重规划。
+        - 此方法提供一个集合供 PlanningEngine 做二次过滤，不影响 Execution 阶段的完整工具访问。
+        - 判断依据是 Tool 基类的 planning_safe 类变量，子类可按需覆盖。
+        """
+        return {
+            name
+            for name, tool in self._tools.items()
+            if getattr(tool, "planning_safe", True)
+        }
 
 def tool(name: str = None, description: str = None):
     """

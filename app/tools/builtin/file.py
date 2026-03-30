@@ -527,20 +527,26 @@ class FileReadTool(BaseFileTool):
 class FileWriteTool(BaseFileTool):
     """
     文件写入工具
-    
+
     继承自 BaseFileTool，提供安全的文件写入功能。
-    
+
+    planning_safe = False：
+        写文件是不可逆的磁盘副作用，必须在 Execution Node 内执行。
+
     功能特性：
     - 路径安全验证
     - 自动创建父目录
     - 支持文本和二进制写入
     - 备份现有文件（可选）
     - 文件存在性检查
-    
+
     属性：
         name: 工具名称，固定为 "file_write"
         description: 工具描述
     """
+
+    # 有副作用——磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
     
     def __init__(
         self,
@@ -924,10 +930,16 @@ class FileEditTool(BaseFileTool):
     - 替换前后字符数对比，便于调试
     - colorama 彩色日志分层记录
 
+    planning_safe = False：
+        编辑文件是不可逆的磁盘副作用，必须在 Execution Node 内执行。
+
     属性：
         name: 工具名称，固定为 "file_edit"
         description: 工具描述
     """
+
+    # 有副作用——磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,

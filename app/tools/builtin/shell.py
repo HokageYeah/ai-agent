@@ -77,6 +77,12 @@ _DEFAULT_DENY_PATTERNS: List[str] = [
     r"\bchmod\s+-R\s+777\b",         # 全局放开权限
 ]
 
+# 统一把 `npx skills ...` 规范化为 `npx --yes skills ...`，避免首次执行时卡在
+# “Need to install the following packages ... Ok to proceed? (y)” 交互提示。
+_NPX_SKILLS_COMMAND_PATTERN = re.compile(
+    r"(?<![\w-])npx(?!\s+(?:-y|--yes)\b)\s+skills\b"
+)
+
 
 class ShellExecutorTool(Tool):
     """
@@ -84,6 +90,10 @@ class ShellExecutorTool(Tool):
 
     继承自 Tool 抽象基类，提供安全可控的异步 Shell 命令执行功能。
     参考并增强 app/tools/example/shell.py 的 ExecTool 设计。
+
+    planning_safe = False：
+        Shell 命令可能创建/修改/删除文件、启动进程、改变系统状态，
+        属于不确定性副作用工具，必须在 Execution Node 内执行。
 
     安全机制：
     1. 黑名单模式拦截（deny_patterns 正则列表）
@@ -97,6 +107,9 @@ class ShellExecutorTool(Tool):
         description: 工具描述
     """
 
+    # 有副作用——可执行任意 shell 命令，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
+
     def __init__(
         self,
         timeout: int = DEFAULT_TIMEOUT,
@@ -105,6 +118,7 @@ class ShellExecutorTool(Tool):
         allow_patterns: Optional[List[str]] = None,
         restrict_to_workspace: bool = False,
         max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS,
+        skill_installer: Optional[Any] = None,
     ):
         """
         初始化 ShellExecutorTool
@@ -129,6 +143,7 @@ class ShellExecutorTool(Tool):
         self._allow_patterns      = allow_patterns or []
         self._restrict_workspace  = restrict_to_workspace
         self._max_output_chars    = max_output_chars
+        self._skill_installer     = skill_installer
 
         logger.info(
             f"{Fore.CYAN}[ShellExecutorTool] Shell 命令执行工具初始化完成 "
@@ -229,6 +244,30 @@ class ShellExecutorTool(Tool):
                 f"{Fore.YELLOW}[ShellExecutorTool] 命令为空，拒绝执行{Style.RESET_ALL}"
             )
             return {"success": False, "error": "命令不能为空"}
+
+        normalized_command = self._rewrite_npx_skills_command(command)
+        if normalized_command != command:
+            logger.info(
+                f"{Fore.CYAN}[ShellExecutorTool] 检测到 Skills CLI 命令，"
+                f"已自动补齐 npx 的非交互 `--yes` 参数{Style.RESET_ALL}"
+            )
+            command = normalized_command
+
+        proxy_request = self._extract_skills_install_proxy_request(command)
+        if proxy_request is not None:
+            logger.info(
+                f"{Fore.CYAN}[ShellExecutorTool] 检测到原始 Skills CLI 安装命令，"
+                f"将自动代理到结构化 skill_install 服务执行 | "
+                f"package={proxy_request['package']} | "
+                f"skill_name={proxy_request.get('skill_name') or '自动识别'}{Style.RESET_ALL}"
+            )
+            return await self._proxy_skills_install_command(
+                original_command=command,
+                working_dir=working_dir,
+                timeout=int(timeout),
+                package=proxy_request["package"],
+                skill_name=proxy_request.get("skill_name"),
+            )
 
         # ── 规范化 skillhub 安装命令的目标目录 ──
         # 当命令形如 `skillhub install xxx` 且未显式提供 --dir 时，
@@ -416,6 +455,170 @@ class ShellExecutorTool(Tool):
                 "error":   f"命令执行失败: {e}",
                 "command": command
             }
+
+    def _get_skill_installer(self, timeout_seconds: int):
+        """
+        延迟获取技能安装服务。
+
+        设计原因：
+        - Shell 工具本身是通用能力，不应在模块加载时强耦合安装服务；
+        - 仅当检测到原始 `npx skills add/install` 命令时，才需要走统一安装代理；
+        - 同时便于测试时注入桩对象，验证代理行为而不触发真实安装。
+        """
+        installer = self._skill_installer
+        if installer is not None and getattr(installer, "timeout_seconds", timeout_seconds) == timeout_seconds:
+            return installer
+
+        from app.skills.installer import SkillInstallerService
+
+        installer = SkillInstallerService(timeout_seconds=timeout_seconds)
+        self._skill_installer = installer
+        return installer
+
+    async def _proxy_skills_install_command(
+        self,
+        *,
+        original_command: str,
+        working_dir: str,
+        timeout: int,
+        package: str,
+        skill_name: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        把原始 Skills CLI 安装命令代理到统一安装服务。
+
+        设计原因：
+        - 历史技能与模型仍可能产出 `shell_exec("npx skills add ...")`；
+        - 若继续走原始 shell，容易再次落入交互安装、网络挂起、超时难观测等问题；
+        - 因此在 Shell 公共层把“安装技能包”的命令收口到 `SkillInstallerService`，
+          让其复用统一的预热、候选回退、工作区落地与幂等逻辑。
+        """
+        installer = self._get_skill_installer(timeout_seconds=max(1, int(timeout)))
+        start_time = time.time()
+        result = await installer.install(
+            package=package,
+            skill_name=skill_name,
+            overwrite=False,
+        )
+        elapsed_ms = int((time.time() - start_time) * 1000)
+
+        success = bool(result.get("success"))
+        stderr_text = ""
+        if not success:
+            stderr_text = str(result.get("error") or result.get("stderr") or "").strip()
+
+        stdout_text = str(
+            result.get("message")
+            or result.get("stdout")
+            or result.get("installed_path")
+            or ""
+        ).strip()
+
+        proxied_result: Dict[str, Any] = {
+            "success": success,
+            "command": original_command,
+            "stdout": stdout_text,
+            "stderr": stderr_text,
+            "return_code": 0 if success else 1,
+            "elapsed_ms": elapsed_ms,
+            "truncated": False,
+            "working_dir": working_dir,
+            "proxied_to_skill_install": True,
+            "skill_install_result": result,
+        }
+        if not success:
+            proxied_result["error"] = stderr_text or "技能安装失败"
+        return proxied_result
+
+    def _rewrite_npx_skills_command(self, command: str) -> str:
+        """
+        把 `npx skills ...` 统一改写为 `npx --yes skills ...`。
+
+        设计原因：
+        - 某些技能会通过 `shell_exec` 直接执行 `npx skills find/add`；
+        - 若环境中尚未缓存 `skills` CLI，npx 会先弹出依赖安装确认提示；
+        - Shell 工具无法与该交互提示对话，只会最终表现为“命令超时”；
+        - 因此在公共 Shell 层统一补齐 `--yes`，保证所有 Skills CLI 命令
+          都默认走非交互路径，而不是只修当前某一个技能。
+        """
+        raw_command = (command or "").strip()
+        if not raw_command:
+            return raw_command
+        return _NPX_SKILLS_COMMAND_PATTERN.sub("npx --yes skills", raw_command)
+
+    def _extract_skills_install_proxy_request(self, command: str) -> Optional[Dict[str, Any]]:
+        """
+        从 shell 命令中提取“Skills CLI 安装请求”。
+
+        只识别 `npx skills add/install ...` 或 `skills add/install ...` 语义。
+        `skills find` 属于只读搜索，不应代理到安装服务。
+        """
+        raw_command = (command or "").strip()
+        if not raw_command:
+            return None
+
+        try:
+            tokens = shlex.split(raw_command)
+        except ValueError:
+            return None
+        if not tokens:
+            return None
+
+        control_tokens = {"&&", "||", ";", "|"}
+        for index, token in enumerate(tokens):
+            executable = Path(token).name.lower()
+            cursor = index
+            if executable == "npx":
+                cursor += 1
+                while cursor < len(tokens) and tokens[cursor] in {"-y", "--yes"}:
+                    cursor += 1
+                if cursor >= len(tokens):
+                    continue
+                executable = Path(tokens[cursor]).name.lower()
+            if executable != "skills":
+                continue
+
+            action_idx = cursor + 1
+            if action_idx >= len(tokens):
+                continue
+            action = tokens[action_idx].strip().lower()
+            if action not in {"add", "install"}:
+                continue
+
+            package_ref: Optional[str] = None
+            skill_name: Optional[str] = None
+            arg_idx = action_idx + 1
+            while arg_idx < len(tokens):
+                current = tokens[arg_idx]
+                if current in control_tokens:
+                    break
+                if current.startswith(">") or current.startswith("<") or re.fullmatch(r"\d+>&\d+", current):
+                    arg_idx += 1
+                    continue
+                if current == "--skill" and arg_idx + 1 < len(tokens):
+                    skill_name = tokens[arg_idx + 1].strip() or skill_name
+                    arg_idx += 2
+                    continue
+                if current.startswith("--skill="):
+                    skill_name = current.split("=", 1)[1].strip() or skill_name
+                    arg_idx += 1
+                    continue
+                if current.startswith("-"):
+                    arg_idx += 1
+                    continue
+                if package_ref is None:
+                    package_ref = current.strip()
+                    arg_idx += 1
+                    continue
+                arg_idx += 1
+
+            if package_ref:
+                return {
+                    "package": package_ref,
+                    "skill_name": skill_name,
+                }
+
+        return None
 
     def _rewrite_skillhub_install_command(self, command: str) -> str:
         """

@@ -16,6 +16,12 @@ from app.agents.library import GENERAL_AGENT
 from app.core.config import settings
 from app.skills.installer import SkillInstallerService
 from app.skills.manager import SkillManager
+from app.tools.builtin.skill import SkillInstallTool
+
+
+def _matches_skills_cli_command(command: list[str], subcommand: str) -> bool:
+    """判断命令是否为统一规范化后的 `npx --yes skills <subcommand>`。"""
+    return command[:4] == ["npx", "--yes", "skills", subcommand]
 
 
 def test_skill_manager_should_use_configured_workspace(tmp_path, monkeypatch):
@@ -40,9 +46,131 @@ def test_normalize_request_should_convert_legacy_install_alias():
     assert parsed.used_legacy_install_alias is True
 
 
+def test_normalize_request_should_accept_noninteractive_npx_prefix():
+    """`npx --yes skills add ...` 也应被解析为合法安装输入。"""
+    service = SkillInstallerService(workspace_dir=Path.cwd() / "app/skills/skills_md")
+
+    parsed = service._normalize_request(
+        package="npx --yes skills add demo/repo@wechat-article-search",
+        skill_name=None,
+    )
+
+    assert parsed.package_ref == "demo/repo@wechat-article-search"
+    assert parsed.used_legacy_install_alias is False
+
+
 def test_general_agent_should_expose_skill_install_tool():
     """通用助手应能直接使用 skill_install 工具处理安装任务。"""
     assert "skill_install" in GENERAL_AGENT.available_tools
+
+
+@pytest.mark.asyncio
+async def test_skill_install_tool_should_normalize_reference_and_skill_id_aliases():
+    """direct tool call 传入 reference/skill_id 时，应自动归一化到安装服务。"""
+
+    class StubInstaller:
+        def __init__(self):
+            self.calls = []
+
+        async def install(self, package, skill_name=None, overwrite=False):
+            self.calls.append(
+                {
+                    "package": package,
+                    "skill_name": skill_name,
+                    "overwrite": overwrite,
+                }
+            )
+            return {"success": True, "installed_path": "/tmp/demo"}
+
+    installer = StubInstaller()
+    tool = SkillInstallTool(installer=installer)
+
+    result = await tool.execute(
+        {
+            "reference": "npx skills add skills.volces.com@ai-news-zh",
+            "skill_id": "ai-news-zh",
+        }
+    )
+
+    assert result["success"] is True
+    assert installer.calls == [
+        {
+            "package": "npx skills add skills.volces.com@ai-news-zh",
+            "skill_name": "ai-news-zh",
+            "overwrite": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_skill_install_tool_should_normalize_source_alias():
+    """安装来源若写成 source，也应自动归一化到 package。"""
+
+    class StubInstaller:
+        def __init__(self):
+            self.calls = []
+
+        async def install(self, package, skill_name=None, overwrite=False):
+            self.calls.append(
+                {
+                    "package": package,
+                    "skill_name": skill_name,
+                    "overwrite": overwrite,
+                }
+            )
+            return {"success": True}
+
+    installer = StubInstaller()
+    tool = SkillInstallTool(installer=installer)
+
+    result = await tool.execute(
+        {
+            "source": "inferen-sh/skills@newsletter-curation",
+            "skill_id": "newsletter-curation",
+        }
+    )
+
+    assert result["success"] is True
+    assert installer.calls == [
+        {
+            "package": "inferen-sh/skills@newsletter-curation",
+            "skill_name": "newsletter-curation",
+            "overwrite": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_skill_install_tool_should_fallback_package_from_skill_id_alias():
+    """若 LLM 只给出 skill_id，也应把它当作可安装 slug 继续执行。"""
+
+    class StubInstaller:
+        def __init__(self):
+            self.calls = []
+
+        async def install(self, package, skill_name=None, overwrite=False):
+            self.calls.append(
+                {
+                    "package": package,
+                    "skill_name": skill_name,
+                    "overwrite": overwrite,
+                }
+            )
+            return {"success": True}
+
+    installer = StubInstaller()
+    tool = SkillInstallTool(installer=installer)
+
+    result = await tool.execute({"skill_id": "wechat-article-search", "force": True})
+
+    assert result["success"] is True
+    assert installer.calls == [
+        {
+            "package": "wechat-article-search",
+            "skill_name": "wechat-article-search",
+            "overwrite": True,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -50,15 +178,27 @@ async def test_install_should_copy_skill_into_workspace(tmp_path, monkeypatch):
     """安装成功后，应把技能复制到配置工作区。"""
     workspace_dir = tmp_path / "skills_md"
     service = SkillInstallerService(workspace_dir=workspace_dir)
+    captured_commands = []
 
     async def fake_run_command(command, env, cwd, timeout_seconds):
-        skill_dir = Path(env["CODEX_HOME"]) / "skills" / "wechat-article-search"
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: wechat-article-search\ndescription: 测试技能\n---\n",
-            encoding="utf-8",
-        )
-        (skill_dir / "README.md").write_text("# demo\n", encoding="utf-8")
+        captured_commands.append(list(command))
+        if _matches_skills_cli_command(command, "--version"):
+            return {
+                "success": True,
+                "return_code": 0,
+                "stdout": "1.4.6",
+                "stderr": "",
+                "elapsed_ms": 10,
+                "command": " ".join(command),
+            }
+        if _matches_skills_cli_command(command, "add"):
+            skill_dir = Path(env["CODEX_HOME"]) / "skills" / "wechat-article-search"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: wechat-article-search\ndescription: 测试技能\n---\n",
+                encoding="utf-8",
+            )
+            (skill_dir / "README.md").write_text("# demo\n", encoding="utf-8")
         return {
             "success": True,
             "return_code": 0,
@@ -68,7 +208,7 @@ async def test_install_should_copy_skill_into_workspace(tmp_path, monkeypatch):
             "command": " ".join(command),
         }
 
-    async def fake_resolve_package_ref_from_find(query, env, cwd):
+    async def fake_resolve_package_ref_from_find(query, env, cwd, timeout_seconds=None):
         return "demo/repo@wechat-article-search"
 
     monkeypatch.setattr(service, "_run_command", fake_run_command)
@@ -90,6 +230,8 @@ async def test_install_should_copy_skill_into_workspace(tmp_path, monkeypatch):
     assert target_dir.exists()
     assert (target_dir / "SKILL.md").exists()
     assert (target_dir / "README.md").exists()
+    assert _matches_skills_cli_command(captured_commands[0], "--version")
+    assert _matches_skills_cli_command(captured_commands[1], "add")
 
 
 @pytest.mark.asyncio
@@ -103,16 +245,28 @@ async def test_install_should_detect_skill_from_global_agents_dir(tmp_path, monk
     workspace_dir = tmp_path / "skills_md"
     service = SkillInstallerService(workspace_dir=workspace_dir)
     captured_env = {}
+    captured_commands = []
 
     async def fake_run_command(command, env, cwd, timeout_seconds):
         captured_env.update(env)
-        skill_dir = Path(env["HOME"]) / ".agents" / "skills" / "wechat-article-search"
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: wechat-article-search\ndescription: 全局技能目录测试\n---\n",
-            encoding="utf-8",
-        )
-        (skill_dir / "notes.txt").write_text("ok\n", encoding="utf-8")
+        captured_commands.append(list(command))
+        if _matches_skills_cli_command(command, "--version"):
+            return {
+                "success": True,
+                "return_code": 0,
+                "stdout": "1.4.6",
+                "stderr": "",
+                "elapsed_ms": 10,
+                "command": " ".join(command),
+            }
+        if _matches_skills_cli_command(command, "add"):
+            skill_dir = Path(env["HOME"]) / ".agents" / "skills" / "wechat-article-search"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: wechat-article-search\ndescription: 全局技能目录测试\n---\n",
+                encoding="utf-8",
+            )
+            (skill_dir / "notes.txt").write_text("ok\n", encoding="utf-8")
         return {
             "success": True,
             "return_code": 0,
@@ -135,6 +289,8 @@ async def test_install_should_detect_skill_from_global_agents_dir(tmp_path, monk
     assert target_dir.exists()
     assert (target_dir / "SKILL.md").exists()
     assert (target_dir / "notes.txt").exists()
+    assert _matches_skills_cli_command(captured_commands[0], "--version")
+    assert _matches_skills_cli_command(captured_commands[1], "add")
 
 
 @pytest.mark.asyncio
@@ -148,7 +304,17 @@ async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
 
     async def fake_run_command(command, env, cwd, timeout_seconds):
         rendered = " ".join(command)
-        if command[:3] == ["npx", "skills", "find"]:
+        if _matches_skills_cli_command(command, "--version"):
+            return {
+                "success": True,
+                "return_code": 0,
+                "stdout": "1.4.6",
+                "stderr": "",
+                "elapsed_ms": 10,
+                "command": rendered,
+            }
+
+        if _matches_skills_cli_command(command, "find"):
             return {
                 "success": True,
                 "return_code": 0,
@@ -161,7 +327,7 @@ async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
                 "command": rendered,
             }
 
-        if command[:3] == ["npx", "skills", "add"] and (
+        if _matches_skills_cli_command(command, "add") and (
             "skills-ecosystem/wechat-official-account-helper" in command
         ):
             return {
@@ -176,7 +342,7 @@ async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
                 "command": rendered,
             }
 
-        if command[:3] == ["npx", "skills", "add"] and (
+        if _matches_skills_cli_command(command, "add") and (
             "public/repo@wechat-official-account-helper" in command
         ):
             skill_dir = Path(env["CODEX_HOME"]) / "skills" / "wechat-official-account-helper"
@@ -211,6 +377,53 @@ async def test_install_should_retry_with_real_find_candidate_after_auth_failure(
     assert "wechat-official-account-helper" in result["skill_name"]
     assert target_dir.exists()
     assert (target_dir / "SKILL.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_install_should_preheat_skills_cli_before_add(tmp_path, monkeypatch):
+    """安装前应先预热 Skills CLI，并统一走 `npx --yes skills ...`。"""
+    workspace_dir = tmp_path / "skills_md"
+    service = SkillInstallerService(workspace_dir=workspace_dir)
+    captured_commands = []
+
+    async def fake_run_command(command, env, cwd, timeout_seconds):
+        captured_commands.append(list(command))
+        if _matches_skills_cli_command(command, "--version"):
+            return {
+                "success": True,
+                "return_code": 0,
+                "stdout": "1.4.6",
+                "stderr": "",
+                "elapsed_ms": 10,
+                "command": " ".join(command),
+            }
+
+        if _matches_skills_cli_command(command, "add"):
+            skill_dir = Path(env["CODEX_HOME"]) / "skills" / "news"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: news\ndescription: 新闻技能\n---\n",
+                encoding="utf-8",
+            )
+            return {
+                "success": True,
+                "return_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "elapsed_ms": 10,
+                "command": " ".join(command),
+            }
+
+        raise AssertionError(f"未预期的命令: {command}")
+
+    monkeypatch.setattr(service, "_run_command", fake_run_command)
+
+    result = await service.install(package="countbot-ai/countbot@news", overwrite=False)
+
+    assert result["success"] is True
+    assert _matches_skills_cli_command(captured_commands[0], "--version")
+    assert _matches_skills_cli_command(captured_commands[1], "add")
+    assert captured_commands[1][4] == "countbot-ai/countbot@news"
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,11 @@ class SpawnAgentTool(Tool):
     ChildAgentManager.delegate_task 接口实现，允许 LLM 在执行步骤中
     通过工具调用将任务委派给指定的子 Agent 执行。
 
+    planning_safe = False：
+        派生子 Agent 会启动新的任务执行链路，产生不确定的外部副作用，
+        且子 Agent 的执行结果需要 Reflection 引擎完整观察，
+        必须在 Execution Node 内执行。
+
     工作流程：
     1. LLM 在规划/执行阶段决定将某个子任务委派给子 Agent
     2. 调用 spawn_agent 工具，传入 agent_id 和 task 描述
@@ -57,6 +62,9 @@ class SpawnAgentTool(Tool):
         name:        工具名称，固定为 "spawn_agent"
         description: 工具描述（Contains 可委派的子 Agent 列表）
     """
+
+    # 有副作用——启动子 Agent 任务链路，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,

@@ -460,6 +460,36 @@ class ToolHub:
 
 存储单次 `execute` 任务过程中的详细行为消息（包括计划、工具调用、反思结论等），格式兼容 OpenAI `messages` 数组格式，便于在整个流程引擎的计算节点（Planning Engine, Execution Engine, Reflection Engine）间流转。
 
+**记忆条目类型（EntryType）：**
+
+| EntryType | 来源阶段 | 说明 |
+|---|---|---|
+| `plan` | Planning Node | 规划产出快照（推理过程 + 执行步骤摘要） |
+| `plan_tool_call` | Planning 内部 tool-calling loop | **规划阶段**工具调用 assistant 发起记录（如 search、http_request） |
+| `plan_tool_result` | Planning 内部 tool-calling loop | **规划阶段**工具调用 tool 返回结果（与 plan_tool_call 配对） |
+| `tool_call` | Execution Node | 执行阶段工具调用 assistant 发起记录 |
+| `tool_result` | Execution Node | 执行阶段工具调用 tool 返回结果 |
+| `skill_call` / `skill_result` | Execution Node | 技能调用发起与结果 |
+| `delegate` / `delegate_result` | Execution Node | 子 Agent 委派说明与返回摘要 |
+| `user_action` | Execution Node | 用户确认/拒绝操作 |
+| `reflection` | Reflection Node | 反思结论（success / needs_replanning / feedback） |
+| `error` | Execution Node | 错误记录（注入 tool_result 中体现） |
+
+**`plan_tool_call` / `plan_tool_result` 的设计原因：**
+
+规划引擎（Planning Engine）在生成 JSON 计划前，会进入内部 tool-calling loop 调用只读工具（如 `search`、`http_request`）主动搜集信息。这些调用结果若不写入 `run_memory`，Reflection 引擎将存在信息盲区：
+
+```
+问题链：Planning loop 执行了工具（副作用已发生）
+           ↓ 结果未写入 run_memory
+        Reflection 看不到这段历史
+           ↓ 误判"未完成"
+        触发不必要重规划
+           ↓ 重复调用同一工具（包括可能的副作用工具）
+```
+
+写入后，`build_messages_for_reflection()` 通过 `iteration <= current_iteration` 条件自动包含这些条目，Reflection 获得完整执行视图，消除误判。
+
 ### 5.2 会话级任务摘要记忆 (AgentSessionMemory)
 
 存储跨次任务的压缩摘要条目。每次 `execute` 完成后，系统会提取该次任务的核心结论和数据特征（TaskSummaryEntry），并追加至该会话的记忆仓库中。在下一次执行新任务时，这些摘要将作为前置背景上下文（conversation_history），提供给大模型参考，实现对话的连贯度与避免信息重复获取。
@@ -1160,19 +1190,81 @@ error_analysis = {
 
 分析结果通过 SSE 推送 `error_analysis` 事件，前端实时展示根因、建议和纠正方案。
 
-#### 规划阶段工具 Schema 白名单过滤（核心防线）
+#### 规划阶段工具 Schema 双层过滤（核心防线）
 
-**从根源上防止 LLM 规划禁用工具**：规划引擎在构建 LLM function calling 工具列表时，只传入 `available_tools` 白名单中的工具 Schema，被禁止的工具在 LLM 视角中完全不可见：
+规划引擎在构建 LLM 的 function calling 工具列表时，执行**两层独立过滤**，从根源上防止 LLM 在规划阶段调用不该调用的工具：
+
+**第一层：Agent 白名单过滤（"是否授权给该 Agent"）**
+
+只传入 `available_tools` 白名单中的工具 Schema，被禁止的工具在 LLM 视角中完全不可见：
 
 ```python
-# planning.py — create_plan() 核心过滤逻辑
-allowed_tool_names = {t.name for t in available_tools}   # 白名单
-all_schemas = self.tool_hub.get_schemas()                 # 全量
-tools = [
-    s for s in all_schemas
-    if s.get("function", {}).get("name") in allowed_tool_names  # 白名单过滤
+# planning.py — create_plan() 第一层过滤
+allowed_tool_names = {t.name for t in available_tools}
+authorized_tools = [
+    s for s in self.tool_hub.get_schemas()
+    if s.get("function", {}).get("name") in allowed_tool_names
 ]
-# reflection.py 中 reflect() 的 available_tools 参数用于同样的过滤
+```
+
+**第二层：`planning_safe` 过滤（"是否允许在规划 loop 中调用"）**
+
+Planning 阶段的 LLM 会进入内部 tool-calling loop 主动搜集信息（如调用 `search`、`http_request`）。此过滤只将 `planning_safe=True` 的只读型工具传入该 loop，禁止副作用工具在规划阶段被直接执行：
+
+```python
+# planning.py — create_plan() 第二层过滤（在第一层结果上叠加）
+planning_safe_names = self.tool_hub.get_planning_safe_names()
+tools = [
+    s for s in authorized_tools
+    if s.get("function", {}).get("name") in planning_safe_names
+]
+```
+
+**`Tool.planning_safe` 属性规范（`app/tools/base.py`）：**
+
+| 属性值 | 语义 | 典型工具 |
+|---|---|---|
+| `True`（默认） | 只读型探查工具，无外部副作用 | `search`、`http_request`、`file_read`、`list_dir`、`calculator`、`datetime` |
+| `False` | 有副作用的执行型工具，调用会改变外部状态 | `skill_install`、`shell_exec`、`file_write`、`file_edit`、`python_executor`、`browser`、`send_message`、`spawn_agent`、`archive_compress`、`archive_extract` |
+
+> 新增工具时，若有任何写入磁盘、执行命令、发送网络请求的副作用，必须在工具类上声明 `planning_safe: bool = False`。
+
+**两层过滤的分工：**
+
+```
+Agent 白名单（available_tools）       ← 控制"哪些工具该 Agent 有权限用"
+        │
+        ↓ 第一层过滤
+  authorized_tools（该 Agent 授权工具集）
+        │
+        ↓ 第二层过滤（planning_safe）
+  planning loop 可调用工具             ← 仅只读探查工具可在规划 loop 中直接执行
+        │
+        ↓ 系统提示词中始终包含完整 available_tools 描述
+  LLM 仍知道所有工具                   ← 可在执行步骤中规划调用副作用工具
+                                          但必须经 Execution Node 统一调度
+```
+
+> 注：`_build_system_prompt` 传入的是完整 `available_tools`，LLM 对所有工具的知识无损；第二层过滤只限制"规划 loop 能直接调用什么"，不影响 LLM 在执行步骤中规划使用任何授权工具。
+
+**规划阶段工具调用结果写入 run_memory（消除 Reflection 信息盲区）**
+
+即便第二层过滤已禁止副作用工具进入规划 loop，规划阶段仍会调用只读工具（如 `search`）来搜集信息。这些调用结果同步写入 `run_memory`（`entry_type="plan_tool_call"`），确保 Reflection 能完整看到规划阶段的信息搜集过程：
+
+```
+Planning tool-calling loop
+    → _planning_tool_callback 触发
+        ├── SSE 推送（前端可见进度）
+        └── run_memory.write_planning_tool_call()（entry_type="plan_tool_call"）
+                            ↓
+Reflection build_messages_for_reflection()
+    → 包含 iteration <= current_iteration 的所有记录
+    → 包含 plan_tool_call / plan_tool_result 条目
+    → Reflection 视野完整，不再误判"规划阶段什么都没做"
+```
+
+```python
+# reflection.py 中 reflect() 的 available_tools 参数用于同样的第一层白名单过滤
 ```
 
 #### 错误感知完整流程
@@ -1910,3 +2002,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.6）**：公共层收口进一步增强。技能源码目录与运行态产物目录分离（运行产物统一写入 `workspace/artifacts/skills/<skill_id>/`，避免污染已安装技能）；规划阶段增加 JSON 轻度漂移兼容、`retry_after_length` 截断重试与 `repair_after_invalid_json` 结构修复重试；流式边界统一去除 `<think>`、压缩中间包装对象，并保证 `step_complete(action=final_answer)` 展示真实合成答案而不是规划模板。
 
 > ✅ **已完成（v1.7）**：框架级技能工具兼容性委派增强。`_filter_tool_incompatible_skills()` 由单返回值 `List` 升级为二元组 `(compatible_skills, incompatible_skills)`，`_resolve_available_skills()` 同步升级返回 Tuple；新增通用技能点名检测方法 `_is_explicitly_requesting_skill_by_id()`，支持中英文混合模式的技能 ID 识别；`_build_capability_gap_delegate_plan()` 新增"工具不兼容技能点名委派"路径：当用户明确点名了某个因工具不足被过滤的系统级技能时，协调型 Agent 自动向 `general_agent` 委派任务，而不是向用户宣称"该技能不存在"。此修复适用于所有协调型 Agent + 所有工具受限技能，为框架通用能力，不绑定任何具体技能 ID 或业务逻辑。
+
+> ✅ **已完成（v1.8）**：规划阶段工具双层过滤 + Reflection 信息盲区修复。针对"规划 loop 执行副作用工具 → Reflection 误判 → 触发无效重规划 → 副作用工具重复调用"的架构问题，在公共层实施两项修复：**（A）`planning_safe` 双层过滤机制** — `Tool` 基类新增 `planning_safe: bool = True` 属性，有副作用工具（`skill_install`、`shell_exec`、`file_write`、`file_edit`、`python_executor`、`browser`、`send_message`、`spawn_agent`、`archive_compress`、`archive_extract`）覆盖为 `False`；`ToolHub` 新增 `get_planning_safe_names()` 接口；`planning.py` 在 Agent 白名单过滤之后叠加第二层 `planning_safe` 过滤，只读探查工具才能进入规划 tool-calling loop，副作用工具只能通过 Execution Node 执行；**（B）规划阶段工具调用写入 run_memory** — `AgentRunMemory` 新增 `plan_tool_call`/`plan_tool_result` EntryType 及 `write_planning_tool_call()` 方法；`_planning_tool_callback` 闭包升级为双职责（SSE 推送 + run_memory 写入），规划 loop 调用结果同步持久化，Reflection 的 `build_messages_for_reflection()` 因此可完整看到规划阶段所有工具交互，消除信息盲区。两项修复均作用于公共框架层，不绑定任何具体技能或业务逻辑。

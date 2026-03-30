@@ -158,26 +158,69 @@ class PlanningEngine:
 
             tools = []
             if self.tool_hub and available_tools:
+                # ── 第一层过滤：按 Agent 白名单过滤授权工具 ──────────────────────────────
+                # 只把 Agent 配置中允许的工具传给 Planning LLM；
+                # 此处过滤的是工具"是否授权给该 Agent"，与 planning_safe 无关。
                 allowed_tool_names = {t.name for t in available_tools}
                 all_schemas = self.tool_hub.get_schemas()
-                tools = [
+                authorized_tools = [
                     schema
                     for schema in all_schemas
                     if schema.get("function", {}).get("name") in allowed_tool_names
                 ]
                 logger.debug(
                     f"{Fore.CYAN}[规划引擎] 工具定义已过滤: "
-                    f"授权 {len(tools)}/{len(all_schemas)} 个（过滤掉了未授权工具）{Style.RESET_ALL}"
+                    f"授权 {len(authorized_tools)}/{len(all_schemas)} 个（过滤掉了未授权工具）{Style.RESET_ALL}"
                 )
 
-            # 若上层传入了 stream_callback，则构建规划阶段工具调用的 SSE 通知回调。
-            # 设计原因：
-            # - 规划 LLM 在生成 JSON 计划前，可能会多次调用工具（search / browser 等）；
-            # - 这些工具调用发生在推理层（inference.py）的 tool_calling_loop 内部，
-            #   原来完全透明，用户在前端看不到任何进度（可能等待数分钟无反馈）；
-            # - 通过注入 tool_call_callback，框架可以在每次工具调用完成后向前端推送事件。
+                # ── 第二层过滤：仅允许 planning_safe=True 的工具进入规划 tool-calling loop ──
+                # 设计原因：
+                # - Planning 阶段的 LLM 在生成 JSON 计划前，会进入 tool-calling loop
+                #   主动调用工具来搜集信息（如 search、http_request、file_read）。
+                # - 若不过滤，LLM 可能直接在规划阶段调用 skill_install、shell_exec
+                #   等有副作用的工具，导致以下问题：
+                #     1. 副作用已发生，但执行记忆（run_memory）中没有相应记录；
+                #     2. Reflection 引擎看不到这段历史，误判任务未完成；
+                #     3. 触发不必要的重规划，导致同一副作用被重复调用。
+                # - 此过滤仅限制 Planning 阶段的 tool-calling loop；
+                #   系统提示词（_build_system_prompt）中依然包含全量授权工具，
+                #   LLM 依然知道这些工具的存在，并可在执行步骤中规划调用它们。
+                planning_safe_names = self.tool_hub.get_planning_safe_names()
+                tools = [
+                    schema
+                    for schema in authorized_tools
+                    if schema.get("function", {}).get("name") in planning_safe_names
+                ]
+
+                # 计算被 planning_safe 过滤掉的工具列表，用于日志可观测性
+                filtered_out = [
+                    schema.get("function", {}).get("name")
+                    for schema in authorized_tools
+                    if schema.get("function", {}).get("name") not in planning_safe_names
+                ]
+                logger.info(
+                    f"{Fore.YELLOW}[规划引擎] planning_safe 过滤完成: "
+                    f"授权={len(authorized_tools)} 个 → 规划可调用={len(tools)} 个 "
+                    f"| 已屏蔽副作用工具({len(filtered_out)}个): {filtered_out}{Style.RESET_ALL}"
+                )
+
+            # 规划阶段工具调用通知回调（双职责）：
+            #
+            # 职责 1 - SSE 实时推送（若 stream_callback 存在）：
+            #   规划 LLM 在生成 JSON 计划前，可能多次调用工具（search / http_request 等）；
+            #   这些调用发生在推理层（inference.py）的 tool_calling_loop 内部，
+            #   通过回调向前端推送事件，让用户可见规划进度，而不是长时间等待无反馈。
+            #
+            # 职责 2 - 写入 run_memory（若 run_memory 存在）：
+            #   将规划阶段工具调用结果持久化到 AgentRunMemory（entry_type="plan_tool_call"）。
+            #   这样 Reflection 的 build_messages_for_reflection() 通过
+            #   `iteration <= current_iteration` 条件自然包含这些历史，消除信息盲区：
+            #   - 避免 Reflection 因看不到规划阶段已执行的操作而误判任务失败；
+            #   - 防止由此触发的多余重规划和副作用工具重复调用。
+            #
+            # 两者完全解耦：有其一即构建回调；两者都无则回调为 None（跳过注册）。
             planning_tool_callback = None
-            if stream_callback is not None:
+            if stream_callback is not None or run_memory is not None:
                 from app.tools.builtin.message import send_agent_message
 
                 async def _planning_tool_callback(
@@ -186,32 +229,68 @@ class PlanningEngine:
                     result: object,
                     success: bool,
                 ) -> None:
-                    """规划阶段工具调用 SSE 通知回调（内嵌闭包，捕获 stream_callback 和 iteration）。"""
-                    status_label = "✅ 完成" if success else "❌ 失败"
-                    await send_agent_message(
-                        stream_callback=stream_callback,
-                        message_type="progress",
-                        content=f"规划中调用工具: {tool_name} {status_label}",
-                        progress={
-                            "stage": "plan_tool_call",
-                            "iteration": iteration,
-                            "tool_name": tool_name,
-                            "success": success,
-                        },
-                        extra_data={
-                            "tool_name": tool_name,
-                            "is_planning_phase": True,
-                        },
-                    )
+                    """
+                    规划阶段工具调用回调（内嵌闭包，捕获 stream_callback / run_memory / iteration）。
+
+                    同时承担：
+                    1. SSE 实时事件推送（stream_callback 不为 None 时）
+                    2. run_memory 持久化写入（run_memory 不为 None 时）
+                    """
+                    # ── 1. SSE 实时推送 ─────────────────────────────────────────
+                    if stream_callback is not None:
+                        status_label = "✅ 完成" if success else "❌ 失败"
+                        await send_agent_message(
+                            stream_callback=stream_callback,
+                            message_type="progress",
+                            content=f"规划中调用工具: {tool_name} {status_label}",
+                            progress={
+                                "stage": "plan_tool_call",
+                                "iteration": iteration,
+                                "tool_name": tool_name,
+                                "success": success,
+                            },
+                            extra_data={
+                                "tool_name": tool_name,
+                                "is_planning_phase": True,
+                            },
+                        )
+
+                    # ── 2. 写入 run_memory（消除 Reflection 信息盲区）────────────
+                    # 规划阶段工具调用结果写入记忆，使 Reflection 在评估任务时能完整
+                    # 看到"规划阶段做了哪些信息搜集"，不再误判"什么都没做"。
+                    # 使用独立的 entry_type="plan_tool_call" 区分执行阶段，但格式完全
+                    # 对齐 OpenAI Function Calling 配对，LLM 理解无障碍。
+                    if run_memory is not None:
+                        # 提取 error_msg：result 若为 dict 尝试取 error 字段；否则 str 化
+                        err_msg = ""
+                        if not success:
+                            if isinstance(result, dict):
+                                err_msg = str(result.get("error") or result.get("message") or "")
+                            else:
+                                err_msg = str(result) if result else ""
+
+                        run_memory.write_planning_tool_call(
+                            iteration=iteration,
+                            tool_name=tool_name,
+                            tool_args=params or {},
+                            tool_result=result,
+                            success=success,
+                            error_msg=err_msg,
+                        )
+
                     logger.debug(
                         f"{Fore.CYAN}[规划引擎] 规划阶段工具回调已触发: "
-                        f"tool={tool_name}, success={success}{Style.RESET_ALL}"
+                        f"tool={tool_name}, success={success} "
+                        f"| SSE={'已推送' if stream_callback else '跳过'} "
+                        f"| run_memory={'已写入' if run_memory else '跳过'}{Style.RESET_ALL}"
                     )
 
                 planning_tool_callback = _planning_tool_callback
                 logger.debug(
-                    f"{Fore.CYAN}[规划引擎] 规划阶段 SSE 工具回调已绑定 "
-                    f"(iteration={iteration}){Style.RESET_ALL}"
+                    f"{Fore.CYAN}[规划引擎] 规划阶段工具回调已绑定 "
+                    f"(iteration={iteration}, "
+                    f"SSE={'开启' if stream_callback else '关闭'}, "
+                    f"run_memory={'开启' if run_memory else '关闭'}){Style.RESET_ALL}"
                 )
 
             config = InferenceConfig(
@@ -585,6 +664,14 @@ class PlanningEngine:
                 params.setdefault("tool_name", action)
                 action = "tool"
 
+            action, params = self._normalize_capability_reference_drift(
+                index=index,
+                action=action,
+                params=params,
+                allowed_tool_names=allowed_tool_names,
+                allowed_skill_ids=allowed_skill_ids,
+            )
+
             if action not in allowed_actions:
                 invalid_reasons.append(f"第{index}步 action='{action}' 不受支持")
                 continue
@@ -652,6 +739,185 @@ class PlanningEngine:
             )
 
         return Plan(steps=normalized_steps, reasoning=plan.reasoning)
+
+    def _normalize_capability_reference_drift(
+        self,
+        *,
+        index: int,
+        action: str,
+        params: Dict[str, Any],
+        allowed_tool_names: set[str],
+        allowed_skill_ids: set[str],
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        归一化规划步骤里的能力类型/标识字段漂移。
+
+        设计原因：
+        - 线上已观测到模型把“工具”误写成“技能”，例如把 `skill_install`
+          写成 `{"action":"skill","skill_id":"skill_install"}`；
+        - 这类问题本质上属于规划公共层的结构漂移，而不是某个具体能力缺失；
+        - 因此这里统一做“框架级归一化”，避免误把“可用工具”判成“当前不可用”。
+        """
+        normalized_action = str(action or "").strip()
+        normalized_params = dict(params or {})
+
+        def _read_text(key: str) -> str:
+            return str(normalized_params.get(key, "") or "").strip()
+
+        def _read_nested_params() -> Dict[str, Any]:
+            nested = normalized_params.get("params")
+            return dict(nested) if isinstance(nested, dict) else {}
+
+        def _extract_install_source() -> tuple[str, Optional[str]]:
+            """
+            提取“安装来源”字段，兼容模型把安装工具参数写成 source/reference 等别名。
+
+            设计原因：
+            - 在“安装某个外部 skill 包”任务里，模型常把目标 skill 本身写成
+              `action="skill"`，同时把真实安装引用放进 `source` / `reference`；
+            - 此时若直接按“调用 skill”处理，就会把“待安装目标”误判成“当前不可用技能”；
+            - 因而这里需要在规划公共层识别“安装意图”并转交给结构化工具 `skill_install`。
+            """
+            candidate_keys = (
+                "package",
+                "source",
+                "reference",
+                "package_ref",
+                "package_source",
+                "install_ref",
+                "skill_reference",
+                "install_source",
+                "ref",
+                "uri",
+                "url",
+                "repo",
+                "command",
+            )
+            nested_params = _read_nested_params()
+            for key in candidate_keys:
+                top_level_value = str(normalized_params.get(key, "") or "").strip()
+                if top_level_value:
+                    return top_level_value, key
+                nested_value = str(nested_params.get(key, "") or "").strip()
+                if nested_value:
+                    return nested_value, f"params.{key}"
+            return "", None
+
+        def _rewrite_identifier(
+            *,
+            target_action: str,
+            identifier_key: str,
+            identifier_value: str,
+            source_key: str,
+            reason: str,
+        ) -> None:
+            nonlocal normalized_action
+            logger.warning(
+                f"{Fore.YELLOW}[规划引擎] 检测到能力引用漂移，已在公共规划层自动归一化 | "
+                f"step={index} | from_action={action} | to_action={target_action} | "
+                f"source_key={source_key} | target_key={identifier_key} | "
+                f"value={identifier_value} | reason={reason}{Style.RESET_ALL}"
+            )
+            normalized_action = target_action
+            normalized_params.pop("tool_name", None)
+            normalized_params.pop("skill_id", None)
+            normalized_params[identifier_key] = identifier_value
+
+        tool_name = _read_text("tool_name")
+        skill_id = _read_text("skill_id")
+
+        # 先处理“字段名写错，但能力类型没错”的场景。
+        if normalized_action == "tool":
+            if (not tool_name or tool_name not in allowed_tool_names) and skill_id in allowed_tool_names:
+                _rewrite_identifier(
+                    target_action="tool",
+                    identifier_key="tool_name",
+                    identifier_value=skill_id,
+                    source_key="skill_id",
+                    reason="工具步骤把 tool_name 误写成了 skill_id",
+                )
+                tool_name = skill_id
+                skill_id = ""
+        elif normalized_action == "skill":
+            if (not skill_id or skill_id not in allowed_skill_ids) and tool_name in allowed_skill_ids:
+                _rewrite_identifier(
+                    target_action="skill",
+                    identifier_key="skill_id",
+                    identifier_value=tool_name,
+                    source_key="tool_name",
+                    reason="技能步骤把 skill_id 误写成了 tool_name",
+                )
+                skill_id = tool_name
+                tool_name = ""
+
+        # 再处理“工具/技能能力类型被写反”的公共漂移。
+        if normalized_action == "tool":
+            tool_name = _read_text("tool_name")
+            if tool_name and tool_name not in allowed_tool_names and tool_name in allowed_skill_ids:
+                _rewrite_identifier(
+                    target_action="skill",
+                    identifier_key="skill_id",
+                    identifier_value=tool_name,
+                    source_key="tool_name",
+                    reason="模型把技能误规划为了工具",
+                )
+            elif not tool_name and skill_id in allowed_skill_ids:
+                _rewrite_identifier(
+                    target_action="skill",
+                    identifier_key="skill_id",
+                    identifier_value=skill_id,
+                    source_key="skill_id",
+                    reason="模型把技能误规划为了工具，且标识落在 skill_id 字段",
+                )
+        elif normalized_action == "skill":
+            skill_id = _read_text("skill_id")
+            if skill_id and skill_id not in allowed_skill_ids and skill_id in allowed_tool_names:
+                _rewrite_identifier(
+                    target_action="tool",
+                    identifier_key="tool_name",
+                    identifier_value=skill_id,
+                    source_key="skill_id",
+                    reason="模型把工具误规划为了技能",
+                )
+            elif not skill_id and tool_name in allowed_tool_names:
+                _rewrite_identifier(
+                    target_action="tool",
+                    identifier_key="tool_name",
+                    identifier_value=tool_name,
+                    source_key="tool_name",
+                    reason="模型把工具误规划为了技能，且标识落在 tool_name 字段",
+                )
+
+        # 对“安装目标被误写成 skill 调用”的场景做框架级纠偏：
+        # 若当前 Agent 具备 `skill_install` 工具，且模型把待安装 skill 的真实来源
+        # 写进了 source/reference/package 等字段，则应改写为结构化安装工具调用，
+        # 而不是把目标 skill 当成“当前已可执行的技能”去校验。
+        if normalized_action == "skill":
+            skill_id = _read_text("skill_id")
+            install_source, install_source_key = _extract_install_source()
+            if (
+                skill_id
+                and skill_id not in allowed_skill_ids
+                and "skill_install" in allowed_tool_names
+                and install_source
+            ):
+                nested_params = _read_nested_params()
+                nested_params.setdefault("package", install_source)
+                nested_params.setdefault("skill_name", skill_id)
+                logger.warning(
+                    f"{Fore.YELLOW}[规划引擎] 检测到“待安装目标 skill”被误规划为技能调用，"
+                    f"已在公共规划层自动改写为 skill_install 工具 | "
+                    f"step={index} | skill_id={skill_id} | "
+                    f"install_source_key={install_source_key} | install_source={install_source}"
+                    f"{Style.RESET_ALL}"
+                )
+                normalized_action = "tool"
+                normalized_params = {
+                    "tool_name": "skill_install",
+                    "params": nested_params,
+                }
+
+        return normalized_action, normalized_params
 
     def _normalize_step_args_payload(
         self,

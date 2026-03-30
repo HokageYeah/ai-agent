@@ -79,7 +79,16 @@ class BaseArchiveTool(BaseFileTool):
 
 
 class ArchiveExtractTool(BaseArchiveTool):
-    """ZIP 解压工具。"""
+    """
+    ZIP 解压工具。
+
+    planning_safe = False：
+        解压操作会在磁盘写入文件，属于不可逆副作用，
+        必须在 Execution Node 内执行。
+    """
+
+    # 有副作用——磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,
@@ -283,7 +292,16 @@ class ArchiveExtractTool(BaseArchiveTool):
 
 
 class ArchiveCompressTool(BaseArchiveTool):
-    """ZIP 压缩工具。"""
+    """
+    ZIP 压缩工具。
+
+    planning_safe = False：
+        压缩操作会在磁盘生成新文件，属于不可逆副作用，
+        必须在 Execution Node 内执行。
+    """
+
+    # 有副作用——磁盘写入，禁止在 Planning tool-calling loop 中调用
+    planning_safe: bool = False
 
     def __init__(
         self,

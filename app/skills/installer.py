@@ -8,7 +8,8 @@
 1. 不再让 LLM 直接拼接 `shell_exec` 安装命令，减少命令猜错导致的失败。
 2. 统一把技能落地到项目配置的 Agent 工作区（默认 `app/skills/skills_md`）。
 3. 兼容历史遗留输入，例如 `npx skills install xxx`，在服务层自动规范化为 `npx skills add ...`。
-4. 安装过程使用临时 HOME / `CODEX_HOME` 隔离目录，成功后再复制到项目工作区，避免污染用户本机全局目录。
+4. 统一将 Skills CLI 命令规范化为非交互的 `npx --yes skills ...`，避免卡在依赖安装确认提示。
+5. 安装过程使用临时 HOME / `CODEX_HOME` 隔离目录，成功后再复制到项目工作区，避免污染用户本机全局目录。
 """
 
 from __future__ import annotations
@@ -223,6 +224,46 @@ class SkillInstallerService:
             requested_package_ref = parsed.package_ref
             effective_parsed = parsed
             recovery_context: Optional[Dict[str, Any]] = None
+            operation_started_at = time.monotonic()
+
+            def _remaining_timeout(max_cap: Optional[int] = None) -> int:
+                elapsed_seconds = max(0.0, time.monotonic() - operation_started_at)
+                remaining = max(1, int(self.timeout_seconds - elapsed_seconds))
+                if max_cap is not None:
+                    return min(remaining, max_cap)
+                return remaining
+
+            # 先预热 Skills CLI，确保后续 `find / add` 不会卡在
+            # “Need to install the following packages ... Ok to proceed?” 交互提示。
+            cli_ready_result = await self._ensure_skills_cli_available(
+                env=exec_env,
+                cwd=str(codex_home),
+                timeout_seconds=_remaining_timeout(max_cap=90),
+            )
+            if cli_ready_result["return_code"] != 0:
+                failure_type = self._classify_cli_failure(cli_ready_result)
+                error_message = self._format_cli_bootstrap_failure(cli_ready_result)
+                logger.error(
+                    f"{Fore.RED}[SkillInstallerService] Skills CLI 预热失败: "
+                    f"{error_message}{Style.RESET_ALL}"
+                )
+                return {
+                    "success": False,
+                    "error": error_message,
+                    "package": package,
+                    "original_package_ref": requested_package_ref,
+                    "resolved_package_ref": effective_parsed.package_ref,
+                    "cli_command": cli_ready_result["command"],
+                    "stdout": cli_ready_result["stdout"],
+                    "stderr": cli_ready_result["stderr"],
+                    "workspace_dir": str(self.workspace_dir),
+                    "used_legacy_install_alias": effective_parsed.used_legacy_install_alias,
+                    "failure_type": failure_type,
+                    "retryable": False,
+                    "recovery_queries": [],
+                    "suggested_package_refs": [],
+                    "recovered_by_find": False,
+                }
 
             if self._looks_like_plain_skill_slug(parsed.package_ref):
                 logger.info(
@@ -233,6 +274,7 @@ class SkillInstallerService:
                     query=parsed.package_ref,
                     env=exec_env,
                     cwd=str(codex_home),
+                    timeout_seconds=_remaining_timeout(max_cap=90),
                 )
                 if inferred_ref:
                     parsed.package_ref = inferred_ref
@@ -252,7 +294,7 @@ class SkillInstallerService:
                 command=install_command,
                 env=exec_env,
                 cwd=str(codex_home),
-                timeout_seconds=self.timeout_seconds,
+                timeout_seconds=_remaining_timeout(),
             )
             if cli_result["return_code"] != 0:
                 recovery_context = await self._attempt_recover_from_failed_install(
@@ -260,6 +302,7 @@ class SkillInstallerService:
                     cli_result=cli_result,
                     env=exec_env,
                     cwd=str(codex_home),
+                    timeout_seconds=_remaining_timeout(max_cap=90),
                 )
                 retry_package_ref = (recovery_context or {}).get("retry_package_ref")
                 if retry_package_ref:
@@ -279,7 +322,7 @@ class SkillInstallerService:
                         command=retry_command,
                         env=exec_env,
                         cwd=str(codex_home),
-                        timeout_seconds=self.timeout_seconds,
+                        timeout_seconds=_remaining_timeout(),
                     )
 
             if cli_result["return_code"] != 0:
@@ -444,6 +487,10 @@ class SkillInstallerService:
 
             if tokens and tokens[0] == "npx":
                 tokens = tokens[1:]
+                # 兼容 `npx --yes skills add ...` / `npx -y skills add ...`
+                # 等非交互写法；这些是 npx 自身参数，不应传给 skills CLI。
+                while tokens and tokens[0] in {"-y", "--yes"}:
+                    tokens = tokens[1:]
             if len(tokens) < 3 or tokens[0] != "skills":
                 raise ValueError("仅支持 `npx skills add ...` 或 `npx skills install ...` 格式")
 
@@ -515,6 +562,7 @@ class SkillInstallerService:
         query: str,
         env: Dict[str, str],
         cwd: str,
+        timeout_seconds: Optional[int] = None,
     ) -> Optional[str]:
         """
         通过 `npx skills find` 解析完整技能引用。
@@ -523,7 +571,12 @@ class SkillInstallerService:
         - 历史对话摘要里常只留下 skill slug；
         - 但真正安装时通常需要 `owner/repo@skill` 这类完整引用。
         """
-        refs = await self._find_package_refs(query=query, env=env, cwd=cwd)
+        refs = await self._find_package_refs(
+            query=query,
+            env=env,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+        )
         return refs[0] if refs else None
 
     async def _find_package_refs(
@@ -531,6 +584,7 @@ class SkillInstallerService:
         query: str,
         env: Dict[str, str],
         cwd: str,
+        timeout_seconds: Optional[int] = None,
     ) -> List[str]:
         """
         调用 `npx skills find` 并提取所有可安装引用。
@@ -539,7 +593,7 @@ class SkillInstallerService:
         - 安装失败后需要基于真实 find 结果做候选回退；
         - 只返回结构化引用，避免上层再去解析大段终端文本。
         """
-        find_command = ["npx", "skills", "find", query]
+        find_command = self._build_skills_cli_command("find", query)
         logger.info(
             f"{Fore.CYAN}[SkillInstallerService] 调用 find 搜索技能候选: {' '.join(find_command)}{Style.RESET_ALL}"
         )
@@ -547,7 +601,7 @@ class SkillInstallerService:
             command=find_command,
             env=env,
             cwd=cwd,
-            timeout_seconds=min(self.timeout_seconds, 90),
+            timeout_seconds=min(timeout_seconds or self.timeout_seconds, 90),
         )
         if cli_result["return_code"] != 0:
             logger.warning(
@@ -568,15 +622,56 @@ class SkillInstallerService:
         )
         return refs
 
+    def _build_skills_cli_command(self, *args: str) -> List[str]:
+        """
+        构建统一的 Skills CLI 非交互命令。
+
+        设计原因：
+        - 线上曾出现 `Need to install the following packages ... Ok to proceed? (y)`
+          导致命令挂起直至超时；
+        - 根因是 `-y` 被传给了 `skills add`，并没有传给 `npx` 本身；
+        - 因此这里统一收口为 `npx --yes skills ...`，让所有 Skills CLI 调用
+          都默认以非交互模式启动。
+        """
+        return ["npx", "--yes", "skills", *[str(arg) for arg in args if str(arg)]]
+
+    async def _ensure_skills_cli_available(
+        self,
+        env: Dict[str, str],
+        cwd: str,
+        timeout_seconds: int,
+    ) -> Dict[str, Any]:
+        """
+        预热并检查 Skills CLI 是否可用。
+
+        说明：
+        - `skills add` / `skills find` 首次执行时，npx 可能需要先下载 CLI；
+        - 若不先显式预热，业务命令的真实耗时会被 CLI 自举阶段掩盖，
+          且一旦落入交互提示，就只能在上层看到“超时”而不知道卡点在哪；
+        - 因此这里先跑一次轻量 `--version` 检查，让安装日志能区分
+          “CLI 自举失败”与“目标技能安装失败”。
+        """
+        command = self._build_skills_cli_command("--version")
+        logger.info(
+            f"{Fore.CYAN}[SkillInstallerService] 开始预热 Skills CLI | "
+            f"cmd={' '.join(command)} | timeout={timeout_seconds}s{Style.RESET_ALL}"
+        )
+        return await self._run_command(
+            command=command,
+            env=env,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+        )
+
     def _build_install_command(self, parsed: ParsedSkillInstallRequest) -> List[str]:
         """
         生成最终执行的 Skills CLI 安装命令。
 
         说明：
-        - 统一使用 `skills add`；
+        - 统一使用非交互的 `npx --yes skills add`；
         - 默认追加 `-g -y`，让安装写入临时 `CODEX_HOME/skills`，同时避免交互确认阻塞。
         """
-        command = ["npx", "skills", "add", parsed.package_ref]
+        command = self._build_skills_cli_command("add", parsed.package_ref)
         command.extend(parsed.passthrough_args)
 
         if not any(arg in {"-g", "--global"} for arg in command):
@@ -808,6 +903,7 @@ class SkillInstallerService:
         cli_result: Dict[str, Any],
         env: Dict[str, str],
         cwd: str,
+        timeout_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         基于真实 `npx skills find` 结果尝试修正错误候选。
@@ -837,7 +933,12 @@ class SkillInstallerService:
         all_candidates: List[str] = []
         seen: set[str] = set()
         for query in queries:
-            refs = await self._find_package_refs(query=query, env=env, cwd=cwd)
+            refs = await self._find_package_refs(
+                query=query,
+                env=env,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+            )
             for ref in refs:
                 if ref == parsed.package_ref or ref in seen:
                     continue
@@ -1197,6 +1298,10 @@ class SkillInstallerService:
             return "repository_auth_failed"
         if "authentication failed" in detail or "private repository" in detail:
             return "repository_auth_failed"
+        if "need to install the following packages" in detail:
+            return "cli_interactive_prompt_blocked"
+        if "ok to proceed? (y)" in detail:
+            return "cli_interactive_prompt_blocked"
         if "repository not found" in detail or "not found" in detail:
             return "repository_not_found"
         if "未找到 npx" in detail or "command not found" in detail:
@@ -1204,6 +1309,26 @@ class SkillInstallerService:
         if "超时" in detail or "timed out" in detail:
             return "timeout"
         return "unknown"
+
+    def _format_cli_bootstrap_failure(self, cli_result: Dict[str, Any]) -> str:
+        """生成 Skills CLI 预热失败的公共错误文案。"""
+        failure_type = self._classify_cli_failure(cli_result)
+        detail = (
+            (cli_result.get("stderr") or "").strip()
+            or (cli_result.get("stdout") or "").strip()
+            or "CLI 未返回可读错误信息"
+        )
+        if failure_type == "cli_not_available":
+            return f"Skills CLI 预热失败：当前环境无法找到 npx/skills 可执行命令。详细原因：{detail}"
+        if failure_type == "cli_interactive_prompt_blocked":
+            return (
+                "Skills CLI 预热失败：检测到命令停在 npx 的依赖安装确认提示。"
+                "请确保以非交互方式启动 Skills CLI。"
+                f" 详细原因：{detail}"
+            )
+        if failure_type == "timeout":
+            return f"Skills CLI 预热失败：命令执行超时。详细原因：{detail}"
+        return f"Skills CLI 预热失败：{detail}"
 
     def _build_recovery_fields(
         self,
@@ -1253,6 +1378,11 @@ class SkillInstallerService:
                 recovery_suffix += " 系统判断当前仓库可能是私有仓库，或当前环境缺少访问凭据。"
             elif failure_type == "repository_not_found":
                 recovery_suffix += " 系统判断当前技能引用可能不存在或并非公开可安装引用。"
+            elif failure_type == "cli_interactive_prompt_blocked":
+                recovery_suffix += (
+                    " 系统检测到命令停在 npx 的依赖安装确认提示，"
+                    "说明 Skills CLI 没有以非交互模式启动。"
+                )
 
             if retry_package_ref:
                 recovery_suffix += (

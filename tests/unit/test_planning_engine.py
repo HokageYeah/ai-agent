@@ -512,3 +512,154 @@ async def test_planning_engine_should_wrap_flattened_tool_args_into_params():
     assert plan.steps[0].params["tool_name"] == "mock_tool"
     assert plan.steps[0].params["params"]["query"] == "华为 Mate 60 Pro 512GB"
     assert plan.steps[0].params["params"]["top_k"] == 5
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_convert_tool_written_as_skill():
+    """若模型把工具误写成技能，规划公共层应自动归一化为 tool。"""
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {
+      "action": "skill",
+      "skill_id": "mock_tool",
+      "params": {"query": "AI 科技新闻"}
+    }
+  ],
+  "reasoning": "误把工具写成了技能"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请安装技能",
+        available_tools=[MockTool()],
+        available_skills=[],
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "mock_tool"
+    assert plan.steps[0].params["params"]["query"] == "AI 科技新闻"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_convert_skill_written_as_tool():
+    """若模型把技能误写成工具，规划公共层应自动归一化为 skill。"""
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {
+      "action": "tool",
+      "tool_name": "find-skills",
+      "params": {"query": "AI 科技新闻"}
+    }
+  ],
+  "reasoning": "误把技能写成了工具"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请搜索技能",
+        available_tools=[],
+        available_skills=[
+            Skill(
+                skill_id="find-skills",
+                name="Find Skills",
+                description="搜索技能",
+                prompt_template="Search {query}",
+            )
+        ],
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "skill"
+    assert plan.steps[0].params["skill_id"] == "find-skills"
+    assert plan.steps[0].params["params"]["query"] == "AI 科技新闻"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_route_install_target_skill_to_skill_install_tool():
+    """待安装目标若被误写成 skill 调用，应改写为 skill_install 工具。"""
+
+    class SkillInstallMockTool(Tool):
+        @property
+        def name(self) -> str:
+            return "skill_install"
+
+        @property
+        def schema(self) -> ToolSchema:
+            return ToolSchema(
+                name="skill_install",
+                description="install skill",
+                parameters={"type": "object", "properties": {}},
+            )
+
+        async def execute(self, params: dict):
+            return params
+
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {
+      "action": "skill",
+      "skill_id": "newsletter-curation",
+      "params": {"source": "inferen-sh/skills@newsletter-curation"}
+    }
+  ],
+  "reasoning": "把待安装目标误写成了 skill"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="You are a test agent",
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="请安装 inferen-sh/skills@newsletter-curation",
+        available_tools=[SkillInstallMockTool()],
+        available_skills=[],
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "skill_install"
+    assert plan.steps[0].params["params"]["package"] == "inferen-sh/skills@newsletter-curation"
+    assert plan.steps[0].params["params"]["skill_name"] == "newsletter-curation"
