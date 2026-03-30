@@ -1,0 +1,12 @@
+2026-03-31 00:16:27 | ERROR    | app.llm_hub.tool_gateway:_execute_single_call:634 - [31m工具调用超时: shell_exec (>300.0s)[0m
+2026-03-31 00:17:18 | ERROR    | app.agents.planning:_parse_plan:979 - [31mJSON 解析失败: Expecting value: line 1 column 1 (char 0)[0m
+2026-03-31 00:17:18 | ERROR    | app.agents.planning:_parse_plan:980 - [31mLLM 输出: <think>
+完美！技能安装成功。SKILL.md 文件内容显示这是一个有效的自我改进技能，包含了完整的定义和使用说明：
+
+- **名称**: self-improvement
+- **描述**: 用于持续改进的技能，捕获学习内容、错误和修正
+- **用途**: 当命令失败、用户纠正、请求不存在的功能、外部API失败、知识过时等情况时使用
+
+技能结构完整：
+- README.md
+- SKILL...[0m
