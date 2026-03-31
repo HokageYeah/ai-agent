@@ -29,6 +29,7 @@ from app.core.config import get_agent_workspace_dir
 from app.skills.base import Skill
 from app.tools.base import Tool
 from app.utils.llm_output_parser import (
+    build_balanced_text_preview,
     extract_first_balanced_json_array,
     extract_first_balanced_json_object,
     extract_json_payload,
@@ -426,11 +427,95 @@ class PlanningEngine:
     ) -> str:
         """构建 run_memory 模式下的触发提示词。"""
         rejected = user_rejected_tools or []
+        context_summary = self._build_trigger_context_summary(context)
+        if context_summary:
+            logger.info(
+                f"{Fore.YELLOW}[规划引擎] 已将 planning_context 摘要注入 trigger_prompt，"
+                f"帮助 LLM 在 run_memory 模式下感知补充上下文{Style.RESET_ALL}"
+            )
         return self.prompt_manager.render_prompt(
             "iteration_trigger_with_rejections",
             rejected_tools_text=", ".join(rejected),
             file_write_rejected=("file_write" in rejected),
+            context_summary=context_summary,
         )
+
+    def _build_trigger_context_summary(
+        self,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        将 planning_context 压缩成适合注入 trigger_prompt 的摘要。
+
+        设计原因：
+        - run_memory 模式下，系统提示词与历史 messages 已由 AgentRunMemory 承载；
+        - 但 LangGraph 额外构造的 planning_context（如最近一轮执行摘要、历史安装候选）
+          过去没有真正进入 trigger_prompt，导致这些框架层上下文对 LLM 不可见；
+        - 这里统一把高价值字段压缩成短摘要，确保“框架补充上下文”与 run_memory 主链路打通。
+        """
+        if not context:
+            return ""
+
+        def _compact(value: Any, *, max_len: int = 420) -> str:
+            try:
+                text = json.dumps(value, ensure_ascii=False, indent=2)
+            except Exception:
+                text = str(value)
+            text = re.sub(r"\s+", " ", text).strip()
+            return build_balanced_text_preview(
+                text,
+                limit=max_len,
+                note="以下为规划上下文的首尾节选，中间内容仅因控制提示词长度而省略，不代表原始结果被截断。",
+            )
+
+        sections: List[str] = []
+
+        last_plan = context.get("last_plan")
+        if last_plan:
+            sections.append(
+                "【最近一轮计划摘要】\n"
+                f"{_compact(last_plan)}"
+            )
+
+        last_execution = context.get("last_execution")
+        if last_execution:
+            sections.append(
+                "【最近一轮执行摘要】\n"
+                f"{_compact(last_execution)}"
+            )
+
+        if context.get("last_final_result") is not None:
+            sections.append(
+                "【最近一轮最终结果摘要】\n"
+                f"{_compact(context.get('last_final_result'))}"
+            )
+
+        history_install_candidates = context.get("history_install_candidates") or []
+        if history_install_candidates:
+            candidate_lines = [
+                "【会话记忆中的安装候选】",
+                "以下候选仅供规划参考，由你结合当前任务自行决定是否直接复用：",
+            ]
+            for index, candidate in enumerate(history_install_candidates[:3], start=1):
+                if not isinstance(candidate, dict):
+                    continue
+                package_ref = str(candidate.get("package_ref", "") or "").strip()
+                if not package_ref:
+                    continue
+                label = str(candidate.get("label", "") or "").strip() or "未命名候选"
+                score = candidate.get("score")
+                line = f"{index}. {label} -> {package_ref}"
+                if score not in (None, ""):
+                    line += f" | 匹配分={score}"
+                candidate_lines.append(line)
+            candidate_lines.append(
+                "若当前任务只是要求完成安装、且未指定过程，可直接复用最匹配候选；"
+                "若用户当前明确要求先搜索、指定来源渠道，或要求手动下载/克隆流程，"
+                "则应优先满足该过程性意图，再决定是否使用这些候选。"
+            )
+            sections.append("\n".join(candidate_lines))
+
+        return "\n\n".join(section for section in sections if section.strip())
 
     def _build_planning_prompt(
         self,
@@ -479,9 +564,11 @@ class PlanningEngine:
                     text = json.dumps(value, ensure_ascii=False, indent=2)
                 except Exception:
                     text = str(value)
-                if len(text) > max_len:
-                    text = text[:max_len] + "\n...（上下文已截断）"
-                return text
+                return build_balanced_text_preview(
+                    text,
+                    limit=max_len,
+                    note="以下为跨迭代上下文的首尾节选，中间内容仅因控制提示词长度而省略，不代表原始执行结果被截断。",
+                )
 
             context_block = _compact(context, max_len=5000)
             prompt += f"""

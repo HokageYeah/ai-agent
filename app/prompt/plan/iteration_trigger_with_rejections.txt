@@ -10,5 +10,10 @@
 若有 python_executor 可用，请生成一段用户可在本机运行的 Python 写文件脚本交付；
 否则直接在最终答案中返回完整内容。
 {% endif %}
+{% if context_summary %}
+
+【补充规划上下文】
+{{ context_summary }}
+{% endif %}
 
 请只返回 JSON，不要包含其他文本。

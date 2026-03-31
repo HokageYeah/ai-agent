@@ -467,47 +467,6 @@ class LangGraphAgentExecutor:
         ]
         return any(re.search(pattern, task_l) for pattern in install_patterns)
 
-    def _extract_explicit_install_strategy_signals(self, task: str) -> set[str]:
-        """
-        提取用户在当前安装任务中显式指定的“安装方式/渠道”信号。
-
-        设计原因：
-        - 历史 package_ref 复用适合“只关心装哪个技能”的标准安装请求；
-        - 但当用户明确要求“使用 GitHub 查找”“下载安装包”“手动解压/克隆安装”等，
-          说明用户这次关心的不只是目标技能，还关心“采用哪条安装路径”；
-        - 若此时仍强行把首轮计划压成 `skill_install`，会覆盖用户显式意图，
-          也会让已选中的 github/http 等能力完全失去发挥空间。
-        - 因此这里抽象为通用的“安装策略信号”识别，而不是只对 github 单词写特判。
-        """
-        task_l = str(task or "").lower().strip()
-        if not task_l:
-            return set()
-
-        signals: set[str] = set()
-        pattern_groups = {
-            "source_channel": [
-                r"(使用|通过|改用|换用|从|先用|优先用).{0,8}(github|git\s+clone|浏览器|browser|http_request|curl|wget)",
-                r"(github|git\s+clone|浏览器|browser|http_request|curl|wget).{0,8}(查找|搜索|下载|克隆|安装)",
-            ],
-            "package_artifact": [
-                r"(下载安装包|下载压缩包|下载\s*(?:zip|tar(?:\.gz)?)|安装包|压缩包|zip\b|tar\.gz|release\s+asset|release包)",
-            ],
-            "manual_workflow": [
-                r"(手动安装|手动下载|下载后安装|克隆后安装|解压后安装)",
-                r"(下载|克隆|clone|解压).{0,16}(安装|技能|此技能|这个技能)",
-            ],
-            "avoid_direct_install": [
-                r"(不要|别|禁止).{0,12}(skill_install|直接安装|npx\s+skills)",
-                r"(改用|换用).{0,12}(github|下载|压缩包|手动|克隆|http)",
-            ],
-        }
-
-        for signal_name, patterns in pattern_groups.items():
-            if any(re.search(pattern, task_l, flags=re.IGNORECASE) for pattern in patterns):
-                signals.add(signal_name)
-
-        return signals
-
     def _extract_package_ref_from_history_fact(self, fact: Dict[str, Any]) -> str:
         """
         从历史动作事实中提取可直接安装的 package_ref。
@@ -623,51 +582,31 @@ class LangGraphAgentExecutor:
 
         return score
 
-    def _build_history_guided_skill_install_plan(
+    def _build_history_guided_install_context(
         self,
         *,
-        agent: Agent,
         task: str,
-        available_tools: List[Any],
         run_memory: Optional[AgentRunMemory],
-        iteration: int,
-    ) -> Optional[Plan]:
+    ) -> Dict[str, Any]:
         """
-        基于会话记忆中的精确安装引用，直接构造首轮安装计划。
+        从会话记忆中提炼可复用的安装候选，并交给规划 LLM 自主决策。
 
         设计目标：
-        - 解决“上一轮已经查到 owner/repo@skill，本轮安装却又重新跑 find-skills”的问题；
-        - 只在当前任务的首轮生效，让 `skill_install` 先作为优先方案；
-        - 一旦本轮首轮安装失败，后续重规划（iteration>0）仍交给 LLM 自由选择 fallback，
-          满足“先走 skill_install，失败后再尝试更多方案”的全局策略。
+        - 会话记忆里常已保留精确的 `owner/repo@skill`，应作为高价值候选提供给规划层；
+        - 但是否“直接安装”还是“先搜索/先走 GitHub/先下载压缩包”，
+          应由 LLM 结合当前轮任务表述自己判断，而不是在 LangGraph 公共层直接短路；
+        - 这样既能复用历史精确标识，也不会覆盖用户当前回合的过程性意图。
         """
-        if iteration != 0 or not run_memory or not self._is_skill_install_request(task):
-            return None
-
-        available_tool_names = {
-            getattr(tool, "name", "").strip()
-            for tool in (available_tools or [])
-            if getattr(tool, "name", None)
-        }
-        if "skill_install" not in available_tool_names:
-            return None
-
-        explicit_strategy_signals = self._extract_explicit_install_strategy_signals(task)
-        if explicit_strategy_signals:
-            logger.info(
-                f"{Fore.YELLOW}[历史安装复用] 检测到用户显式指定安装策略，"
-                f"本轮跳过首轮 skill_install 直连 | signals={sorted(explicit_strategy_signals)}"
-                f"{Style.RESET_ALL}"
-            )
-            return None
+        if not run_memory or not self._is_skill_install_request(task):
+            return {}
 
         history_facts = extract_actionable_facts_from_context_messages(
             run_memory.context_messages or []
         )
         if not history_facts:
-            return None
+            return {}
 
-        best_candidate: Optional[Dict[str, Any]] = None
+        ranked_candidates: List[Dict[str, Any]] = []
         for index, fact in enumerate(history_facts):
             package_ref = self._extract_package_ref_from_history_fact(fact)
             if not package_ref:
@@ -681,52 +620,43 @@ class LangGraphAgentExecutor:
             if score <= 0:
                 continue
 
-            candidate = {
-                "package_ref": package_ref,
-                "label": label,
-                "score": score,
-                "index": index,
-            }
-            if (
-                best_candidate is None
-                or score > best_candidate["score"]
-                or (score == best_candidate["score"] and index > best_candidate["index"])
-            ):
-                best_candidate = candidate
+            ranked_candidates.append(
+                {
+                    "package_ref": package_ref,
+                    "skill_name": package_ref.rsplit("@", 1)[-1] if "@" in package_ref else "",
+                    "label": label,
+                    "score": score,
+                    "index": index,
+                }
+            )
 
-        if best_candidate is None:
-            return None
+        if not ranked_candidates:
+            return {}
 
-        package_ref = best_candidate["package_ref"]
-        skill_name = package_ref.rsplit("@", 1)[-1] if "@" in package_ref else ""
-        reasoning = (
-            "会话记忆中已存在可直接复用的精确技能安装引用，"
-            f"无需再次搜索候选，优先直接安装 {package_ref}。"
-            "若本轮安装失败，后续重规划仍可继续探索下载/解压等回退方案。"
+        ranked_candidates.sort(
+            key=lambda item: (-int(item["score"]), -int(item["index"]))
         )
+
+        top_candidates: List[Dict[str, Any]] = []
+        for candidate in ranked_candidates[:3]:
+            top_candidates.append(
+                {
+                    "package_ref": candidate["package_ref"],
+                    "skill_name": candidate["skill_name"],
+                    "label": candidate["label"],
+                    "score": candidate["score"],
+                }
+            )
+
         logger.info(
-            f"{Fore.YELLOW}[历史安装复用] 命中会话记忆中的精确安装引用，"
-            f"将首轮计划直接改写为 skill_install | package_ref={package_ref} | "
-            f"label={best_candidate['label'] or '无标签'} | score={best_candidate['score']}"
+            f"{Fore.YELLOW}[历史安装候选] 已从会话记忆提炼 {len(top_candidates)} 个安装候选，"
+            f"将交由规划 LLM 自主判断是否复用 | "
+            f"candidates={[item['package_ref'] for item in top_candidates]}"
             f"{Style.RESET_ALL}"
         )
-        return Plan(
-            steps=[
-                PlanStep(
-                    action="tool",
-                    tool_name="skill_install",
-                    params={
-                        "package": package_ref,
-                        "skill_name": skill_name or None,
-                    },
-                ),
-                PlanStep(
-                    action="final_answer",
-                    content="根据以上安装结果回答用户",
-                ),
-            ],
-            reasoning=reasoning,
-        )
+        return {
+            "history_install_candidates": top_candidates,
+        }
 
     def _is_explicitly_requesting_skill_by_id(
         self,
@@ -1734,84 +1664,81 @@ class LangGraphAgentExecutor:
                 f"跳过 LLM 规划，直接委派给 general_agent{Style.RESET_ALL}"
             )
         else:
-            history_guided_install_plan = self._build_history_guided_skill_install_plan(
+            # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
+            # 使 LLM 在重规划时能规避已知失败路径
+            current_error_ctx = state.get("error_context", [])
+            if current_error_ctx:
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
+                    f"本次为错误感知重规划{Style.RESET_ALL}"
+                )
+
+            # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
+            # 这是解决「无效迭代循环」的核心修复点：
+            # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
+            # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
+            current_reflection_history = state.get("reflection_history", [])
+            if current_reflection_history:
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
+                    f"本次为历史感知重规划{Style.RESET_ALL}"
+                )
+
+            # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
+            # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
+            # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
+            planning_context: Dict[str, Any] = {
+                "iteration": iteration,
+                "user_rejected_tools": user_rejected_tools,
+            }
+            history_install_context = self._build_history_guided_install_context(
+                task=task,
+                run_memory=state.get("run_memory"),
+            )
+            if history_install_context:
+                planning_context.update(history_install_context)
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 已将历史安装候选注入 planning_context，"
+                    f"交由 LLM 结合当前任务自主决定后续路径{Style.RESET_ALL}"
+                )
+
+            # 取最近一次 plan/execution 消息，控制体积只保留近一次
+            recent_messages = state.get("messages", []) or []
+            # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
+            #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
+            dict_messages = [m for m in recent_messages if isinstance(m, dict)]
+            last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
+            last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
+            if last_plan_msg:
+                planning_context["last_plan"] = {
+                    "reasoning": last_plan_msg.get("reasoning", ""),
+                    "steps": last_plan_msg.get("steps", [])[:8]
+                }
+            if last_exec_msg:
+                planning_context["last_execution"] = {
+                    "content": last_exec_msg.get("content", ""),
+                    # 仅保留最近步骤，避免 Prompt 爆长
+                    "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
+                }
+            if state.get("final_result") is not None:
+                planning_context["last_final_result"] = state.get("final_result")
+
+            # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
+            # 注意：stream_callback 透传到规划引擎，规划引擎会在规划 LLM 内部工具调用时
+            # 通过该回调向前端推送 SSE 进度事件，解决规划阶段工具调用"前端黑盒"问题。
+            plan = await self.planning_engine.create_plan(
                 agent=agent,
                 task=task,
                 available_tools=available_tools,
+                available_skills=available_skills,
+                context=planning_context,
+                error_context=current_error_ctx if current_error_ctx else None,
+                reflection_history=current_reflection_history if current_reflection_history else None,
+                # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
                 run_memory=state.get("run_memory"),
                 iteration=iteration,
+                stream_callback=stream_callback,
             )
-            if history_guided_install_plan is not None:
-                plan = history_guided_install_plan
-                logger.info(
-                    f"{Fore.YELLOW}[Plan Node] 已命中历史安装引用复用，"
-                    f"跳过 LLM 搜索，直接进入 skill_install 首轮尝试{Style.RESET_ALL}"
-                )
-            else:
-                # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
-                # 使 LLM 在重规划时能规避已知失败路径
-                current_error_ctx = state.get("error_context", [])
-                if current_error_ctx:
-                    logger.info(
-                        f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
-                        f"本次为错误感知重规划{Style.RESET_ALL}"
-                    )
-
-                # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
-                # 这是解决「无效迭代循环」的核心修复点：
-                # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
-                # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
-                current_reflection_history = state.get("reflection_history", [])
-                if current_reflection_history:
-                    logger.info(
-                        f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
-                        f"本次为历史感知重规划{Style.RESET_ALL}"
-                    )
-
-                # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
-                # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
-                # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
-                planning_context: Dict[str, Any] = {
-                    "iteration": iteration,
-                    "user_rejected_tools": user_rejected_tools,
-                }
-                # 取最近一次 plan/execution 消息，控制体积只保留近一次
-                recent_messages = state.get("messages", []) or []
-                # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
-                #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
-                dict_messages = [m for m in recent_messages if isinstance(m, dict)]
-                last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
-                last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
-                if last_plan_msg:
-                    planning_context["last_plan"] = {
-                        "reasoning": last_plan_msg.get("reasoning", ""),
-                        "steps": last_plan_msg.get("steps", [])[:8]
-                    }
-                if last_exec_msg:
-                    planning_context["last_execution"] = {
-                        "content": last_exec_msg.get("content", ""),
-                        # 仅保留最近步骤，避免 Prompt 爆长
-                        "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
-                    }
-                if state.get("final_result") is not None:
-                    planning_context["last_final_result"] = state.get("final_result")
-
-                # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
-                # 注意：stream_callback 透传到规划引擎，规划引擎会在规划 LLM 内部工具调用时
-                # 通过该回调向前端推送 SSE 进度事件，解决规划阶段工具调用"前端黑盒"问题。
-                plan = await self.planning_engine.create_plan(
-                    agent=agent,
-                    task=task,
-                    available_tools=available_tools,
-                    available_skills=available_skills,
-                    context=planning_context,
-                    error_context=current_error_ctx if current_error_ctx else None,
-                    reflection_history=current_reflection_history if current_reflection_history else None,
-                    # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
-                    run_memory=state.get("run_memory"),
-                    iteration=iteration,
-                    stream_callback=stream_callback,
-                )
 
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
         

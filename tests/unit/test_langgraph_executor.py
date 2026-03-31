@@ -661,20 +661,13 @@ def test_build_capability_gap_delegate_plan_should_not_force_delegate_when_agent
     assert plan is None
 
 
-def test_build_history_guided_skill_install_plan_should_reuse_session_package_ref():
-    """安装任务首轮应优先复用会话记忆中的精确 package_ref，而不是再次搜索。"""
+def test_build_history_guided_install_context_should_collect_ranked_candidates():
+    """安装任务应提炼历史 package_ref 候选，供规划 LLM 自主决定是否复用。"""
     executor = _build_executor()
-    agent = Agent(
-        agent_id="general_agent",
-        name="通用助手",
-        description="具备安装能力",
-        role="执行型 Agent",
-        available_tools=["skill_install", "shell_exec"],
-    )
     run_memory = AgentRunMemory(
-        task="安装 AI新闻 技能",
-        agent_id=agent.agent_id,
-        agent_name=agent.name,
+        task="使用githb搜索安装 yyh211/claude-meta-skill@daily-ai-news 技能",
+        agent_id="general_agent",
+        agent_name="通用助手",
         context_messages=[
             {
                 "role": "user",
@@ -690,42 +683,27 @@ def test_build_history_guided_skill_install_plan_should_reuse_session_package_re
             }
         ],
     )
-    available_tools = [
-        SimpleNamespace(name="skill_install"),
-        SimpleNamespace(name="shell_exec"),
-    ]
 
-    plan = executor._build_history_guided_skill_install_plan(
-        agent=agent,
-        task="安装 AI新闻 技能",
-        available_tools=available_tools,
+    context = executor._build_history_guided_install_context(
+        task="使用githb搜索安装 yyh211/claude-meta-skill@daily-ai-news 技能",
         run_memory=run_memory,
-        iteration=0,
     )
 
-    assert plan is not None
-    assert len(plan.steps) == 2
-    assert plan.steps[0].action == "tool"
-    assert plan.steps[0].params["tool_name"] == "skill_install"
-    assert plan.steps[0].params["params"]["package"] == "yyh211/claude-meta-skill@daily-ai-news"
-    assert plan.steps[0].params["params"]["skill_name"] == "daily-ai-news"
-    assert plan.steps[1].action == "final_answer"
+    assert "history_install_candidates" in context
+    assert len(context["history_install_candidates"]) == 1
+    assert context["history_install_candidates"][0]["package_ref"] == "yyh211/claude-meta-skill@daily-ai-news"
+    assert context["history_install_candidates"][0]["skill_name"] == "daily-ai-news"
+    assert context["history_install_candidates"][0]["label"] == "AI/科技领域新闻"
+    assert context["history_install_candidates"][0]["score"] > 0
 
 
-def test_build_history_guided_skill_install_plan_should_only_apply_on_first_iteration():
-    """历史安装直连只应在当前任务首轮生效，后续失败重规划仍交给 LLM 自由回退。"""
+def test_build_history_guided_install_context_should_ignore_non_install_task():
+    """非安装任务不应提炼历史安装候选，避免无关上下文污染规划。"""
     executor = _build_executor()
-    agent = Agent(
-        agent_id="general_agent",
-        name="通用助手",
-        description="具备安装能力",
-        role="执行型 Agent",
-        available_tools=["skill_install"],
-    )
     run_memory = AgentRunMemory(
-        task="安装 金融财经新闻 技能",
-        agent_id=agent.agent_id,
-        agent_name=agent.name,
+        task="列出刚才找到的所有技能",
+        agent_id="general_agent",
+        agent_name="通用助手",
         context_messages=[
             {
                 "role": "user",
@@ -738,15 +716,81 @@ def test_build_history_guided_skill_install_plan_should_only_apply_on_first_iter
         ],
     )
 
-    plan = executor._build_history_guided_skill_install_plan(
-        agent=agent,
-        task="安装 金融财经新闻 技能",
-        available_tools=[SimpleNamespace(name="skill_install")],
+    context = executor._build_history_guided_install_context(
+        task="列出刚才找到的所有技能",
         run_memory=run_memory,
-        iteration=1,
     )
 
-    assert plan is None
+    assert context == {}
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_pass_history_install_candidates_to_planning_engine(monkeypatch):
+    """
+    测试当前安装任务即使命中历史 package_ref，也应继续进入规划引擎，
+    由 LLM 结合当前回合意图决定“直接安装”还是“先搜索/先核验”。
+    """
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="具备安装能力",
+        role="执行型 Agent",
+        available_tools=["skill_install", "shell_exec"],
+    )
+    run_memory = AgentRunMemory(
+        task="使用githb搜索安装 yyh211/claude-meta-skill@daily-ai-news 技能",
+        agent_id=agent.agent_id,
+        agent_name=agent.name,
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【历史任务摘要】\n"
+                    "可直接复用事实:\n"
+                    "- package_ref: AI/科技领域新闻 -> yyh211/claude-meta-skill@daily-ai-news\n"
+                ),
+            }
+        ],
+    )
+    captured: dict = {}
+
+    monkeypatch.setattr(executor.tool_hub, "list_tools", lambda: [SimpleNamespace(name="skill_install")])
+    monkeypatch.setattr(executor, "_resolve_available_skills", lambda agent, task: ([], []))
+
+    async def fake_create_plan(**kwargs):
+        captured["context"] = kwargs.get("context") or {}
+        return Plan(
+            steps=[PlanStep("final_answer", content="由规划引擎决定下一步")],
+            reasoning="由 LLM 结合当前任务和历史上下文决定路径",
+        )
+
+    monkeypatch.setattr(executor.planning_engine, "create_plan", fake_create_plan)
+
+    state: AgentState = {
+        "messages": [],
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "使用githb搜索安装 yyh211/claude-meta-skill@daily-ai-news 技能",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": run_memory,
+    }
+
+    new_state = await executor._plan_node(state, stream_callback=None)
+
+    assert "history_install_candidates" in captured["context"]
+    assert captured["context"]["history_install_candidates"][0]["package_ref"] == (
+        "yyh211/claude-meta-skill@daily-ai-news"
+    )
+    assert new_state["current_plan"].reasoning == "由 LLM 结合当前任务和历史上下文决定路径"
 
 
 def test_resolve_available_skills_should_hide_restricted_skills_for_normal_task(monkeypatch):

@@ -24,7 +24,11 @@ from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.execution import ExecutionResult
-from app.utils.llm_output_parser import extract_json_payload
+from app.utils.llm_output_parser import (
+    build_balanced_text_preview,
+    extract_json_payload,
+    extract_user_visible_result,
+)
 from app.utils.prompt_manager import PromptManager
 
 # NOTE: 使用 TYPE_CHECKING 避免循环导入
@@ -247,7 +251,17 @@ class ReflectionEngine:
         当存在未恢复失败步骤时，显式提醒 LLM：当前结果只是临时输出，
         不能把其中的成功措辞直接当成任务已完成。
         """
-        preview = str(getattr(execution_result, "result", "") or "")[:300]
+        raw_result = extract_user_visible_result(
+            getattr(execution_result, "result", "") or ""
+        )
+        preview = build_balanced_text_preview(
+            raw_result,
+            limit=1800,
+            note=(
+                "注意：以下若出现首尾节选或中间省略，"
+                "是系统为了控制反思上下文而做的摘要，不代表原始回复在传输中被截断。"
+            ),
+        ) if raw_result else ""
         if preview and not derived_success:
             return (
                 "注意：本轮存在未恢复的失败步骤，以下整体结果仅代表临时输出，"

@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.6
-- **最后更新**: 2026-03-19
+- **版本号**: v1.9
+- **最后更新**: 2026-04-01
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -136,6 +136,11 @@ LLM Hub (统一推理)
   ↓
 技能进入 discover -> route -> lazy load 主链路
 ```
+
+补充约束：
+- 会话记忆里若已有精确的 `owner/repo@skill` 安装引用，框架会把它提炼为“历史安装候选”注入规划上下文；
+- 但是否直接复用这些候选，不在 LangGraph 公共层写死，而是交由 Planning LLM 结合当前回合任务表述自行判断；
+- 若用户显式要求“先搜索”“从 GitHub 查找”“手动下载/解压/克隆后安装”等过程，规划应优先满足过程性意图，历史候选仅作为参考或后续参数来源。
 
 ---
 
@@ -940,6 +945,8 @@ class PlanningEngine:
 - **截断型修复**：若模型输出疑似因长度截断导致 JSON 不完整，统一走 `retry_after_length`，让模型仅返回更短、更规整的计划 JSON。
 - **非截断型结构修复**：若 JSON 解析失败但不是截断问题，统一走 `repair_after_invalid_json`，目标是修复结构而不是重新自由规划，减少中间轨迹中出现“解析计划失败”的伪 `final_answer`。
 - **复用上游结果约束**：若后续需要对上一步 `tool` / `skill` / `delegate` 的 HTML、文本或 JSON 继续处理，必须通过 `{{last_tool_result}}`、`{{last_tool_result.content}}`、`{{last_delegate_result}}` 等占位符引用；禁止在 `python_executor` 中手工重写上游数据样本。
+- **历史安装引用只作为候选**：会话记忆中提炼出的 `owner/repo@skill` 等精确安装引用，只能作为 Planning Prompt 的高价值候选上下文注入；LangGraph 公共层不再直接把首轮计划短路成 `skill_install`，是否复用这些引用由 LLM 结合当前任务表述、用户是否要求“先搜索 / 先从 GitHub 查找 / 手动下载”来自主决策。
+- **长结果回看采用首尾保留摘要**：Reflection 与重规划在回看上一轮 `final_result`、工具结果或技能结果时，不再只截取开头，而是统一通过 `build_balanced_text_preview()` 生成“开头 + 结尾 + 中间省略说明”的公共摘要，避免列表/表格类答案因尾部被隐藏而被误判为“回复在传输中被截断”。
 
 ### 8.4 执行引擎
 
@@ -1479,7 +1486,7 @@ class LangGraphAgentExecutor:
 
 重规划时，除 `error_context` / `error_analysis` 外，将上一轮的计划、执行与反思结果注入规划 Prompt，减少重复执行、尊重用户拒绝：
 
-- **planning_context**（在 `_plan_node` 中从 `state["messages"]` 与 `final_result` 提取）：`iteration`、`user_rejected_tools`、`last_plan`、`last_execution`、`last_final_result`；规划引擎 `create_plan(..., context=planning_context)`，在 `_build_planning_prompt` 中追加「跨迭代执行上下文」区块，约束 LLM 复用已有数据、勿重复调用已拒绝工具。
+- **planning_context**（在 `_plan_node` 中从 `state["messages"]` 与 `final_result` 提取）：`iteration`、`user_rejected_tools`、`last_plan`、`last_execution`、`last_final_result`；规划引擎 `create_plan(..., context=planning_context)`，在 `_build_planning_prompt` 中追加「跨迭代执行上下文」区块，约束 LLM 复用已有数据、勿重复调用已拒绝工具。其中 `last_final_result` 在超长场景下统一采用“首尾保留 + 中间省略说明”的公共摘要策略，而不是只截取前缀，保证重规划时仍能看到结果尾部的关键结论、安装命令或列表项。
 - **reflection_history**：每轮反思完成后将结果追加到 `AgentState.reflection_history`，规划时可一并传入，供 LLM 参考历史反思结论。
 
 #### 迭代防循环（_should_continue）
@@ -2004,3 +2011,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.7）**：框架级技能工具兼容性委派增强。`_filter_tool_incompatible_skills()` 由单返回值 `List` 升级为二元组 `(compatible_skills, incompatible_skills)`，`_resolve_available_skills()` 同步升级返回 Tuple；新增通用技能点名检测方法 `_is_explicitly_requesting_skill_by_id()`，支持中英文混合模式的技能 ID 识别；`_build_capability_gap_delegate_plan()` 新增"工具不兼容技能点名委派"路径：当用户明确点名了某个因工具不足被过滤的系统级技能时，协调型 Agent 自动向 `general_agent` 委派任务，而不是向用户宣称"该技能不存在"。此修复适用于所有协调型 Agent + 所有工具受限技能，为框架通用能力，不绑定任何具体技能 ID 或业务逻辑。
 
 > ✅ **已完成（v1.8）**：规划阶段工具双层过滤 + Reflection 信息盲区修复。针对"规划 loop 执行副作用工具 → Reflection 误判 → 触发无效重规划 → 副作用工具重复调用"的架构问题，在公共层实施两项修复：**（A）`planning_safe` 双层过滤机制** — `Tool` 基类新增 `planning_safe: bool = True` 属性，有副作用工具（`skill_install`、`shell_exec`、`file_write`、`file_edit`、`python_executor`、`browser`、`send_message`、`spawn_agent`、`archive_compress`、`archive_extract`）覆盖为 `False`；`ToolHub` 新增 `get_planning_safe_names()` 接口；`planning.py` 在 Agent 白名单过滤之后叠加第二层 `planning_safe` 过滤，只读探查工具才能进入规划 tool-calling loop，副作用工具只能通过 Execution Node 执行；**（B）规划阶段工具调用写入 run_memory** — `AgentRunMemory` 新增 `plan_tool_call`/`plan_tool_result` EntryType 及 `write_planning_tool_call()` 方法；`_planning_tool_callback` 闭包升级为双职责（SSE 推送 + run_memory 写入），规划 loop 调用结果同步持久化，Reflection 的 `build_messages_for_reflection()` 因此可完整看到规划阶段所有工具交互，消除信息盲区。两项修复均作用于公共框架层，不绑定任何具体技能或业务逻辑。
+
+> ✅ **已完成（v1.9）**：规划候选决策边界与长结果摘要边界统一收口。针对"会话记忆中的精确安装引用被框架层直接短路复用"与"Reflection / 重规划只看到结果前缀后误判传输截断"这两类公共链路问题，框架层实施两项通用修复：**（A）历史安装引用降级为规划候选** — 会话记忆中提炼出的 `owner/repo@skill` 仅作为 Planning Prompt 的候选上下文，不再在公共层写死为直接安装，由 LLM 根据当前任务表述自主决定是直接复用、还是先搜索 / 先走 GitHub / 先下载压缩包；**（B）长结果统一采用首尾保留摘要** — 新增公共摘要能力 `build_balanced_text_preview()`，供 `ReflectionEngine._build_reflection_result_preview()` 与 Planning 的跨迭代上下文摘要复用，统一输出“开头 + 结尾 + 中间省略说明”，同时在反思规则中明确“首尾节选不等于传输截断”，避免列表、表格、长命令清单等答案在公共层被误判。两项修复均作用于规划/反思公共边界，不绑定任何具体技能、日志文案或单一业务场景。

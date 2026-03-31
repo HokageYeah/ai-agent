@@ -89,6 +89,53 @@ def compact_user_visible_text(text: str, limit: int = 1200) -> str:
     return cleaned[:limit] + "\n...（内容已截断）"
 
 
+def build_balanced_text_preview(
+    text: str,
+    *,
+    limit: int = 1600,
+    head_chars: Optional[int] = None,
+    tail_chars: Optional[int] = None,
+    note: str = "以下为首尾节选，中间内容仅因控制上下文长度而省略，不代表原始内容在传输或执行过程中被截断。",
+) -> str:
+    """
+    构建“保留首尾信息”的长文本预览。
+
+    设计目标：
+    1. 传统的“只保留前 N 字”会让列表/表格类答案只剩前几项，容易让反思/重规划误判为“结果被截断”；
+    2. 这里统一保留开头和结尾，并显式说明“中间省略只是上下文压缩”，避免模型把摘要误认为传输异常；
+    3. 作为公共能力，供 Reflection / Planning 等需要“控长但又不能丢尾部关键信息”的场景复用。
+    """
+    cleaned = strip_think_blocks(text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+
+    normalized_note = str(note or "").strip()
+    # 为了保证前后文都能保留，默认按 6:4 分配头尾窗口。
+    if head_chars is None or tail_chars is None:
+        budget = max(240, limit - 120)
+        computed_head = max(140, int(budget * 0.6))
+        computed_tail = max(100, budget - computed_head)
+        head_chars = computed_head if head_chars is None else head_chars
+        tail_chars = computed_tail if tail_chars is None else tail_chars
+
+    head_chars = max(60, int(head_chars))
+    tail_chars = max(60, int(tail_chars))
+    if head_chars + tail_chars >= len(cleaned):
+        return cleaned
+
+    omitted = len(cleaned) - head_chars - tail_chars
+    head_part = cleaned[:head_chars].rstrip()
+    tail_part = cleaned[-tail_chars:].lstrip()
+
+    return (
+        f"{normalized_note}\n"
+        f"【原始长度】{len(cleaned)} 字\n"
+        f"【开头片段】\n{head_part}\n"
+        f"...（中间省略 {omitted} 字）\n"
+        f"【结尾片段】\n{tail_part}"
+    )
+
+
 def extract_user_visible_preview(payload: Any, limit: int = 1200) -> Any:
     """
     从复杂执行结果中提取“适合中间事件展示”的预览载荷。

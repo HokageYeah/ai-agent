@@ -246,6 +246,67 @@ async def test_planning_engine_format_skills():
     assert "A test skill" in formatted
 
 
+def test_planning_engine_build_trigger_prompt_should_include_context_summary():
+    """run_memory 模式下的 trigger_prompt 应真实携带 planning_context 摘要。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    prompt = planning_engine._build_trigger_prompt(
+        context={
+            "last_execution": {
+                "content": "上一轮仅完成技能搜索，还未实际安装",
+                "step_results": [{"action": "skill", "skill_id": "find-skills", "success": True}],
+            },
+            "history_install_candidates": [
+                {
+                    "label": "AI/科技领域新闻",
+                    "package_ref": "yyh211/claude-meta-skill@daily-ai-news",
+                    "score": 19,
+                }
+            ],
+        },
+        user_rejected_tools=["file_write"],
+    )
+
+    assert "补充规划上下文" in prompt
+    assert "AI/科技领域新闻 -> yyh211/claude-meta-skill@daily-ai-news" in prompt
+    assert "优先满足该过程性意图" in prompt
+    assert "file_write" in prompt
+
+
+def test_planning_engine_trigger_context_summary_should_preserve_result_tail():
+    """规划补充上下文中的最终结果摘要应保留首尾，避免只剩前几项列表。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    long_result = """
+# 新闻类 Skills 搜索结果汇总
+1. inferen-sh/skills@newsletter-curation
+2. cclank/news-aggregator-skill@news-aggregator-skill
+3. vm0-ai/vm0-skills@hackernews
+4. yyh211/claude-meta-skill@daily-ai-news
+5. noizai/skills@daily-news-caster
+6. sundial-org/awesome-openclaw-skills@finance-news
+""".strip() + ("\n补充说明" * 200)
+
+    summary = planning_engine._build_trigger_context_summary(
+        {
+            "last_final_result": {
+                "success": True,
+                "result": long_result,
+            }
+        }
+    )
+
+    assert "首尾节选" in summary
+    assert "inferen-sh/skills@newsletter-curation" in summary
+    assert "sundial-org/awesome-openclaw-skills@finance-news" in summary
+
+
 @pytest.mark.asyncio
 async def test_planning_engine_parse_plan():
     """测试计划解析"""

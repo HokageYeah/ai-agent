@@ -318,3 +318,81 @@ async def test_reflection_trigger_should_use_derived_failure_status_for_failed_s
 
     assert "当前轮执行状态: 失败" in trigger
     assert "不能视为任务已成功完成" in trigger
+
+
+@pytest.mark.asyncio
+async def test_reflection_trigger_should_keep_complete_mid_length_final_answer():
+    """
+    中等长度的最终答案不应再被反思公共层粗暴裁成前 300 字。
+
+    当前案例里新闻技能汇总约 1000+ 字，如果只保留前 300 字，
+    反思模型会误以为后几项“在传输中被截断”。
+    """
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    final_answer = """
+# 新闻类 Skills 搜索结果汇总
+1. inferen-sh/skills@newsletter-curation
+2. cclank/news-aggregator-skill@news-aggregator-skill
+3. vm0-ai/vm0-skills@hackernews
+4. yyh211/claude-meta-skill@daily-ai-news
+5. noizai/skills@daily-news-caster
+6. sundial-org/awesome-openclaw-skills@finance-news
+
+安装命令：
+- npx skills add inferen-sh/skills@newsletter-curation
+- npx skills add cclank/news-aggregator-skill@news-aggregator-skill
+- npx skills add vm0-ai/vm0-skills@hackernews
+- npx skills add yyh211/claude-meta-skill@daily-ai-news
+- npx skills add noizai/skills@daily-news-caster
+- npx skills add sundial-org/awesome-openclaw-skills@finance-news
+""".strip()
+
+    execution_result = ExecutionResult(
+        success=True,
+        result=final_answer,
+        step_results=[{"action": "final_answer", "success": True, "result": final_answer}],
+        error=None,
+    )
+
+    trigger = reflection_engine._build_reflection_trigger(
+        execution_result=execution_result,
+        error_context=None,
+    )
+
+    assert "当前轮执行状态: 成功" in trigger
+    assert "yyh211/claude-meta-skill@daily-ai-news" in trigger
+    assert "sundial-org/awesome-openclaw-skills@finance-news" in trigger
+
+
+@pytest.mark.asyncio
+async def test_reflection_trigger_should_use_head_tail_preview_for_very_long_result():
+    """超长最终答案应保留首尾，并明确告知这是上下文节选而非传输截断。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    head = "开头信息：" + ("A" * 1200)
+    tail = "结尾关键信息：finance-news / daily-ai-news / newsletter-curation"
+    final_answer = head + "\n" + ("中间内容\n" * 500) + tail
+
+    execution_result = ExecutionResult(
+        success=True,
+        result=final_answer,
+        step_results=[{"action": "final_answer", "success": True, "result": final_answer}],
+        error=None,
+    )
+
+    trigger = reflection_engine._build_reflection_trigger(
+        execution_result=execution_result,
+        error_context=None,
+    )
+
+    assert "系统为了控制反思上下文而做的摘要" in trigger
+    assert "开头信息" in trigger
+    assert "finance-news / daily-ai-news / newsletter-curation" in trigger
+    assert "中间省略" in trigger
