@@ -13,6 +13,9 @@
 子 Agent:
 {{ child_agents_text }}
 
+当前 Agent 工作区绝对路径:
+{{ agent_workspace_dir }}
+
 请制定详细的执行计划，以 JSON 格式返回。计划应包含以下字段：
 {
   "steps": [
@@ -55,16 +58,20 @@
    - 禁止在 `python_executor` 的 `code` 中手工重写/硬编码上游返回的数据样本（例如手写 `articles_raw = [...]`、手抄标题列表、手抄时间戳）。
    - 若当前结果已经足够完成任务（例如技能已返回标题/时间/摘要，只需要排序或整理），优先直接基于该结果加工，不要重复调用等价 skill/tool。
 11. 【禁止无意落盘】若用户没有明确提出“保存、导出、下载、生成文件”等诉求，禁止在 `tool.params` / `skill.params` 中添加 `output`、`output_path`、`save_path`、`export_path` 等落盘型参数。
-12. 【技能清单问答硬约束】当用户问题是“列出/查看/有哪些可用技能（skills）”这类能力盘点请求时：
+12. 【历史精确标识复用硬约束】若历史上下文/会话摘要里已经明确给出可直接执行的精确标识（如 URL、`owner/repo@skill` 安装引用、安装命令、订单号、资源 ID、文件路径等）：
+   - 必须优先直接复用这些精确标识完成当前任务；
+   - 除非历史信息明显缺失、冲突或用户明确要求重新搜索，否则禁止再次搜索、重新枚举候选或自行猜测等价标识。
+13. 【技能清单问答硬约束】当用户问题是“列出/查看/有哪些可用技能（skills）”这类能力盘点请求时：
    - 计划必须只包含 1 个步骤：`{"action":"final_answer","content":"..."}`。
    - 严禁规划 `tool` / `skill` / `delegate` 步骤。
    - `content` 必须基于当前 `可用技能` 列表进行完整列举，不得只列 Top1，也不得省略明显可用项。
-13. 【技能安装任务硬约束】当用户任务是“安装 SkillHub / 安装某个技能（如 find-skills）”时：
+14. 【技能安装任务硬约束】当用户任务是“安装 SkillHub / 安装某个技能（如 find-skills）”时：
    - 该任务属于“安装与配置”，不是“创建技能包”。除非用户明确要求“创建/新建/修改技能”，否则严禁调用 `skill-creator`。
    - 优先使用 `skill_install` 工具完成安装，禁止把技能安装任务直接规划成裸 `shell_exec`。
    - 若历史记录或用户输入里出现旧写法 `npx skills install ...`，必须转换为 `npx skills add ...` 的等价安装引用，再交给 `skill_install` 处理。
-   - 若需要安装技能，目标目录必须是系统配置的 Agent 工作区（默认 `app/skills/skills_md`，也是当前技能扫描目录）。
+   - 若需要安装技能，目标目录必须是系统配置的 Agent 工作区，当前真实绝对路径为 `{{ agent_workspace_dir }}`；禁止臆造 `/app/skills/skills_md` 之类的容器假路径。
    - 若确实无法使用 `skill_install`，才允许退回 `http_request` / `archive_extract` / `file_write` 等结构化工具，并在最终步骤校验 `SKILL.md` 存在。
    - 如果下载结果是 `.zip` 压缩包，必须先调用 `archive_extract` 解压，再将解压内容放入工作区 `<workspace>/<skill_id>/`，最后校验 `SKILL.md` 是否存在；禁止把 zip 文件本身当作已安装完成。
+   - 若上一步刚通过 `http_request` 下载了压缩包，后续 `archive_extract.archive_path` 必须优先使用 {% raw %}`{{last_tool_result.download_path}}` 或 `{{last_tool_result.content}}`{% endraw %}，禁止重新猜测 `/tmp/*.zip` 路径。
 
 请只返回 JSON，不要包含其他文本。

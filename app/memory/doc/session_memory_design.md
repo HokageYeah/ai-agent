@@ -154,10 +154,30 @@ def extract_summary_from_run_memory(run_memory: AgentRunMemory) -> TaskSummaryEn
     提取内容：
       - 最后一条 reflection 的 summary 字段 → 作为 summary 文字
       - final_result 中的结构化数据 → 作为 key_data
+      - final_result / step_results 中可直接复用的“精确标识”
+        （如 owner/repo@skill、安装命令、URL、订单号、资源 ID）→ 作为 actionable facts
       - 历史 messages 中 tool_result 类型的 tool_name 列表 → tools_used
       - 最大 iteration 值 → iterations
     """
 ```
+
+### 关键补充：会话记忆不能只保留“自然语言结论”
+
+如果上一轮任务已经产出了下一轮可直接执行的精确标识，例如：
+
+- `owner/repo@skill`
+- `npx skills add ...`
+- URL
+- 订单号 / 资源 ID / 文件路径
+
+则这些标识必须进入 `key_data`，并在 `to_context_message()` 中以可直接复用的形式呈现给 LLM。
+
+否则下一轮只能知道“之前查过/做过”，却不知道“具体该用哪个精确引用”，容易触发：
+
+- 再次重复搜索；
+- 重新枚举候选；
+- 根据模糊别名猜测错误目标；
+- 在安装/下载/访问类任务中走到错误引用或错误 URL。
 
 **选项B（后续可升级）**：LLM 二次总结  
 调用 LLM 对 `run_memory.get_timeline()` 进行一次专项总结，获取更高质量的摘要。预留接口，本次不实现。

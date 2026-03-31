@@ -661,6 +661,94 @@ def test_build_capability_gap_delegate_plan_should_not_force_delegate_when_agent
     assert plan is None
 
 
+def test_build_history_guided_skill_install_plan_should_reuse_session_package_ref():
+    """安装任务首轮应优先复用会话记忆中的精确 package_ref，而不是再次搜索。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="具备安装能力",
+        role="执行型 Agent",
+        available_tools=["skill_install", "shell_exec"],
+    )
+    run_memory = AgentRunMemory(
+        task="安装 AI新闻 技能",
+        agent_id=agent.agent_id,
+        agent_name=agent.name,
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【历史任务摘要】\n"
+                    "任务: 使用find-skills技能，查询新闻有关技能\n"
+                    "结果: ✅ 成功\n"
+                    "结论: 已查询到新闻相关技能\n"
+                    "可直接复用事实:\n"
+                    "- package_ref: AI/科技领域新闻 -> yyh211/claude-meta-skill@daily-ai-news\n"
+                    "- command: 安装命令 -> npx skills add yyh211/claude-meta-skill@daily-ai-news\n"
+                ),
+            }
+        ],
+    )
+    available_tools = [
+        SimpleNamespace(name="skill_install"),
+        SimpleNamespace(name="shell_exec"),
+    ]
+
+    plan = executor._build_history_guided_skill_install_plan(
+        agent=agent,
+        task="安装 AI新闻 技能",
+        available_tools=available_tools,
+        run_memory=run_memory,
+        iteration=0,
+    )
+
+    assert plan is not None
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "skill_install"
+    assert plan.steps[0].params["params"]["package"] == "yyh211/claude-meta-skill@daily-ai-news"
+    assert plan.steps[0].params["params"]["skill_name"] == "daily-ai-news"
+    assert plan.steps[1].action == "final_answer"
+
+
+def test_build_history_guided_skill_install_plan_should_only_apply_on_first_iteration():
+    """历史安装直连只应在当前任务首轮生效，后续失败重规划仍交给 LLM 自由回退。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="具备安装能力",
+        role="执行型 Agent",
+        available_tools=["skill_install"],
+    )
+    run_memory = AgentRunMemory(
+        task="安装 金融财经新闻 技能",
+        agent_id=agent.agent_id,
+        agent_name=agent.name,
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【历史任务摘要】\n"
+                    "可直接复用事实:\n"
+                    "- package_ref: 金融财经新闻 -> sundial-org/awesome-openclaw-skills@finance-news\n"
+                ),
+            }
+        ],
+    )
+
+    plan = executor._build_history_guided_skill_install_plan(
+        agent=agent,
+        task="安装 金融财经新闻 技能",
+        available_tools=[SimpleNamespace(name="skill_install")],
+        run_memory=run_memory,
+        iteration=1,
+    )
+
+    assert plan is None
+
+
 def test_resolve_available_skills_should_hide_restricted_skills_for_normal_task(monkeypatch):
     """
     测试普通任务下，skill-creator/dynamic_probe 会在路由前被门禁隐藏。

@@ -889,6 +889,40 @@ class TestArchiveTools:
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 
+    @pytest.mark.asyncio
+    async def test_extract_should_accept_target_path_alias(self, compress_tool, extract_tool):
+        """archive_extract 应兼容 target_path 作为 output_dir 别名。"""
+        temp_root = tempfile.mkdtemp()
+        try:
+            source_dir = Path(temp_root) / "daily-ai-news"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "SKILL.md").write_text("# daily-ai-news\n", encoding="utf-8")
+
+            zip_path = Path(temp_root) / "daily-ai-news.zip"
+            compressed = await compress_tool.execute(
+                {
+                    "source_path": str(source_dir),
+                    "output_path": str(zip_path),
+                    "include_root": True,
+                    "overwrite": True,
+                }
+            )
+            assert compressed["success"] is True
+
+            target_dir = Path(temp_root) / "extracted"
+            extracted = await extract_tool.execute(
+                {
+                    "archive_path": str(zip_path),
+                    "target_path": str(target_dir),
+                    "overwrite": True,
+                }
+            )
+
+            assert extracted["success"] is True
+            assert (target_dir / "daily-ai-news" / "SKILL.md").exists()
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
 
 class TestFormatFunctions:
     """格式化函数测试类"""

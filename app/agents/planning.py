@@ -25,6 +25,7 @@ from colorama import Fore, Style
 from loguru import logger
 
 from app.agents.base import Agent
+from app.core.config import get_agent_workspace_dir
 from app.skills.base import Skill
 from app.tools.base import Tool
 from app.utils.llm_output_parser import (
@@ -415,6 +416,7 @@ class PlanningEngine:
             tools_text=self._format_tools(available_tools),
             skills_text=self._format_skills(available_skills),
             child_agents_text=", ".join(agent.child_agents) if agent.child_agents else "无",
+            agent_workspace_dir=str(get_agent_workspace_dir()),
         )
 
     def _build_trigger_prompt(
@@ -468,6 +470,7 @@ class PlanningEngine:
             tools_text=self._format_tools(available_tools),
             skills_text=self._format_skills(available_skills),
             child_agents_text=", ".join(agent.child_agents) if agent.child_agents else "无",
+            agent_workspace_dir=str(get_agent_workspace_dir()),
         )
 
         if context:

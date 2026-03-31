@@ -19,6 +19,7 @@ from app.tools.builtin.shell import ShellExecutorTool
 from app.tools.builtin.skill import SkillInstallTool
 from app.skills.base import Skill
 from app.skills.manager import SkillManager
+from app.core.config import settings
 from app.core.llm_mock import MockLLM
 from app.llm_hub.inference import InferenceEngine
 from app.llm_hub.registry import ModelRegistry
@@ -692,6 +693,108 @@ def test_normalize_skill_output_params_should_avoid_unrequested_persistence_and_
         skill_id="wechat-article-search",
     )
     assert rewritten["output"] == str((runtime_dir / "zz_education_articles.json").resolve())
+
+
+def test_normalize_tool_runtime_params_should_rewrite_workspace_and_reuse_download_path(
+    tmp_path,
+    monkeypatch,
+):
+    """安装 fallback 链路应统一改写工作区路径，并复用上一跳下载的真实 ZIP 路径。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+    )
+
+    workspace_dir = tmp_path / "skills_md"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    download_zip = tmp_path / "http_request_result.zip"
+    download_zip.write_bytes(b"zip")
+    monkeypatch.setattr(settings, "AGENT_WORKSPACE_DIR", str(workspace_dir))
+
+    normalized_archive = execution_engine._normalize_tool_runtime_params(
+        tool_name="archive_extract",
+        params={
+            "archive_path": "/tmp/claude-meta-skill-main.zip",
+            "target_path": "/tmp/claude-meta-skill-extracted",
+        },
+        prev_results=[
+            {
+                "success": True,
+                "action": "tool",
+                "tool_name": "http_request",
+                "result": {
+                    "is_binary": True,
+                    "download_path": str(download_zip),
+                    "content": str(download_zip),
+                },
+            }
+        ],
+    )
+    assert normalized_archive["archive_path"] == str(download_zip)
+    assert normalized_archive["target_path"] == "/tmp/claude-meta-skill-extracted"
+
+    normalized_file = execution_engine._normalize_tool_runtime_params(
+        tool_name="file_read",
+        params={"path": "/app/skills/skills_md/daily-ai-news/SKILL.md"},
+        prev_results=[],
+    )
+    assert normalized_file["path"] == str((workspace_dir / "daily-ai-news" / "SKILL.md").resolve())
+
+    normalized_shell = execution_engine._normalize_tool_runtime_params(
+        tool_name="shell_exec",
+        params={
+            "command": "cp /tmp/a.zip /app/skills/skills_md/daily-ai-news/archive.zip"
+        },
+        prev_results=[],
+    )
+    assert str(workspace_dir / "daily-ai-news" / "archive.zip") in normalized_shell["command"]
+
+
+def test_normalize_tool_runtime_params_should_not_duplicate_existing_absolute_workspace_path(
+    tmp_path,
+    monkeypatch,
+):
+    """真实绝对工作区路径不应再次被拼接，避免出现 `/workspace/.../workspace/...` 双路径。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+    )
+
+    workspace_dir = (tmp_path / "app" / "skills" / "skills_md").resolve()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "AGENT_WORKSPACE_DIR", str(workspace_dir))
+
+    existing_skill_path = str((workspace_dir / "daily-ai-news" / "SKILL.md").resolve())
+    normalized_file = execution_engine._normalize_tool_runtime_params(
+        tool_name="file_read",
+        params={"path": existing_skill_path},
+        prev_results=[],
+    )
+    assert normalized_file["path"] == existing_skill_path
+
+    existing_shell_command = (
+        f"mkdir -p {workspace_dir / 'daily-ai-news'} "
+        f"&& cp -r /tmp/skills_install/claude-meta-skill-main/daily-ai-news/* "
+        f"{workspace_dir / 'daily-ai-news'}/"
+    )
+    normalized_shell = execution_engine._normalize_tool_runtime_params(
+        tool_name="shell_exec",
+        params={"command": existing_shell_command},
+        prev_results=[],
+    )
+    assert normalized_shell["command"] == existing_shell_command
 
 
 @pytest.mark.asyncio

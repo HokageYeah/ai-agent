@@ -149,6 +149,14 @@ class ArchiveExtractTool(BaseArchiveTool):
             or ""
         )
         output_dir_raw = params.get("output_dir")
+        if not output_dir_raw:
+            # 兼容模型常见的目录字段漂移，避免 archive_extract 因字段名写偏而退回默认目录。
+            output_dir_raw = (
+                params.get("target_path")
+                or params.get("target_dir")
+                or params.get("extract_to")
+                or params.get("destination")
+            )
         overwrite = bool(params.get("overwrite", False))
         strip_top_level = bool(params.get("strip_top_level", False))
 

@@ -33,7 +33,7 @@ class SkillInstallTool(Tool):
     def __init__(
         self,
         installer: Optional[SkillInstallerService] = None,
-        timeout_seconds: int = 300,
+        timeout_seconds: int = 120,
     ):
         self._name = "skill_install"
         self._description = (
@@ -132,6 +132,7 @@ class SkillInstallTool(Tool):
             raw_params,
             [
                 "package",
+                "query",
                 "reference",
                 "source",
                 "package_ref",

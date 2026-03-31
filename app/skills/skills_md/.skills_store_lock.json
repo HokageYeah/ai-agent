@@ -6,6 +6,12 @@
       "zip_url": "https://lightmake.site/api/v1/download?slug=browser-use",
       "source": "skillhub",
       "version": "1.0.2"
+    },
+    "web-search": {
+      "name": "web-search",
+      "zip_url": "https://lightmake.site/api/v1/download?slug=web-search",
+      "source": "skillhub",
+      "version": ""
     }
   }
 }

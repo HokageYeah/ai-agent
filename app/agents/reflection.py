@@ -24,6 +24,7 @@ from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.execution import ExecutionResult
+from app.utils.llm_output_parser import extract_json_payload
 from app.utils.prompt_manager import PromptManager
 
 # NOTE: 使用 TYPE_CHECKING 避免循环导入
@@ -372,7 +373,7 @@ class ReflectionEngine:
         try:
             # 尝试提取 JSON
             llm_output = (llm_output or "").strip()
-            json_payload = self._extract_json_payload(llm_output)
+            json_payload = extract_json_payload(llm_output)
             
             # 解析 JSON
             reflection_dict = json.loads(json_payload)
@@ -453,76 +454,6 @@ class ReflectionEngine:
             return False
 
         return base_success
-
-    def _extract_json_payload(self, llm_output: str) -> str:
-        """
-        从 LLM 输出中尽量提取 JSON 载荷。
-
-        兼容场景：
-        1. ```json ... ``` 代码块
-        2. ``` ... ``` 普通代码块
-        3. `<think>...</think>` + 紧随其后的裸 JSON 对象
-        """
-        text = (llm_output or "").strip()
-        if not text:
-            return text
-
-        fenced = self._extract_first_fenced_block(text)
-        if fenced:
-            return fenced
-
-        json_object = self._extract_first_balanced_json_object(text)
-        if json_object:
-            return json_object
-
-        return text
-
-    def _extract_first_fenced_block(self, text: str) -> Optional[str]:
-        """提取第一个 Markdown 代码块内容。"""
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
-        if not match:
-            return None
-        return match.group(1).strip()
-
-    def _extract_first_balanced_json_object(self, text: str) -> Optional[str]:
-        """
-        提取首个平衡的大括号 JSON 对象。
-
-        通过字符扫描处理字符串转义，避免误把 JSON 字符串内部的大括号当作结构边界。
-        """
-        start_idx = text.find("{")
-        if start_idx < 0:
-            return None
-
-        depth = 0
-        in_string = False
-        escape = False
-
-        for idx in range(start_idx, len(text)):
-            ch = text[idx]
-
-            if in_string:
-                if escape:
-                    escape = False
-                    continue
-                if ch == "\\":
-                    escape = True
-                elif ch == "\"":
-                    in_string = False
-                continue
-
-            if ch == "\"":
-                in_string = True
-                continue
-            if ch == "{":
-                depth += 1
-                continue
-            if ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start_idx : idx + 1].strip()
-
-        return None
 
     def _infer_bool_flag(self, text: str, key: str) -> Optional[bool]:
         """

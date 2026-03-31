@@ -317,6 +317,67 @@ async def test_planning_engine_parse_think_and_semistructured_steps():
 
 
 @pytest.mark.asyncio
+async def test_planning_engine_parse_think_json_with_embedded_markdown_code_fence():
+    """顶层 JSON 字符串里带 markdown 代码块时，不应误把内层 fenced block 当成载荷。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    mixed_output = """
+<think>
+这里是思考过程
+</think>
+
+{
+  "steps": [
+    {
+      "action": "final_answer",
+      "content": "安装命令如下：\\n```bash\\nnpx skills add yyh211/claude-meta-skill@daily-ai-news\\n```"
+    }
+  ],
+  "reasoning": "直接基于历史记录回答"
+}
+"""
+
+    plan = planning_engine._parse_plan(mixed_output)
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "final_answer"
+    assert "npx skills add yyh211/claude-meta-skill@daily-ai-news" in plan.steps[0].params["content"]
+    assert plan.reasoning == "直接基于历史记录回答"
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_parse_unclosed_think_plus_json():
+    """未闭合 `<think>` 前缀后紧跟 JSON 时，也应能恢复出计划。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    planning_engine = PlanningEngine(llm_hub=inference_engine)
+
+    mixed_output = """
+<think>
+先分析历史上下文，再输出计划。
+
+{
+  "steps": [
+    {"action": "tool", "tool_name": "mock_tool", "params": {"query": "AI 新闻"}},
+    {"action": "final_answer", "content": "完成"}
+  ],
+  "reasoning": "即使 think 标签未闭合，也要恢复 JSON"
+}
+"""
+
+    plan = planning_engine._parse_plan(mixed_output)
+
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "tool"
+    assert plan.steps[0].params["tool_name"] == "mock_tool"
+    assert plan.reasoning == "即使 think 标签未闭合，也要恢复 JSON"
+
+
+@pytest.mark.asyncio
 async def test_planning_engine_retry_when_truncated_output():
     """测试：首轮输出截断导致 JSON 失败时，规划引擎会自动重试。"""
     first_truncated = _StubInferenceResult(

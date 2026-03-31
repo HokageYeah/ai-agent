@@ -154,6 +154,25 @@ def extract_first_fenced_block(text: str) -> Optional[str]:
     return match.group(1).strip()
 
 
+def extract_outer_fenced_block(text: str) -> Optional[str]:
+    """
+    仅在“整个输出都被单个代码块包裹”时提取其内容。
+
+    设计原因：
+    - 避免把 JSON 字符串字段里的示例代码块（如 final_answer.content 中的 ```bash）
+      误识别为真正的结构化载荷；
+    - 同时保留对 ```json ... ``` / ``` ... ``` 顶层包裹输出的兼容能力。
+    """
+    match = re.match(
+        r"^\s*```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)```\s*$",
+        text or "",
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 def extract_first_balanced_json_object(text: str) -> Optional[str]:
     """提取首个平衡的大括号 JSON 对象。"""
     return _extract_first_balanced_segment(text=text, open_char="{", close_char="}")
@@ -169,28 +188,47 @@ def extract_json_payload(llm_output: str) -> str:
     从 LLM 输出中尽量提取 JSON 载荷。
 
     提取顺序：
-    1. 代码块内容
+    1. 顶层包裹的代码块内容
     2. 平衡 JSON 对象
     3. 平衡 JSON 数组
-    4. 原始文本（调用方自行兜底）
+    4. 任意位置的首个代码块（最后兜底）
+    5. 原始文本（调用方自行兜底）
+
+    关键约束：
+    - 不能优先抓取“任意位置的代码块”，否则会把 JSON 字符串字段里的 markdown 示例
+      当成真正载荷，导致后续 `json.loads()` 从普通 shell/python 文本开始解析而失败。
     """
-    text = strip_think_blocks(llm_output or "")
-    if not text:
-        return text
+    raw_text = (llm_output or "").strip()
+    if not raw_text:
+        return raw_text
 
-    fenced = extract_first_fenced_block(text)
-    if fenced:
-        return fenced
+    stripped_text = strip_think_blocks(raw_text)
+    candidates = []
+    for candidate in (stripped_text, raw_text):
+        normalized = (candidate or "").strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
 
-    json_object = extract_first_balanced_json_object(text)
-    if json_object:
-        return json_object
+    for text in candidates:
+        outer_fenced = extract_outer_fenced_block(text)
+        if outer_fenced:
+            return outer_fenced
 
-    json_array = extract_first_balanced_json_array(text)
-    if json_array:
-        return json_array
+    for text in candidates:
+        json_object = extract_first_balanced_json_object(text)
+        if json_object:
+            return json_object
 
-    return text
+        json_array = extract_first_balanced_json_array(text)
+        if json_array:
+            return json_array
+
+    for text in candidates:
+        fenced = extract_first_fenced_block(text)
+        if fenced:
+            return fenced
+
+    return stripped_text or raw_text
 
 
 def _unwrap_execution_like_payload(payload: Any) -> Any:

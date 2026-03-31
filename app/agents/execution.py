@@ -26,7 +26,7 @@ from colorama import Fore, Style
 
 from app.agents.base import Agent
 from app.agents.planning import Plan, PlanStep
-from app.core.config import get_default_model
+from app.core.config import get_agent_workspace_dir, get_default_model
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
 from app.utils.llm_output_parser import extract_user_visible_result
@@ -1413,7 +1413,7 @@ class ExecutionEngine:
                 # NOTE: 必须传入 context，否则 SpawnAgentTool / MessageAgentTool 等
                 #       需要运行时注入 stream_callback 的工具将以 None 回调执行，
                 #       导致子 Agent 事件无法推入 SSE 流、用户确认弹窗无法展示。
-                return await self._execute_tool(step, agent, context)
+                return await self._execute_tool(step, agent, context, prev_results)
             elif step.action == "skill":
                 return await self._execute_skill(step, context, agent, prev_results)
             elif step.action == "delegate":
@@ -1451,7 +1451,7 @@ class ExecutionEngine:
                         step.params["tool_name"] = original_action
                     step.action = "tool"
                     # 同样传入 context，保证兜底路径下工具也能获得运行时上下文
-                    return await self._execute_tool(step, agent, context)
+                    return await self._execute_tool(step, agent, context, prev_results)
                 
                 logger.warning(
                     f"{Fore.YELLOW}未知的 action 类型: {step.action}{Style.RESET_ALL}"
@@ -1476,6 +1476,7 @@ class ExecutionEngine:
         step: PlanStep,
         agent: Optional[Agent] = None,
         context: Optional[Dict[str, Any]] = None,
+        prev_results: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         执行工具调用
@@ -1501,6 +1502,11 @@ class ExecutionEngine:
         params = self._extract_step_runtime_params(
             step=step,
             control_keys={"tool_name"},
+        )
+        params = self._normalize_tool_runtime_params(
+            tool_name=tool_name,
+            params=params,
+            prev_results=prev_results,
         )
 
         logger.info(
@@ -2165,6 +2171,7 @@ class ExecutionEngine:
             step=synthetic_step,
             agent=agent,
             context=context,
+            prev_results=None,
         )
 
     def _build_dependency_check_command(
@@ -2814,6 +2821,124 @@ class ExecutionEngine:
             merged_params.setdefault(key, value)
 
         return merged_params
+
+    def _rewrite_agent_workspace_reference_in_text(self, text: str) -> str:
+        """
+        将模型臆造的技能工作区路径统一改写为当前真实工作区。
+
+        设计原因：
+        - 安装/解压类任务里，模型经常把示例路径写成 `/app/skills/skills_md/...`；
+        - 真实运行环境的工作区由 `AGENT_WORKSPACE_DIR` 决定，不能依赖容器示例路径；
+        - 这里在执行边界统一改写，避免把兼容逻辑散落到单个工具或单条提示词里。
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        workspace_dir = str(get_agent_workspace_dir())
+        normalized = re.sub(
+            r"(?<![A-Za-z0-9._-])/app/skills/skills_md(?=$|[\\/\\s'\"),;&|])",
+            workspace_dir,
+            text,
+        )
+        normalized = re.sub(
+            r"(?:(?<=^)|(?<=[\s'\"=:(]))app/skills/skills_md(?=$|[\\/\\s'\"),;&|])",
+            workspace_dir,
+            normalized,
+        )
+        return normalized
+
+    def _rewrite_agent_workspace_references_in_payload(self, payload: Any) -> Any:
+        """
+        递归改写 payload 内的技能工作区路径引用。
+
+        说明：
+        - 既覆盖 `file_read.path` 这类纯路径参数；
+        - 也覆盖 `shell_exec.command` 中内嵌的目标目录；
+        - 这样即使 LLM fallback 方案里混入了旧路径，也能在公共执行层纠偏。
+        """
+        if isinstance(payload, dict):
+            return {
+                key: self._rewrite_agent_workspace_references_in_payload(value)
+                for key, value in payload.items()
+            }
+        if isinstance(payload, list):
+            return [
+                self._rewrite_agent_workspace_references_in_payload(item)
+                for item in payload
+            ]
+        if isinstance(payload, str):
+            return self._rewrite_agent_workspace_reference_in_text(payload)
+        return payload
+
+    def _extract_previous_http_download_path(
+        self,
+        prev_results: Optional[List[Dict[str, Any]]],
+    ) -> Optional[str]:
+        """
+        从前序成功步骤中提取最近一次二进制下载落地路径。
+
+        设计原因：
+        - fallback 安装链常见模式是 `http_request -> archive_extract`；
+        - 若规划时把 ZIP 路径猜错，执行层应优先复用上一工具返回的真实 `download_path`，
+          而不是继续硬吃一个不存在的 `/tmp/*.zip`。
+        """
+        for result in reversed(prev_results or []):
+            if not isinstance(result, dict) or not result.get("success"):
+                continue
+            if result.get("action") != "tool" or result.get("tool_name") != "http_request":
+                continue
+
+            payload = result.get("result")
+            if not isinstance(payload, dict):
+                continue
+
+            for key in ("download_path", "content"):
+                candidate = str(payload.get(key, "") or "").strip()
+                if candidate and Path(candidate).exists() and Path(candidate).is_file():
+                    return candidate
+        return None
+
+    def _normalize_tool_runtime_params(
+        self,
+        *,
+        tool_name: Optional[str],
+        params: Dict[str, Any],
+        prev_results: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        对工具运行参数做执行前归一化。
+
+        当前统一处理两类框架级兼容：
+        1. 将技能工作区示例路径改写为真实 `AGENT_WORKSPACE_DIR`；
+        2. 对 `archive_extract` 自动承接上一跳 `http_request` 的真实下载路径。
+        """
+        normalized = self._rewrite_agent_workspace_references_in_payload(dict(params or {}))
+
+        if tool_name == "archive_extract":
+            archive_path = (
+                normalized.get("archive_path")
+                or normalized.get("path")
+                or normalized.get("zip_path")
+                or ""
+            )
+            archive_path_text = str(archive_path or "").strip()
+            if "{{" not in archive_path_text and "}}" not in archive_path_text:
+                current_path_exists = bool(
+                    archive_path_text
+                    and Path(archive_path_text).exists()
+                    and Path(archive_path_text).is_file()
+                )
+                if not current_path_exists:
+                    download_path = self._extract_previous_http_download_path(prev_results)
+                    if download_path:
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行引擎] 检测到 archive_extract 使用了不存在的压缩包路径，"
+                            f"已自动改写为上一跳 http_request 的真实下载文件: {download_path}"
+                            f"{Style.RESET_ALL}"
+                        )
+                        normalized["archive_path"] = download_path
+
+        return normalized
 
     def _infer_implicit_skill_tools(self, skill: Any) -> tuple[set[str], set[str]]:
         """

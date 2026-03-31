@@ -8,6 +8,7 @@ from app.memory.session_memory import (
     AgentSessionMemory, 
     TaskSummaryEntry, 
     extract_summary_from_run_memory,
+    extract_actionable_facts_from_context_messages,
     get_session_memory,
     clear_session_memory
 )
@@ -19,6 +20,7 @@ __all__ = [
     "AgentSessionMemory",
     "TaskSummaryEntry",
     "extract_summary_from_run_memory",
+    "extract_actionable_facts_from_context_messages",
     "get_session_memory",
     "clear_session_memory",
 ]

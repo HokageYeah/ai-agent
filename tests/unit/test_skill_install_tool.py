@@ -59,6 +59,23 @@ def test_normalize_request_should_accept_noninteractive_npx_prefix():
     assert parsed.used_legacy_install_alias is False
 
 
+def test_extract_install_refs_should_strip_ansi_escape_sequences():
+    """Skills CLI 彩色输出中的 ANSI 码不应污染 package_ref。"""
+    service = SkillInstallerService(workspace_dir=Path.cwd() / "app/skills/skills_md")
+
+    colored_output = (
+        "\x1b[145myyh211/claude-meta-skill@daily-ai-news\x1b[0m\n"
+        "\x1b[32minferen-sh/skills@newsletter-curation\x1b[0m\n"
+    )
+
+    refs = service._extract_install_refs(colored_output)
+
+    assert refs == [
+        "yyh211/claude-meta-skill@daily-ai-news",
+        "inferen-sh/skills@newsletter-curation",
+    ]
+
+
 def test_general_agent_should_expose_skill_install_tool():
     """通用助手应能直接使用 skill_install 工具处理安装任务。"""
     assert "skill_install" in GENERAL_AGENT.available_tools
@@ -135,6 +152,44 @@ async def test_skill_install_tool_should_normalize_source_alias():
         {
             "package": "inferen-sh/skills@newsletter-curation",
             "skill_name": "newsletter-curation",
+            "overwrite": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_skill_install_tool_should_normalize_query_alias():
+    """安装引用若被误写成 query，也应自动归一化到 package。"""
+
+    class StubInstaller:
+        def __init__(self):
+            self.calls = []
+
+        async def install(self, package, skill_name=None, overwrite=False):
+            self.calls.append(
+                {
+                    "package": package,
+                    "skill_name": skill_name,
+                    "overwrite": overwrite,
+                }
+            )
+            return {"success": True}
+
+    installer = StubInstaller()
+    tool = SkillInstallTool(installer=installer)
+
+    result = await tool.execute(
+        {
+            "query": "yyh211/claude-meta-skill@daily-ai-news",
+            "skill_id": "daily-ai-news",
+        }
+    )
+
+    assert result["success"] is True
+    assert installer.calls == [
+        {
+            "package": "yyh211/claude-meta-skill@daily-ai-news",
+            "skill_name": "daily-ai-news",
             "overwrite": False,
         }
     ]

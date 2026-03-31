@@ -206,6 +206,35 @@ async def test_reflection_engine_parse_think_plus_inline_json():
 
 
 @pytest.mark.asyncio
+async def test_reflection_engine_parse_json_with_embedded_markdown_code_fence():
+    """反思 JSON 的字符串字段里出现 markdown 代码块时，仍应解析顶层 JSON。"""
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine)
+
+    mixed_output = """
+<think>
+先判断任务是否已完成
+</think>
+{
+  "success": true,
+  "needs_replanning": false,
+  "should_continue": false,
+  "feedback": "用户可执行如下命令：\\n```bash\\nnpx skills add yyh211/claude-meta-skill@daily-ai-news\\n```",
+  "summary": "任务完成"
+}
+"""
+
+    result = reflection_engine._parse_reflection(mixed_output)
+
+    assert result.success is True
+    assert result.needs_replanning is False
+    assert result.should_continue is False
+    assert "npx skills add yyh211/claude-meta-skill@daily-ai-news" in result.feedback
+
+
+@pytest.mark.asyncio
 async def test_reflection_engine_parse_invalid_json_should_consider_failed_step_results():
     """
     JSON 解析失败时，不应只依赖 execution_result.success。

@@ -41,6 +41,9 @@ DEFAULT_SKILL_SEARCH_EXCLUDES = {
 INSTALL_REF_PATTERN = re.compile(
     r"([A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+)"
 )
+ANSI_ESCAPE_PATTERN = re.compile(
+    r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
+)
 FRONTMATTER_NAME_PATTERN = re.compile(
     r"(?m)^name:\s*([A-Za-z0-9._-]+)\s*$"
 )
@@ -80,7 +83,7 @@ class SkillInstallerService:
     def __init__(
         self,
         workspace_dir: Optional[str | Path] = None,
-        timeout_seconds: int = 300,
+        timeout_seconds: int = 120,
     ):
         self.workspace_dir = (
             resolve_agent_workspace_dir(str(workspace_dir))
@@ -1231,11 +1234,14 @@ class SkillInstallerService:
         设计注意：
         - Skills CLI 文档说明文本中常包含如 `owner/repo@skill` 的示例占位符；
         - 这些占位符符合正则但并非真实可安装的引用，需要通过黑名单过滤掉；
+        - Skills CLI 终端输出常带 ANSI 颜色码（如 `\x1b[145m`），若不先清洗，
+          会把颜色码尾部误拼到真正的 owner 前面，形成 `145myyh211/...` 这类脏引用；
         - 这样可避免将文档示例误当成真实候选引用导致安装失败的 Bug。
         """
         refs: List[str] = []
         seen: set[str] = set()
-        for match in INSTALL_REF_PATTERN.finditer(text or ""):
+        cleaned_text = ANSI_ESCAPE_PATTERN.sub("", text or "")
+        for match in INSTALL_REF_PATTERN.finditer(cleaned_text):
             ref = match.group(1).strip()
             if not ref or ref in seen:
                 continue
