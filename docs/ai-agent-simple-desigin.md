@@ -1,7 +1,7 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.10
+- **版本号**: v1.11
 - **最后更新**: 2026-04-01
 - **架构类型**: 轻量级通用 AI Agent 架构
 
@@ -180,6 +180,50 @@ Planning LLM 决定：
 - 会话记忆不能只依赖 `reflection.summary`；技能搜索、下载、安装类任务里真正可复用的关键事实通常存在于 `final_result.result` 与 `step_results.result`。
 - 跨轮传递时同时保留“人类可读映射文本 + 紧凑 JSON”，前者便于 LLM 直接理解 `AI新闻 -> owner/repo@skill` 之类的映射，后者便于公共层稳定回收结构化事实。
 - `history_install_candidates` 是高价值候选，不是 LangGraph 公共层的硬编码短路；这样既能减少重复搜索，又不会覆盖用户当前回合的过程性意图。
+
+### 2.6 会话主线回顾与历史追问目标集合（已落地）
+
+```
+第 N 轮之后：会话内已积累多条主/子 Agent 摘要
+  ↓
+[聚合] AgentSessionMemory._build_conversation_turn_payloads()
+  ├─ 按 conversation_turn_id 聚合同一轮主/子 Agent 摘要
+  ├─ 保留 source_user_task / summary / actual_tasks / capability_trace
+  └─ 产出按时间顺序排列的“用户主线轮次”
+  ↓
+第 N+1 轮：用户提出历史追问
+  例如：
+  - “我的第三个问题是什么”
+  - “第四、第五个问题分别是什么”
+  - “前 3 轮做了什么”
+  - “第 2 到第 5 轮的结果”
+  ↓
+[目标解析] _extract_conversation_recall_targets()
+  ├─ 将单目标 / 多目标 / 范围目标统一解析为 targets[]
+  ├─ 每个 target 至少包含 mode / turn_index(or offset_from_end) / target_kind / label
+  └─ 不再把历史追问建模成单个 target
+  ↓
+[主线回顾构造] build_conversation_recall_context_messages()
+  ├─ 注入完整 `【会话主线回顾】` 时间线
+  ├─ 若命中目标集合，再额外注入：
+  │    - 当前定位问题/结论/主线
+  │    - 当前定位轮次数据列表
+  └─ 供主 Agent / 子 Agent / 规划 / 反思统一复用
+  ↓
+[历史候选回收] rank_history_answer_candidates()
+  ├─ 将 `当前定位轮次数据列表` 反向解析为多个 conversation_recall_target 候选
+  └─ 供 Planning 决定“直接回答 / 少执行 / 常规规划”
+  ↓
+[规划边界] _build_history_answer_plan()
+  ├─ 仅当 targets[] 全部命中时才允许历史直答短路
+  └─ 若只命中部分目标，必须回退到常规规划链路
+```
+
+补充说明：
+- 历史追问的公共抽象不再是“某一个目标轮次”，而是“目标集合”；这样“第 4、5 个问题”“前 3 轮”“第 2 到第 5 轮”都能复用同一条框架链路。
+- `conversation_recall_target` 只是历史候选的一种来源，不能因为命中了其中一个目标就提前认定整轮任务可直接回答。
+- 多目标历史追问若只命中部分目标，框架层必须显式判定“覆盖不足”，禁止短路直答，避免出现“只回答第 5 个、漏掉第 4 个”的伪完成状态。
+- 反思若已经指出“历史答案不完整”，下一轮规划仍需携带该反思轨迹与会话主线共同决策；历史直答短路器不能绕过这一事实重复输出同一半截答案。
 
 ---
 
@@ -2054,3 +2098,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.9）**：规划候选决策边界与长结果摘要边界统一收口。针对"会话记忆中的精确安装引用被框架层直接短路复用"与"Reflection / 重规划只看到结果前缀后误判传输截断"这两类公共链路问题，框架层实施两项通用修复：**（A）历史安装引用降级为规划候选** — 会话记忆中提炼出的 `owner/repo@skill` 仅作为 Planning Prompt 的候选上下文，不再在公共层写死为直接安装，由 LLM 根据当前任务表述自主决定是直接复用、还是先搜索 / 先走 GitHub / 先下载压缩包；**（B）长结果统一采用首尾保留摘要** — 新增公共摘要能力 `build_balanced_text_preview()`，供 `ReflectionEngine._build_reflection_result_preview()` 与 Planning 的跨迭代上下文摘要复用，统一输出“开头 + 结尾 + 中间省略说明”，同时在反思规则中明确“首尾节选不等于传输截断”，避免列表、表格、长命令清单等答案在公共层被误判。两项修复均作用于规划/反思公共边界，不绑定任何具体技能、日志文案或单一业务场景。
 
 > ✅ **已完成（v1.10）**：会话记忆到安装候选的数据流显式化。进一步明确 `extract_summary_from_run_memory()` 会从 `final_result` / `step_results` 同时提炼 `actionable_facts`，并以“人类可读映射文本 + 紧凑 JSON”写入 `AgentSessionMemory`；`langgraph_executor._build_history_guided_install_context()` 只在安装类任务中反向提取这些事实、按任务相关性排序为 `history_install_candidates`，再注入 Planning 上下文供 LLM 自主判断是否复用。同时补充安装 fallback 的结果复用约束：手动下载/解压链路必须复用真实 `download_path` 与 `AGENT_WORKSPACE_DIR`，禁止臆造 `/tmp/*.zip`、`/app/...` 等架构外路径。
+
+> ✅ **已完成（v1.11）**：会话主线回顾升级为“目标集合 + 覆盖度校验”模型。针对"单目标历史追问可回答，但多目标/范围历史追问被错误短路成单目标答案"这一公共架构问题，框架层实施两项通用修复：**（A）历史追问目标集合化** — `_extract_conversation_recall_targets()` 将“第 N 个问题 / 第 4、5 个问题 / 第 2 到第 5 轮 / 前 3 个问题”等统一解析为 `targets[]`，`build_conversation_recall_context_messages()` 在完整 `【会话主线回顾】` 之外额外注入 `当前定位轮次数据列表`，供主 Agent / 子 Agent / 规划 / 反思共享同一组结构化历史目标；**（B）历史直答增加覆盖度校验** — `rank_history_answer_candidates()` 可从 `当前定位轮次数据列表` 回收多个 `conversation_recall_target` 候选，`langgraph_executor._build_history_answer_plan()` 只有在“用户请求的全部历史目标均已解析并命中”时才允许直接 `final_answer` 短路，否则必须回退到常规规划链路，避免出现“只回答第 5 个、漏掉第 4 个”的伪完成状态。两项修复均作用于会话记忆 / 规划公共边界，不绑定任何具体技能、订单场景或固定问法。

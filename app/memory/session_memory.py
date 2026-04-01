@@ -104,6 +104,23 @@ FOLLOW_UP_CAPABILITY_CONTEXT_HEADER = "【历史能力轨迹】"
 FOLLOW_UP_CAPABILITY_JSON_PREFIX = "能力轨迹数据:"
 CONVERSATION_RECALL_CONTEXT_HEADER = "【会话主线回顾】"
 CONVERSATION_RECALL_JSON_PREFIX = "会话主线数据:"
+CONVERSATION_RECALL_TARGET_JSON_PREFIX = "当前定位轮次数据:"
+CONVERSATION_RECALL_TARGETS_JSON_PREFIX = "当前定位轮次数据列表:"
+
+CHINESE_NUMERAL_MAP = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -237,9 +254,10 @@ def _is_conversation_recall_request(task: str) -> bool:
     if not normalized_task:
         return False
 
+    if _extract_conversation_recall_targets(task):
+        return True
+
     recall_patterns = (
-        r"第一个(?:问题|提问|请求|任务)",
-        r"第一轮(?:问题|提问|任务|请求|说了什么|聊了什么|做了什么)?",
         r"最开始(?:的问题|提问|请求|任务|说过什么|聊过什么)?",
         r"(?:之前|前面|刚才|上一轮|上一个|上次).{0,12}(?:问题|提问|任务|请求|说过|聊过|做过|结果|答案|回答)",
         r"(?:我们|你|我).{0,10}(?:聊到哪|聊过什么|说过什么|问过什么|做过什么)",
@@ -255,6 +273,202 @@ def _is_conversation_recall_request(task: str) -> bool:
         re.search(pattern, normalized_task, flags=re.IGNORECASE)
         for pattern in recall_patterns
     )
+
+
+def _parse_chinese_number_token(token: str) -> Optional[int]:
+    """将简短中文序数词解析为整数，用于通用的“第 N 轮/问题”识别。"""
+    candidate = str(token or "").strip()
+    if not candidate:
+        return None
+    if candidate.isdigit():
+        value = int(candidate)
+        return value if value > 0 else None
+
+    if candidate == "十":
+        return 10
+    if candidate.startswith("十"):
+        tail = CHINESE_NUMERAL_MAP.get(candidate[1:], -1)
+        return 10 + tail if tail >= 0 else None
+    if "十" in candidate:
+        head, tail = candidate.split("十", 1)
+        head_value = CHINESE_NUMERAL_MAP.get(head, -1) if head else 1
+        tail_value = CHINESE_NUMERAL_MAP.get(tail, 0) if tail else 0
+        if head_value < 0 or tail_value < 0:
+            return None
+        return head_value * 10 + tail_value
+
+    digits: List[str] = []
+    for ch in candidate:
+        value = CHINESE_NUMERAL_MAP.get(ch, -1)
+        if value < 0:
+            return None
+        digits.append(str(value))
+    if not digits:
+        return None
+    parsed = int("".join(digits))
+    return parsed if parsed > 0 else None
+
+
+def _build_recall_target_payload(
+    *,
+    mode: str,
+    target_kind: str,
+    label: str,
+    turn_index: Optional[int] = None,
+    offset_from_end: Optional[int] = None,
+) -> Dict[str, Any]:
+    """构造统一的历史追问目标载荷。"""
+    payload: Dict[str, Any] = {
+        "mode": mode,
+        "target_kind": target_kind,
+        "label": label,
+    }
+    if turn_index is not None:
+        payload["turn_index"] = turn_index
+    if offset_from_end is not None:
+        payload["offset_from_end"] = offset_from_end
+    return payload
+
+
+def _expand_recall_ordinal_segment(raw_segment: str) -> List[int]:
+    """
+    将“4、5 / 四和五 / 2到5”这类轮次片段展开为索引列表。
+
+    设计原因：
+    - 历史追问常会一次提多个目标或一个范围；
+    - 解析阶段就应得到结构化索引集合，而不是到后续链路再让 LLM 自己拆分。
+    """
+    normalized_segment = _normalize_whitespace(raw_segment or "").replace(" ", "")
+    normalized_segment = normalized_segment.replace("第", "")
+    normalized_segment = re.sub(r"(分别|以及|还有)", "、", normalized_segment)
+    normalized_segment = re.sub(r"[至到~～—－-]+", "-", normalized_segment)
+
+    indexes: List[int] = []
+    seen: set[int] = set()
+    for part in re.split(r"[、,，和及与跟]", normalized_segment):
+        candidate = str(part or "").strip()
+        if not candidate:
+            continue
+        if "-" in candidate:
+            start_text, end_text = candidate.split("-", 1)
+            start_value = _parse_chinese_number_token(start_text)
+            end_value = _parse_chinese_number_token(end_text)
+            if start_value is None or end_value is None:
+                continue
+            if start_value > end_value:
+                start_value, end_value = end_value, start_value
+            if end_value - start_value > 30:
+                continue
+            for value in range(start_value, end_value + 1):
+                if value not in seen:
+                    seen.add(value)
+                    indexes.append(value)
+            continue
+
+        parsed = _parse_chinese_number_token(candidate)
+        if parsed is None or parsed in seen:
+            continue
+        seen.add(parsed)
+        indexes.append(parsed)
+
+    return indexes
+
+
+def _extract_conversation_recall_targets(task: str) -> List[Dict[str, Any]]:
+    """
+    提取用户在问哪些轮次/哪些问题，供会话主线回顾与历史直答统一复用。
+
+    设计原因：
+    - 不能只靠“第一个问题”这类固定问法，必须支持单目标、多目标与范围目标；
+    - 解析结果应保持结构化，避免每个调用点再写一套字符串判断；
+    - 目标集合既可供主线回顾使用，也可供历史直答做覆盖度校验。
+    """
+    normalized_task = _normalize_whitespace(task or "")
+    if not normalized_task:
+        return []
+
+    target_kind = "question"
+    if re.search(r"(结果|答案|回答)", normalized_task, flags=re.IGNORECASE):
+        target_kind = "summary"
+    elif re.search(r"(做了什么|聊了什么|说了什么)", normalized_task, flags=re.IGNORECASE):
+        target_kind = "timeline"
+
+    ordinal_patterns = (
+        r"第\s*([0-9一二两三四五六七八九十〇零、,，和及与跟到至~～—－\-\s第]+)\s*个(?:问题|提问|请求|任务)",
+        r"第\s*([0-9一二两三四五六七八九十〇零、,，和及与跟到至~～—－\-\s第]+)\s*轮(?:对话|问题|提问|任务|请求)?",
+    )
+    for pattern in ordinal_patterns:
+        match = re.search(pattern, normalized_task, flags=re.IGNORECASE)
+        if not match:
+            continue
+        ordinal_values = _expand_recall_ordinal_segment(match.group(1))
+        if not ordinal_values:
+            continue
+        return [
+            _build_recall_target_payload(
+                mode="absolute",
+                turn_index=ordinal_value,
+                target_kind=target_kind,
+                label=f"第{ordinal_value}个问题" if target_kind == "question" else f"第{ordinal_value}轮",
+            )
+            for ordinal_value in ordinal_values
+        ]
+
+    range_match = re.search(
+        r"前\s*([0-9一二两三四五六七八九十〇零]+)\s*个(?:问题|提问|请求|任务|轮)",
+        normalized_task,
+        flags=re.IGNORECASE,
+    )
+    if range_match:
+        upper_bound = _parse_chinese_number_token(range_match.group(1))
+        if upper_bound is not None and upper_bound > 0:
+            return [
+                _build_recall_target_payload(
+                    mode="absolute",
+                    turn_index=index,
+                    target_kind=target_kind,
+                    label=f"第{index}个问题" if target_kind == "question" else f"第{index}轮",
+                )
+                for index in range(1, upper_bound + 1)
+            ]
+
+    if re.search(r"第一个(?:问题|提问|请求|任务)|第一轮", normalized_task, flags=re.IGNORECASE):
+        return [
+            _build_recall_target_payload(
+                mode="absolute",
+                turn_index=1,
+                target_kind=target_kind,
+                label="第1个问题" if target_kind == "question" else "第1轮",
+            )
+        ]
+
+    if re.search(r"(最后一个(?:问题|提问|请求|任务)|最后一轮|最新一轮)", normalized_task, flags=re.IGNORECASE):
+        return [
+            _build_recall_target_payload(
+                mode="relative",
+                offset_from_end=1,
+                target_kind=target_kind,
+                label="最后一轮",
+            )
+        ]
+
+    if re.search(r"(上一轮|上一个(?:问题|提问|请求|任务)|上一条)", normalized_task, flags=re.IGNORECASE):
+        return [
+            _build_recall_target_payload(
+                mode="relative",
+                offset_from_end=1,
+                target_kind=target_kind,
+                label="上一轮",
+            )
+        ]
+
+    return []
+
+
+def _extract_conversation_recall_target(task: str) -> Optional[Dict[str, Any]]:
+    """兼容旧调用方：返回首个历史追问目标。"""
+    targets = _extract_conversation_recall_targets(task)
+    return targets[0] if targets else None
 
 
 def _normalize_relevance_hint(text: str) -> str:
@@ -838,6 +1052,113 @@ def _parse_history_summary_context_message(
     }
 
 
+def _build_conversation_recall_candidate_from_payload(
+    task: str,
+    target_payload: Dict[str, Any],
+    *,
+    target_count: int,
+) -> Optional[Dict[str, Any]]:
+    """将单个目标轮次 payload 统一转换为历史候选。"""
+    source_task = str(target_payload.get("source_user_task", "") or "").strip()
+    summary = str(target_payload.get("summary", "") or "").strip()
+    target_kind = str(target_payload.get("target_kind", "question") or "question").strip()
+    target_label = str(target_payload.get("target_label", "") or "").strip()
+
+    if target_kind == "summary":
+        answer_preview = summary or source_task
+    elif target_kind == "timeline":
+        answer_preview = source_task or summary
+    else:
+        answer_preview = source_task
+
+    if not answer_preview:
+        return None
+
+    relevance_parts = [
+        task,
+        source_task,
+        summary,
+        answer_preview,
+        target_label,
+        json.dumps(target_payload, ensure_ascii=False, default=str),
+    ]
+    return {
+        "source_task": source_task,
+        "agent_task": source_task,
+        "source_user_task": source_task,
+        "summary": summary,
+        "success": True,
+        "key_data": {
+            "result_preview": answer_preview,
+            "structured_result": target_payload,
+        },
+        "answer_preview": answer_preview,
+        "entry_scope": "primary",
+        "relevance_text": _normalize_whitespace(" ".join(part for part in relevance_parts if part)),
+        "candidate_kind": "conversation_recall_target",
+        "target_kind": target_kind,
+        "target_label": target_label,
+        "target_count": target_count,
+        "turn_index": target_payload.get("turn_index"),
+    }
+
+
+def _parse_conversation_recall_context_message(
+    task: str,
+    message: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    将“会话主线回顾”里的目标轮次提炼为统一候选。
+
+    设计原因：
+    - 对“第 N 个问题是什么”这类任务，真正高价值的是“已定位到的那一轮主线”；
+    - 把它转成与历史摘要同形态的候选后，规划直答和少执行判断就能共享同一公共层。
+    """
+    if not isinstance(message, dict):
+        return []
+
+    content = str(message.get("content", "") or "")
+    if CONVERSATION_RECALL_CONTEXT_HEADER not in content:
+        return []
+
+    target_payloads: List[Dict[str, Any]] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(CONVERSATION_RECALL_TARGETS_JSON_PREFIX):
+            payload_text = stripped.split(CONVERSATION_RECALL_TARGETS_JSON_PREFIX, 1)[-1].strip()
+            try:
+                payload = json.loads(payload_text)
+            except Exception:
+                payload = None
+            if isinstance(payload, list):
+                target_payloads.extend([item for item in payload if isinstance(item, dict)])
+            continue
+        if not stripped.startswith(CONVERSATION_RECALL_TARGET_JSON_PREFIX):
+            continue
+        payload_text = stripped.split(CONVERSATION_RECALL_TARGET_JSON_PREFIX, 1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            target_payloads.append(payload)
+
+    if not target_payloads:
+        return []
+
+    candidates: List[Dict[str, Any]] = []
+    total_targets = len(target_payloads)
+    for payload in target_payloads:
+        candidate = _build_conversation_recall_candidate_from_payload(
+            task,
+            payload,
+            target_count=total_targets,
+        )
+        if candidate:
+            candidates.append(candidate)
+    return candidates
+
+
 def rank_history_answer_candidates(
     task: str,
     context_messages: List[Dict[str, Any]],
@@ -858,6 +1179,11 @@ def rank_history_answer_candidates(
         candidate = _parse_history_summary_context_message(message)
         if candidate and candidate.get("success"):
             parsed_candidates.append(candidate)
+            continue
+
+        recall_candidates = _parse_conversation_recall_context_message(task, message)
+        if recall_candidates:
+            parsed_candidates.extend(recall_candidates)
 
     if not parsed_candidates:
         return []
@@ -881,6 +1207,9 @@ def rank_history_answer_candidates(
         if candidate.get("key_data", {}).get("structured_result") not in (None, "", [], {}):
             score += 2
             reasons.append("历史中包含结构化结果")
+        if candidate.get("candidate_kind") == "conversation_recall_target":
+            score += 10
+            reasons.append("命中会话主线中的目标轮次")
         if score <= 0:
             continue
 
@@ -895,6 +1224,9 @@ def rank_history_answer_candidates(
                 "exact_task_match": _normalize_whitespace(task or "")
                 == _normalize_whitespace(str(candidate.get("source_task", "") or "")),
                 "follow_up_task": _contains_follow_up_task_hint(task),
+                "candidate_kind": candidate.get("candidate_kind", "history_summary"),
+                "target_kind": candidate.get("target_kind", ""),
+                "target_label": candidate.get("target_label", ""),
             }
         )
 
@@ -1793,12 +2125,35 @@ class AgentSessionMemory:
         if not turn_payloads:
             return []
 
+        recall_targets = _extract_conversation_recall_targets(task)
+        resolved_target_turns: List[Dict[str, Any]] = []
+        for recall_target in recall_targets:
+            target_turn_index: Optional[int] = None
+            if recall_target.get("mode") == "absolute":
+                target_turn_index = int(recall_target.get("turn_index", 0))
+            elif recall_target.get("mode") == "relative":
+                offset = max(1, int(recall_target.get("offset_from_end", 1) or 1))
+                target_turn_index = len(turn_payloads) - offset + 1
+            if not target_turn_index or not (1 <= target_turn_index <= len(turn_payloads)):
+                continue
+            resolved_target_turns.append(
+                {
+                    "target": recall_target,
+                    "turn_index": target_turn_index,
+                    "turn": turn_payloads[target_turn_index - 1],
+                }
+            )
+
         selected_turns = turn_payloads
         omitted_count = 0
         if len(turn_payloads) > max_turns:
             head_count = max(1, max_turns // 2)
             tail_count = max(1, max_turns - head_count)
             selected_turns = turn_payloads[:head_count] + turn_payloads[-tail_count:]
+            for item in resolved_target_turns:
+                target_turn = item["turn"]
+                if target_turn not in selected_turns:
+                    selected_turns = selected_turns[:-1] + [target_turn]
             omitted_count = len(turn_payloads) - len(selected_turns)
 
         lines = [
@@ -1840,6 +2195,49 @@ class AgentSessionMemory:
 
         if omitted_count > 0:
             lines.append(f"...（中间还有 {omitted_count} 轮对话主线已省略）")
+
+        target_payloads: List[Dict[str, Any]] = []
+        for item in resolved_target_turns:
+            recall_target = item["target"]
+            target_turn_index = int(item["turn_index"])
+            target_turn = item["turn"]
+            target_kind = str(recall_target.get("target_kind", "question") or "question")
+            target_label = str(recall_target.get("label", "") or f"第{target_turn_index}轮").strip()
+            source_task = str(target_turn.get("source_user_task", "") or "").strip()
+            summary = str(target_turn.get("summary", "") or "").strip()
+            if target_kind == "summary":
+                answer_preview = summary or source_task
+                lines.append(f"当前定位结论: {target_label} -> {answer_preview}")
+            elif target_kind == "timeline":
+                answer_preview = source_task or summary
+                lines.append(f"当前定位主线: {target_label} -> {answer_preview}")
+            else:
+                answer_preview = source_task
+                lines.append(f"当前定位问题: {target_label} -> {answer_preview}")
+
+            target_payloads.append(
+                {
+                    "turn_index": target_turn_index,
+                    "turn_id": target_turn.get("turn_id", ""),
+                    "target_kind": target_kind,
+                    "target_label": target_label,
+                    "source_user_task": source_task,
+                    "summary": summary,
+                    "actual_tasks": target_turn.get("actual_tasks") or [],
+                    "capability_trace": target_turn.get("capability_trace") or {},
+                }
+            )
+
+        if len(target_payloads) == 1:
+            lines.append(
+                f"{CONVERSATION_RECALL_TARGET_JSON_PREFIX} "
+                f"{json.dumps(target_payloads[0], ensure_ascii=False, default=str)}"
+            )
+        elif target_payloads:
+            lines.append(
+                f"{CONVERSATION_RECALL_TARGETS_JSON_PREFIX} "
+                f"{json.dumps(target_payloads, ensure_ascii=False, default=str)}"
+            )
 
         payload_text = json.dumps(selected_turns, ensure_ascii=False, default=str)
         if len(payload_text) > MAX_CONVERSATION_RECALL_JSON_LENGTH:

@@ -875,6 +875,105 @@ def test_build_task_relevant_context_messages_should_append_conversation_recall_
         clear_session_memory(conversation_id)
 
 
+def test_build_task_relevant_context_messages_should_support_generic_third_question_recall():
+    """执行器注入历史回顾时，应支持通用的“第 N 个问题”定位结果。"""
+    conversation_id = "conv-history-third-question"
+    clear_session_memory(conversation_id)
+    try:
+        executor = _build_executor()
+        session_memory = get_session_memory(conversation_id)
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="使用find-skills技能查询 新闻技能",
+                summary="已查到新闻相关技能",
+                conversation_turn_id="turn-1",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="订单1002的商品详情，并且找到订单客户",
+                summary="已查到订单1002的商品与客户信息",
+                conversation_turn_id="turn-2",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="继续查询 mcp技能",
+                summary="已查到 mcp 相关技能",
+                conversation_turn_id="turn-3",
+            )
+        )
+
+        messages = executor._build_task_relevant_context_messages(
+            task="我的第三个问题是什么",
+            conversation_id=conversation_id,
+            conversation_history=None,
+        )
+
+        assert len(messages) == 1
+        assert "【会话主线回顾】" in messages[0]["content"]
+        assert "当前定位问题: 第3个问题 -> 继续查询 mcp技能" in messages[0]["content"]
+    finally:
+        clear_session_memory(conversation_id)
+
+
+def test_build_task_relevant_context_messages_should_keep_multi_target_recall_context():
+    """执行器注入历史回顾时，应保留多目标定位结果供后续规划统一消费。"""
+    conversation_id = "conv-history-multi-question"
+    clear_session_memory(conversation_id)
+    try:
+        executor = _build_executor()
+        session_memory = get_session_memory(conversation_id)
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="使用find-skills技能查询 新闻技能",
+                summary="已查到新闻相关技能",
+                conversation_turn_id="turn-1",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="订单1002的商品详情，并且找到订单客户",
+                summary="已查到订单1002的商品与客户信息",
+                conversation_turn_id="turn-2",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="继续查询 mcp技能",
+                summary="已查到 mcp 相关技能",
+                conversation_turn_id="turn-3",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="订单1002的商品是谁买的",
+                summary="已查到订单1002的购买者",
+                conversation_turn_id="turn-4",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="我的第一个问题是什么",
+                summary="已回答首个问题",
+                conversation_turn_id="turn-5",
+            )
+        )
+
+        messages = executor._build_task_relevant_context_messages(
+            task="第四、第五个问题分别是什么",
+            conversation_id=conversation_id,
+            conversation_history=None,
+        )
+
+        assert len(messages) == 1
+        assert "当前定位问题: 第4个问题 -> 订单1002的商品是谁买的" in messages[0]["content"]
+        assert "当前定位问题: 第5个问题 -> 我的第一个问题是什么" in messages[0]["content"]
+        assert "当前定位轮次数据列表:" in messages[0]["content"]
+    finally:
+        clear_session_memory(conversation_id)
+
+
 @pytest.mark.asyncio
 async def test_plan_node_should_force_delegate_by_history_capability_trace(monkeypatch):
     """主 Agent 遇到换主题续问时，应在进入 LLM 前沿用历史成功能力链路。"""
@@ -1138,6 +1237,277 @@ async def test_plan_node_should_pass_history_answer_candidates_to_planning_engin
     assert len(captured_context["history_answer_candidates"]) == 1
     assert captured_context["history_answer_candidates"][0]["source_task"] == "查询订单1002的详细信息"
     assert "李娜" in captured_context["history_answer_candidates"][0]["answer_preview"]
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_direct_answer_for_conversation_recall_target(monkeypatch):
+    """命中目标轮次的会话回顾候选后，应直接生成历史直答计划。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent"],
+        child_agents=["general_agent"],
+    )
+
+    monkeypatch.setattr(
+        executor.tool_hub,
+        "list_tools",
+        lambda: [
+            SimpleNamespace(name="datetime"),
+            SimpleNamespace(name="spawn_agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        executor,
+        "_resolve_available_skills",
+        lambda agent, task: ([], []),
+    )
+
+    context_messages = [
+        {
+            "role": "user",
+            "content": (
+                "【会话主线回顾】\n"
+                "以下为当前会话按时间顺序整理的主要对话主线。\n"
+                "1. 用户问题: 使用find-skills技能查询 新闻技能\n"
+                "2. 用户问题: 订单1002的商品详情，并且找到订单客户\n"
+                "3. 用户问题: 继续查询 mcp技能\n"
+                "当前定位问题: 第3个问题 -> 继续查询 mcp技能\n"
+                "当前定位轮次数据: "
+                + json.dumps(
+                    {
+                        "turn_index": 3,
+                        "turn_id": "turn-3",
+                        "target_kind": "question",
+                        "target_label": "第3个问题",
+                        "source_user_task": "继续查询 mcp技能",
+                        "summary": "已查到 mcp 相关技能",
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        }
+    ]
+    state: AgentState = {
+        "messages": context_messages,
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "我的第三个问题是什么",
+        "conversation_id": "conv-direct-recall-answer",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": AgentRunMemory(
+            task="我的第三个问题是什么",
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            context_messages=context_messages,
+        ),
+    }
+
+    new_state = await executor._plan_node(state, stream_callback=None)
+
+    assert new_state["current_plan"] is not None
+    assert len(new_state["current_plan"].steps) == 1
+    assert new_state["current_plan"].steps[0].action == "final_answer"
+    assert "第3个问题" in new_state["current_plan"].steps[0].params["content"]
+    assert "继续查询 mcp技能" in new_state["current_plan"].steps[0].params["content"]
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_direct_answer_for_multi_recall_targets(monkeypatch):
+    """多目标历史追问在目标全部覆盖时，应一次性直答全部目标。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent"],
+        child_agents=["general_agent"],
+    )
+
+    monkeypatch.setattr(
+        executor.tool_hub,
+        "list_tools",
+        lambda: [
+            SimpleNamespace(name="datetime"),
+            SimpleNamespace(name="spawn_agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        executor,
+        "_resolve_available_skills",
+        lambda agent, task: ([], []),
+    )
+
+    context_messages = [
+        {
+            "role": "user",
+            "content": (
+                "【会话主线回顾】\n"
+                "以下为当前会话按时间顺序整理的主要对话主线。\n"
+                "4. 用户问题: 订单1002的商品是谁买的\n"
+                "5. 用户问题: 我的第一个问题是什么\n"
+                "当前定位问题: 第4个问题 -> 订单1002的商品是谁买的\n"
+                "当前定位问题: 第5个问题 -> 我的第一个问题是什么\n"
+                "当前定位轮次数据列表: "
+                + json.dumps(
+                    [
+                        {
+                            "turn_index": 4,
+                            "turn_id": "turn-4",
+                            "target_kind": "question",
+                            "target_label": "第4个问题",
+                            "source_user_task": "订单1002的商品是谁买的",
+                            "summary": "已查到购买者",
+                        },
+                        {
+                            "turn_index": 5,
+                            "turn_id": "turn-5",
+                            "target_kind": "question",
+                            "target_label": "第5个问题",
+                            "source_user_task": "我的第一个问题是什么",
+                            "summary": "已回答首个问题",
+                        },
+                    ],
+                    ensure_ascii=False,
+                )
+            ),
+        }
+    ]
+    state: AgentState = {
+        "messages": context_messages,
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "第四、第五个问题分别是什么",
+        "conversation_id": "conv-direct-multi-recall-answer",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": AgentRunMemory(
+            task="第四、第五个问题分别是什么",
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            context_messages=context_messages,
+        ),
+    }
+
+    new_state = await executor._plan_node(state, stream_callback=None)
+
+    assert new_state["current_plan"] is not None
+    assert len(new_state["current_plan"].steps) == 1
+    content = new_state["current_plan"].steps[0].params["content"]
+    assert "第4个问题" in content
+    assert "订单1002的商品是谁买的" in content
+    assert "第5个问题" in content
+    assert "我的第一个问题是什么" in content
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_not_short_circuit_when_multi_recall_targets_are_incomplete(monkeypatch):
+    """多目标历史追问若目标覆盖不全，不应继续走历史直答短路。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent"],
+        child_agents=["general_agent"],
+    )
+
+    monkeypatch.setattr(
+        executor.tool_hub,
+        "list_tools",
+        lambda: [
+            SimpleNamespace(name="datetime"),
+            SimpleNamespace(name="spawn_agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        executor,
+        "_resolve_available_skills",
+        lambda agent, task: ([], []),
+    )
+
+    captured_context = {}
+
+    async def fake_create_plan(**kwargs):
+        captured_context.update(kwargs.get("context", {}))
+        return Plan(
+            steps=[PlanStep("final_answer", content="由规划引擎基于多目标上下文回答")],
+            reasoning="多目标覆盖不足，回退常规规划",
+        )
+
+    monkeypatch.setattr(executor.planning_engine, "create_plan", fake_create_plan)
+
+    context_messages = [
+        {
+            "role": "user",
+            "content": (
+                "【会话主线回顾】\n"
+                "以下为当前会话按时间顺序整理的主要对话主线。\n"
+                "5. 用户问题: 我的第一个问题是什么\n"
+                "当前定位问题: 第5个问题 -> 我的第一个问题是什么\n"
+                "当前定位轮次数据: "
+                + json.dumps(
+                    {
+                        "turn_index": 5,
+                        "turn_id": "turn-5",
+                        "target_kind": "question",
+                        "target_label": "第5个问题",
+                        "source_user_task": "我的第一个问题是什么",
+                        "summary": "已回答首个问题",
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        }
+    ]
+    state: AgentState = {
+        "messages": context_messages,
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "第四、第五个问题分别是什么",
+        "conversation_id": "conv-incomplete-multi-recall-answer",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": AgentRunMemory(
+            task="第四、第五个问题分别是什么",
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            context_messages=context_messages,
+        ),
+    }
+
+    new_state = await executor._plan_node(state, stream_callback=None)
+
+    assert new_state["current_plan"] is not None
+    assert new_state["current_plan"].steps[0].params["content"] == "由规划引擎基于多目标上下文回答"
+    assert "history_answer_candidates" in captured_context
 
 
 def test_build_history_guided_install_context_should_collect_ranked_candidates():

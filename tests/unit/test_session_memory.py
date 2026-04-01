@@ -466,6 +466,178 @@ def test_build_conversation_recall_context_messages_should_group_primary_and_sub
     assert "技能=find-skills" in content
 
 
+def test_build_conversation_recall_context_messages_should_support_generic_nth_question_lookup():
+    """历史追问应支持通用的“第 N 个问题”定位，而不是只识别第一个问题。"""
+    session_memory = AgentSessionMemory("conv-recall-nth")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品详情，并且找到订单客户",
+            summary="已查到订单1002的商品与客户信息",
+            conversation_turn_id="turn-2",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="继续查询 mcp技能",
+            summary="已查到 mcp 相关技能",
+            conversation_turn_id="turn-3",
+        )
+    )
+
+    messages = session_memory.build_conversation_recall_context_messages(
+        task="我的第三个问题是什么",
+    )
+
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert "【会话主线回顾】" in content
+    assert "当前定位问题: 第3个问题 -> 继续查询 mcp技能" in content
+    assert "当前定位轮次数据:" in content
+
+
+def test_rank_history_answer_candidates_should_parse_target_turn_from_conversation_recall_context():
+    """会话主线回顾里的目标轮次也应进入统一历史候选，供规划层直接复用。"""
+    session_memory = AgentSessionMemory("conv-recall-candidate")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="继续查询 mcp技能",
+            summary="已查到 mcp 相关技能",
+            conversation_turn_id="turn-2",
+        )
+    )
+
+    context_messages = session_memory.build_conversation_recall_context_messages(
+        task="我的第二个问题是什么",
+    )
+    candidates = rank_history_answer_candidates(
+        task="我的第二个问题是什么",
+        context_messages=context_messages,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0]["candidate_kind"] == "conversation_recall_target"
+    assert candidates[0]["answer_preview"] == "继续查询 mcp技能"
+    assert candidates[0]["target_label"] == "第2个问题"
+    assert "命中会话主线中的目标轮次" in candidates[0]["reasons"]
+
+
+def test_build_conversation_recall_context_messages_should_support_multi_target_question_lookup():
+    """会话主线回顾应支持一次定位多个轮次目标，而不是只保留最后一个。"""
+    session_memory = AgentSessionMemory("conv-recall-multi")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品详情，并且找到订单客户",
+            summary="已查到订单1002的商品与客户信息",
+            conversation_turn_id="turn-2",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="继续查询 mcp技能",
+            summary="已查到 mcp 相关技能",
+            conversation_turn_id="turn-3",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品是谁买的",
+            summary="已查到订单1002的购买者",
+            conversation_turn_id="turn-4",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="我的第一个问题是什么",
+            summary="已回答首个问题",
+            conversation_turn_id="turn-5",
+        )
+    )
+
+    messages = session_memory.build_conversation_recall_context_messages(
+        task="第四、第五个问题分别是什么",
+    )
+
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert "当前定位问题: 第4个问题 -> 订单1002的商品是谁买的" in content
+    assert "当前定位问题: 第5个问题 -> 我的第一个问题是什么" in content
+    assert "当前定位轮次数据列表:" in content
+
+
+def test_rank_history_answer_candidates_should_keep_multi_target_recall_candidates():
+    """多目标会话回顾应生成与目标数一致的历史候选，供覆盖度校验使用。"""
+    session_memory = AgentSessionMemory("conv-recall-multi-candidate")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品详情，并且找到订单客户",
+            summary="已查到订单1002的商品与客户信息",
+            conversation_turn_id="turn-2",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="继续查询 mcp技能",
+            summary="已查到 mcp 相关技能",
+            conversation_turn_id="turn-3",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品是谁买的",
+            summary="已查到订单1002的购买者",
+            conversation_turn_id="turn-4",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="我的第一个问题是什么",
+            summary="已回答首个问题",
+            conversation_turn_id="turn-5",
+        )
+    )
+
+    context_messages = session_memory.build_conversation_recall_context_messages(
+        task="第四、第五个问题分别是什么",
+    )
+    candidates = rank_history_answer_candidates(
+        task="第四、第五个问题分别是什么",
+        context_messages=context_messages,
+        max_candidates=4,
+    )
+
+    assert len(candidates) == 2
+    assert {candidate["target_label"] for candidate in candidates} == {"第4个问题", "第5个问题"}
+    assert all(candidate["target_count"] == 2 for candidate in candidates)
+
+
 def test_build_follow_up_capability_context_messages_should_reuse_recent_successful_skill_trace():
     """换主题续问时，应保留最近成功的能力链路，但不把旧主题摘要混入。"""
     session_memory = AgentSessionMemory("conv-followup-capability")

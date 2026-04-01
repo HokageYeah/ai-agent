@@ -20,6 +20,7 @@ import json
 import re
 import time
 import uuid
+from collections import Counter
 from typing import TypedDict, Dict, List, Any, Optional, Annotated, AsyncIterator, Callable
 from typing_extensions import TypedDict as TypedDictExt
 from loguru import logger
@@ -36,6 +37,7 @@ from app.memory.agent_run_memory import AgentRunMemory
 from app.memory.session_memory import (
     extract_follow_up_capability_context_from_messages,
     extract_actionable_facts_from_context_messages,
+    _extract_conversation_recall_targets,
     extract_summary_from_run_memory,
     get_session_memory,
     rank_history_answer_candidates,
@@ -720,6 +722,7 @@ class LangGraphAgentExecutor:
         ranked_candidates = rank_history_answer_candidates(
             task=task,
             context_messages=run_memory.context_messages or [],
+            max_candidates=max(3, len(_extract_conversation_recall_targets(task)) + 2),
         )
         if not ranked_candidates:
             return {}
@@ -736,6 +739,9 @@ class LangGraphAgentExecutor:
                     "reasons": candidate.get("reasons", []),
                     "matched_subject_hints": candidate.get("matched_subject_hints", []),
                     "exact_task_match": bool(candidate.get("exact_task_match", False)),
+                    "candidate_kind": candidate.get("candidate_kind", "history_summary"),
+                    "target_kind": candidate.get("target_kind", ""),
+                    "target_label": candidate.get("target_label", ""),
                     "structured_result": key_data.get("structured_result"),
                     "actionable_facts": (key_data.get("actionable_facts") or [])[:4],
                 }
@@ -769,18 +775,51 @@ class LangGraphAgentExecutor:
         ranked_candidates = rank_history_answer_candidates(
             task=task,
             context_messages=run_memory.context_messages or [],
+            max_candidates=max(3, len(_extract_conversation_recall_targets(task)) + 2),
         )
         if not ranked_candidates:
             return None
 
         top_candidate = ranked_candidates[0]
         exact_task_match = bool(top_candidate.get("exact_task_match", False))
+        candidate_kind = str(top_candidate.get("candidate_kind", "history_summary") or "history_summary")
         high_conf_follow_up_match = (
             bool(top_candidate.get("follow_up_task", False))
             and bool(top_candidate.get("matched_subject_hints"))
             and int(top_candidate.get("score", 0)) >= 10
         )
-        if not exact_task_match and not high_conf_follow_up_match:
+        conversation_recall_match = (
+            candidate_kind == "conversation_recall_target"
+            and bool(top_candidate.get("answer_preview"))
+            and int(top_candidate.get("score", 0)) >= 10
+        )
+        requested_recall_targets = _extract_conversation_recall_targets(task)
+        resolved_recall_candidates = [
+            candidate
+            for candidate in ranked_candidates
+            if str(candidate.get("candidate_kind", "")) == "conversation_recall_target"
+        ]
+        recall_target_coverage_ok = True
+        if requested_recall_targets:
+            requested_labels = [
+                str(target.get("label", "") or "").strip()
+                for target in requested_recall_targets
+                if str(target.get("label", "") or "").strip()
+            ]
+            resolved_labels = [
+                str(candidate.get("target_label", "") or "").strip()
+                for candidate in resolved_recall_candidates
+                if str(candidate.get("target_label", "") or "").strip()
+            ]
+            recall_target_coverage_ok = Counter(requested_labels) == Counter(resolved_labels)
+        if not exact_task_match and not high_conf_follow_up_match and not conversation_recall_match:
+            return None
+        if conversation_recall_match and not recall_target_coverage_ok:
+            logger.info(
+                f"{Fore.YELLOW}[历史答案直答] 会话回顾目标覆盖不足，"
+                f"requested={len(requested_recall_targets)} | resolved={len(resolved_recall_candidates)}，"
+                f"回退到常规规划链路{Style.RESET_ALL}"
+            )
             return None
 
         reasoning = (
@@ -789,16 +828,47 @@ class LangGraphAgentExecutor:
             f"命中原因={top_candidate.get('reasons', [])}。"
             "因此本轮优先基于历史摘要与关键数据直接回答用户，避免重复调用工具、技能或再次委派。"
         )
+        final_answer_content = "根据历史记录直接回答用户，不要重复调用工具、技能或再次委派。"
+        if conversation_recall_match:
+            ordered_recall_candidates: List[Dict[str, Any]] = []
+            for target in requested_recall_targets:
+                label = str(target.get("label", "") or "").strip()
+                matched = next(
+                    (
+                        candidate for candidate in resolved_recall_candidates
+                        if str(candidate.get("target_label", "") or "").strip() == label
+                    ),
+                    None,
+                )
+                if matched:
+                    ordered_recall_candidates.append(matched)
+
+            answer_parts: List[str] = []
+            for candidate in ordered_recall_candidates:
+                label = str(candidate.get("target_label", "") or "目标轮次").strip()
+                answer_preview = str(candidate.get("answer_preview", "") or "").strip()
+                target_kind = str(candidate.get("target_kind", "question") or "question").strip()
+                if target_kind == "summary":
+                    answer_parts.append(f"{label}的结论是：{answer_preview}")
+                elif target_kind == "timeline":
+                    answer_parts.append(f"{label}的主线内容是：{answer_preview}")
+                else:
+                    answer_parts.append(f"您的{label}是：{answer_preview}")
+            if answer_parts:
+                final_answer_content = "；".join(answer_parts)
         logger.info(
             f"{Fore.YELLOW}[历史答案直答] 命中高置信历史候选，"
-            f"exact_task_match={exact_task_match} | score={top_candidate.get('score', 0)}"
+            f"exact_task_match={exact_task_match} | "
+            f"conversation_recall_match={conversation_recall_match} | "
+            f"recall_target_coverage_ok={recall_target_coverage_ok} | "
+            f"score={top_candidate.get('score', 0)}"
             f"{Style.RESET_ALL}"
         )
         return Plan(
             steps=[
                 PlanStep(
                     action="final_answer",
-                    content="根据历史记录直接回答用户，不要重复调用工具、技能或再次委派。",
+                    content=final_answer_content,
                 )
             ],
             reasoning=reasoning,
