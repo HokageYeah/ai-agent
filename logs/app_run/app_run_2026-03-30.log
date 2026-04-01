@@ -1,4 +1,0 @@
-2026-03-31 08:31:37 | INFO     | app.main:lifespan:98 - [33m[关闭] AI Agent 服务正在关闭...[0m
-2026-03-31 08:31:38 | INFO     | logging:callHandlers:1736 - sqlalchemy数据库连接已关闭
-2026-03-31 08:31:38 | INFO     | app.main:lifespan:101 - [33m[关闭] MySQL 数据库连接已释放[0m
-2026-03-31 08:31:38 | INFO     | app.main:lifespan:104 - [33m[关闭] 服务已安全退出[0m

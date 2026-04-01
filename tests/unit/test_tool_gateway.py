@@ -628,6 +628,42 @@ class TestToolCallingGateway:
         assert len(results) == 1
         assert results[0].status == ToolCallStatus.NOT_FOUND
         assert "nonexistent_tool" in results[0].error
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_calls_should_reject_tool_outside_allowed_context(self, mock_tool):
+        """
+        测试运行时白名单拦截
+
+        验证即使工具已注册，只要不在本次允许执行的 allowed_tool_names 中，
+        ToolCallingGateway 也必须在公共层直接拒绝执行。
+        """
+        gateway = ToolCallingGateway()
+        gateway.register_tool("test_tool", mock_tool, mock_tool.schema)
+
+        response = {
+            "choices": [{
+                "message": {
+                    "tool_calls": [{
+                        "id": "call-forbidden",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '{"param1": "value1"}'
+                        }
+                    }]
+                }
+            }]
+        }
+
+        results = await gateway.execute_tool_calls(
+            response,
+            context={"allowed_tool_names": ["other_tool"]},
+        )
+
+        assert len(results) == 1
+        assert results[0].status == ToolCallStatus.FORBIDDEN
+        assert "not allowed" in results[0].error
+        mock_tool.execute.assert_not_called()
     
     @pytest.mark.asyncio
     async def test_execute_multiple_tool_calls(self, mock_tool):

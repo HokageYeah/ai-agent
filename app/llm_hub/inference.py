@@ -465,7 +465,13 @@ class InferenceEngine:
             f"{Fore.CYAN}[{request_id}] 🔄 开始工具调用循环，"
             f"最大迭代次数: {self._max_tool_iterations}{Style.RESET_ALL}"
         )
-        
+
+        allowed_tool_names = {
+            str(schema.get("function", {}).get("name", "")).strip()
+            for schema in (provider_config.get("tools") or [])
+            if str(schema.get("function", {}).get("name", "")).strip()
+        }
+
         for iteration in range(self._max_tool_iterations):
             # ── 检查 LLM 是否请求工具调用 ──────────────────────────────────
             finish_reason = self._extract_finish_reason(current_response)
@@ -502,7 +508,12 @@ class InferenceEngine:
             )
             
             try:
-                tool_results = await self._tool_gateway.execute_tool_calls(current_response)
+                tool_results = await self._tool_gateway.execute_tool_calls(
+                    current_response,
+                    context={
+                        "allowed_tool_names": sorted(allowed_tool_names),
+                    },
+                )
             except Exception as e:
                 logger.error(
                     f"{Fore.RED}[{request_id}] ToolCallingGateway 执行工具失败: {e}，退出工具调用循环{Style.RESET_ALL}"

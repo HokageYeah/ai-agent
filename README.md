@@ -162,14 +162,32 @@ flowchart TD
     G --> H[技能进入 discover / route / lazy load 主链路]
 ```
 
+### 会话记忆与跨轮安装候选
+
+- **摘要来源不只看结论**：每轮任务结束后，`extract_summary_from_run_memory()` 会同时读取 `final_result`、`step_results` 与最终反思，除了保留人类可读 `summary`，还会额外提炼 `actionable_facts`（如 `owner/repo@skill`、`npx skills add ...`、URL、资源 ID、文件路径）。
+- **跨轮传递保留双形态**：`TaskSummaryEntry.to_context_message()` 不只写一段自然语言结论，还会同时写入“`label -> value`”映射文本与紧凑 JSON，便于 LLM 直接理解，也便于公共层后续反向提取结构化事实。
+- **主/子 Agent 统一挂回同一轮主线**：会话摘要新增 `conversation_turn_id`、`source_user_task`、`entry_scope`。同一轮里的主 Agent 与子 Agent 摘要会被聚合到同一个“用户主线问题”下，而不是把子任务误记成新的用户问题。
+- **历史追问走会话主线回顾**：当用户问“我的第一个问题是什么”“之前说过什么”“继续刚才那个”这类元历史问题时，公共层会按 `conversation_turn_id` 构造 `【会话主线回顾】` 时间线给 LLM，而不是只靠关键词匹配某一条零散摘要。
+- **仅在安装类任务中激活候选提炼**：当新一轮任务属于“安装技能”时，`langgraph_executor._build_history_guided_install_context()` 会从会话摘要中提取并打分历史事实，生成 `history_install_candidates` 注入 Planning 上下文。
+- **候选不是硬编码短路**：这些候选只作为高价值参考，不会在框架层强制改写为单步 `skill_install`；若用户当前回合明确要求“先搜索”“从 GitHub 找”“手动下载/解压”，规划仍应优先满足该过程性意图。
+
 ### 规划输出恢复与结果复用边界
 
 - **轻度 JSON 漂移兼容**：规划解析公共层兼容轻度格式漂移，例如 Python 字面量风格、尾逗号、包裹在 Markdown 或 `<think>` 中的 JSON 片段，避免把本可恢复的结果直接判成失败。
 - **截断型恢复**：当规划结果疑似因长度被截断时，统一走 `retry_after_length` 做短计划重试。
 - **非截断型结构修复**：当规划结果不是有效 JSON、但又不是截断问题时，统一走 `repair_after_invalid_json` 仅修复结构，不重新发散规划语义，减少中间轨迹出现“解析计划失败”的假 `final_answer`。
+- **上游空白响应恢复**：当底层供应商返回 `choices=None/[]` 且缺少明确错误码/错误消息时，Provider 公共层会按“瞬时空白响应”自动短退避重试，避免把短暂网关抖动直接升级成规划失败、反思失败或答案合成失败。
 - **上游结果复用硬约束**：若后续步骤需要继续处理上一步工具/技能/委派返回的 HTML、文本或 JSON，必须通过 `{{last_tool_result}}`、`{{last_tool_result.content}}`、`{{last_delegate_result}}` 等占位符复用上游结果；禁止在 `python_executor` 中手工重写上游样本数据。
 - **历史安装引用的使用边界**：会话记忆中提炼出的 `owner/repo@skill` 等精确安装引用，只作为规划阶段的高价值候选注入给 LLM；框架层不再直接把首轮计划短路成 `skill_install`。是否直接复用、还是先搜索/先走 GitHub/先下载压缩包，由 LLM 结合当前任务表述与历史上下文自主决策。
+- **安装 fallback 的路径边界**：若安装任务退回到 `http_request` / `archive_extract` / `file_write` 等结构化步骤，必须复用上一步真实返回的 `download_path` 等路径，并且目标目录必须是 `AGENT_WORKSPACE_DIR` 对应的真实工作区；禁止臆造 `/tmp/*.zip`、`/app/skills/skills_md/...` 等假路径。
 - **长结果摘要边界**：在 Reflection / 重规划等需要“控长”地回看上一轮结果的场景，系统不再只保留结果开头，而是统一使用“首尾保留 + 中间省略说明”的摘要策略；这样既能控制 Prompt 体积，也能避免列表/表格类答案因尾部被隐藏而被误判成“传输截断”。
+
+### 最终答案公共收口
+
+- **执行结果优先走公共收口层**：`final_answer` 不再假设必须经一次额外 LLM 合成后才能返回。执行引擎会先判断是否属于“单一上游结果已足够面向用户”的场景。
+- **单一结果跳过二次合成**：若本轮只有一个成功的 `skill` 或 `delegate` 结果，且该结果本身已具备可读内容，则直接走确定性 Markdown 收口，减少额外延迟和供应商空回复风险。
+- **合成失败统一 Markdown 降级**：当多步骤结果仍需要 LLM 合成，但合成阶段失败时，公共层会把已完成步骤统一渲染成标准 Markdown，而不是原始字符串拼接。
+- **SSE / 非流式共享同一结果**：真实最终答案会回写到 `final_answer` 步骤结果，并经 `final_result` 公共清洗后同时供 SSE `step_complete`、SSE `final_answer`、会话摘要提取和下一轮历史注入复用。
 
 
 ## 🛡️ 错误感知与自我纠错机制

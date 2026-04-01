@@ -52,6 +52,7 @@ class TaskSummaryEntry:
     agent_id: str                   # 执行的 Agent ID
     agent_name: str                 # Agent 显示名
     task: str                       # 原始任务描述
+    source_user_task: str           # 当前轮原始用户问题（主/子 Agent 统一挂回这条主线）
     success: bool                   # 任务是否成功
     summary: str                    # LLM / 规则提取的结论摘要（≤300字）
     key_data: dict                  # 关键结构化数据（如查到的 order_id、price）
@@ -59,6 +60,8 @@ class TaskSummaryEntry:
     iterations: int                 # 经过了几轮 Plan-Execute-Reflect
     started_at: float               # 开始时间戳
     ended_at: float                 # 结束时间戳
+    conversation_turn_id: str       # 会话轮次 ID，同一轮主/子 Agent 共享
+    entry_scope: str                # 记录属于主线任务(primary)还是子任务(subtask)
     # NOTE: 记录本次任务中用户的所有操作行为（如确认/拒绝某个工具操作）
     # 这些行为能让下一个任务感知"用户的偏好或限制"
     # 例如：用户拒绝了 file_write → 下次规划时主动避开
@@ -76,6 +79,7 @@ class TaskSummaryEntry:
         lines = [
             f"【历史任务摘要】",
             f"任务: {self.task}",
+            f"主线任务: {self.source_user_task}",
             f"结果: {status}",
             f"结论: {self.summary}",
         ]
@@ -181,6 +185,23 @@ def extract_summary_from_run_memory(run_memory: AgentRunMemory) -> TaskSummaryEn
 
 **选项B（后续可升级）**：LLM 二次总结  
 调用 LLM 对 `run_memory.get_timeline()` 进行一次专项总结，获取更高质量的摘要。预留接口，本次不实现。
+
+### 关键补充：需要同时保留“会话主线”和“子任务轨迹”
+
+仅保存 `task + summary` 还不够，因为真实会话里通常同时存在：
+
+- 主 Agent 面向用户的原始问题；
+- 子 Agent 为完成该问题而生成的改写子任务；
+- 同一轮里的技能/工具/委派链路。
+
+因此每条 `TaskSummaryEntry` 还需要保留：
+
+- `conversation_turn_id`：把同一轮主/子 Agent 摘要聚合到一起；
+- `source_user_task`：无论子任务怎么改写，都能回到原始用户问题；
+- `entry_scope`：区分这是主线任务还是子任务摘要。
+
+当用户问“第一轮问了什么”“刚才做了什么”“前面聊到哪了”这类元历史问题时，
+会话记忆公共层会按 `conversation_turn_id` 聚合出“会话主线回顾”，而不是把零散的子任务摘要直接丢给 LLM。
 
 ---
 

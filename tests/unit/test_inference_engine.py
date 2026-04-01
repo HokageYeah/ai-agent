@@ -19,6 +19,7 @@ import pytest_asyncio
 from unittest.mock import Mock, AsyncMock, patch
 from app.core.config import get_default_model
 from app.llm_hub.inference import InferenceConfig, InferenceResult, InferenceEngine
+from app.llm_hub.tool_gateway import ToolCallingGateway
 from app.llm_hub.prompt_builder import PromptBuilder
 from app.llm_hub.streaming import StreamingManager
 
@@ -433,6 +434,84 @@ class TestInferenceEngine:
         
         assert isinstance(result, InferenceResult)
         mock_provider.chat.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_infer_should_pass_allowed_tool_names_to_gateway(self, mock_registry):
+        """
+        测试工具白名单透传
+
+        验证 InferenceEngine 在原生 tool-calling loop 中，
+        会把本次请求真正允许的工具集合传给 ToolCallingGateway，
+        防止模型幻觉出 schema 之外的工具调用并被实际执行。
+        """
+        provider = Mock()
+        provider.chat = AsyncMock(side_effect=[
+            {
+                "id": "tool-call-response",
+                "object": "chat.completion",
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "call-forbidden",
+                            "type": "function",
+                            "function": {
+                                "name": "forbidden_tool",
+                                "arguments": "{}",
+                            },
+                        }],
+                    },
+                    "finish_reason": "tool_calls",
+                }],
+                "usage": {},
+            },
+            {
+                "id": "final-response",
+                "object": "chat.completion",
+                "choices": [{
+                    "message": {"content": "最终答案"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {},
+            },
+        ])
+        provider.stream = AsyncMock(return_value=iter([]))
+
+        gateway = ToolCallingGateway()
+        forbidden_tool = Mock()
+        forbidden_tool.execute = AsyncMock(return_value={"should_not_run": True})
+        gateway.register_tool(
+            "forbidden_tool",
+            forbidden_tool,
+            {"type": "object", "properties": {}, "required": []},
+        )
+
+        engine = InferenceEngine(
+            provider=provider,
+            model_registry=mock_registry,
+            tool_gateway=gateway,
+            max_tool_iterations=2,
+        )
+
+        config = InferenceConfig(
+            model="gpt-3.5-turbo",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "allowed_tool",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        )
+
+        result = await engine.infer([{"role": "user", "content": "请继续"}], config)
+
+        assert result.content == "最终答案"
+        assert provider.chat.await_count == 2
+        forbidden_tool.execute.assert_not_called()
     
     def test_select_model_with_forced_provider(self, mock_provider, mock_registry):
         """

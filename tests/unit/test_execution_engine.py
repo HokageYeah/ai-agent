@@ -548,6 +548,104 @@ async def test_execution_engine_should_write_real_final_answer_back_to_step_resu
 
 
 @pytest.mark.asyncio
+async def test_execution_engine_should_skip_llm_synthesis_for_single_delegate_result(monkeypatch):
+    """单一委派结果应直接走确定性 Markdown 收口，避免额外触发一次 LLM 合成。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+    )
+
+    async def fake_delegate(*args, **kwargs):
+        return {
+            "success": True,
+            "action": "delegate",
+            "agent_id": "general_agent",
+            "result": "【skill】\n搜索关键词：新闻, news\n\n1. newsletter-curation\n2. hackernews",
+        }
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("单一委派结果不应再触发 LLM 合成")
+
+    monkeypatch.setattr(execution_engine, "_delegate_to_agent", fake_delegate)
+    monkeypatch.setattr(execution_engine, "_synthesize_answer", fail_if_called)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(action="delegate", agent_id="general_agent", params={"task": "查询新闻技能"}),
+            PlanStep(action="final_answer", content="根据以上结果回答用户"),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(agent, plan, context={"task": "使用find-skills技能查询 新闻技能"})
+
+    assert result.success is True
+    assert result.result.startswith("# 执行结果")
+    assert "## skill" in result.result
+    assert "newsletter-curation" in result.result
+    assert result.step_results[1]["result"] == result.result
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_should_fallback_to_markdown_when_synthesis_fails(monkeypatch):
+    """多步骤结果在合成失败时，应统一降级为标准 Markdown，而不是原始拼接文本。"""
+    tool_hub = ToolHub()
+    tool_hub.register_tool(TestTool())
+    tool_hub.register_tool(NamedTool("second_tool"))
+    skill_manager = SkillManager(auto_discover=False)
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine,
+    )
+
+    async def fake_infer(*args, **kwargs):
+        raise ValueError("API 返回错误，无法获取回复内容")
+
+    monkeypatch.setattr(execution_engine.llm_hub, "infer", fake_infer)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(action="tool", tool_name="test_tool", params={}),
+            PlanStep(action="tool", tool_name="second_tool", params={}),
+            PlanStep(action="final_answer", content="根据以上结果回答用户"),
+        ]
+    )
+
+    result = await execution_engine.execute_plan(agent, plan, context={"task": "测试 Markdown 降级"})
+
+    assert result.success is True
+    assert result.result.startswith("# 执行结果")
+    assert "## 说明" in result.result
+    assert "## test_tool" in result.result
+    assert "## second_tool" in result.result
+    assert "【tool】" not in result.result
+    assert result.step_results[-1]["result"] == result.result
+
+
+@pytest.mark.asyncio
 async def test_execution_engine_empty_plan():
     """测试执行空计划"""
     tool_hub = ToolHub()

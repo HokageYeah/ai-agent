@@ -248,3 +248,98 @@ async def test_child_agent_manager_check_circular_dependency():
     
     # parent -> parent: 应该有循环
     assert manager._check_circular_dependency("parent", "parent")
+
+
+@pytest.mark.asyncio
+async def test_child_agent_manager_should_forward_conversation_context_to_sub_agent(monkeypatch):
+    """委派子 Agent 时，应透传 conversation_id 与上游筛选后的上下文。"""
+    from app.agents import langgraph_executor as executor_module
+
+    agent_registry = AgentRegistry()
+    child_agent = Agent(
+        agent_id="order_agent",
+        name="订单助手",
+        description="订单相关查询",
+        role="订单处理",
+    )
+    agent_registry.register_agent(child_agent)
+
+    tool_hub = ToolHub()
+    skill_manager = SkillManager()
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    manager = ChildAgentManager(
+        agent_registry=agent_registry,
+        llm_hub=inference_engine,
+        tool_hub=tool_hub,
+        skill_manager=skill_manager
+    )
+
+    captured = {}
+
+    async def fake_execute_with_callback(
+        self,
+        agent,
+        task,
+        stream_callback,
+        conversation_id=None,
+        conversation_history=None,
+        conversation_turn_id=None,
+        source_user_task=None,
+        execution_scope="subtask",
+        extra_context_messages=None,
+        user_rejected_tools=None,
+    ):
+        captured["agent_id"] = agent.agent_id
+        captured["task"] = task
+        captured["conversation_id"] = conversation_id
+        captured["conversation_history"] = conversation_history
+        captured["conversation_turn_id"] = conversation_turn_id
+        captured["source_user_task"] = source_user_task
+        captured["execution_scope"] = execution_scope
+        captured["extra_context_messages"] = extra_context_messages
+        captured["user_rejected_tools"] = user_rejected_tools
+        return {
+            "success": True,
+            "result": {
+                "success": True,
+                "result": "历史上下文已透传",
+                "step_results": [],
+                "error": None,
+            },
+            "error": None,
+            "user_rejected_tools": user_rejected_tools or [],
+            "iterations": 1,
+        }
+
+    monkeypatch.setattr(
+        executor_module.LangGraphAgentExecutor,
+        "execute_with_callback",
+        fake_execute_with_callback,
+    )
+
+    extra_context_messages = [
+        {
+            "role": "user",
+            "content": "【历史任务摘要】\n任务: 订单1002的商品是谁买的\n结果: ✅ 成功\n结论: 买家是李娜",
+        }
+    ]
+
+    result = await manager.delegate_task(
+        parent_agent_id="cs_master",
+        child_agent_id="order_agent",
+        task="查询订单1002的买家信息",
+        conversation_id="conv-order-repeat",
+        extra_context_messages=extra_context_messages,
+        stream_callback=lambda event: None,
+        user_rejected_tools=["file_write"],
+    )
+
+    assert result["success"] is True
+    assert captured["agent_id"] == "order_agent"
+    assert captured["conversation_id"] == "conv-order-repeat"
+    assert captured["execution_scope"] == "subtask"
+    assert captured["extra_context_messages"] == extra_context_messages
+    assert captured["user_rejected_tools"] == ["file_write"]

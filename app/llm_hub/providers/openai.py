@@ -35,6 +35,8 @@ from app.llm_hub.providers.base import LLMProvider
 # 最多重试次数，每次退避时间翻倍（2→4→8→16 秒），避免频繁触发限流
 _MAX_RETRY_TIMES = 4
 _INITIAL_WAIT_SECONDS = 2
+_MAX_EMPTY_RESPONSE_RETRY_TIMES = 2
+_INITIAL_EMPTY_RESPONSE_WAIT_SECONDS = 1
 
 
 class OpenAIProvider(LLMProvider):
@@ -85,6 +87,49 @@ class OpenAIProvider(LLMProvider):
         )
         
         logger.debug(f"{Fore.BLUE}OpenAI 异步客户端创建完成{Style.RESET_ALL}")
+
+    @staticmethod
+    def _extract_response_error_detail(response: Any) -> tuple[Optional[Any], Optional[str], Optional[Dict[str, Any]]]:
+        """
+        统一提取第三方响应里的错误元数据。
+
+        设计原因：
+        - 不同代理/OpenAI 兼容网关在失败时返回的字段不完全一致；
+        - 需要在公共层判断“这是明确错误”还是“瞬时空白响应”，避免把瞬时抖动直接升级成规划失败。
+        """
+        status_code = getattr(response, "status", None)
+        error_msg = getattr(response, "msg", None) or getattr(response, "error", None)
+        base_resp = getattr(response, "base_resp", None)
+        if isinstance(base_resp, dict):
+            if status_code is None:
+                status_code = base_resp.get("status_code")
+            if not error_msg:
+                error_msg = base_resp.get("status_msg") or base_resp.get("error")
+        return status_code, error_msg, base_resp if isinstance(base_resp, dict) else None
+
+    @classmethod
+    def _should_retry_empty_response(
+        cls,
+        response: Any,
+        *,
+        attempt: int,
+    ) -> bool:
+        """
+        判断当前“空回复”是否属于可自动重试的瞬时异常。
+
+        设计原则：
+        - 仅对“没有 choices，且也没有明确错误码/错误消息”的空白响应做短退避重试；
+        - 有明确错误信息时立即失败，避免掩盖真实配置/权限/模型问题。
+        """
+        if attempt > _MAX_EMPTY_RESPONSE_RETRY_TIMES:
+            return False
+
+        status_code, error_msg, _ = cls._extract_response_error_detail(response)
+        has_explicit_error = (
+            (status_code not in (None, 0, "0"))
+            or bool(str(error_msg or "").strip())
+        )
+        return not has_explicit_error
     
     async def chat(
         self,
@@ -150,6 +195,7 @@ class OpenAIProvider(LLMProvider):
         # 当 API 返回 429 时，等待 wait_seconds 后重试，每次等待时间翻倍
         # 最多重试 _MAX_RETRY_TIMES 次，超出后向上层抛出异常
         wait_seconds = _INITIAL_WAIT_SECONDS
+        empty_response_wait_seconds = _INITIAL_EMPTY_RESPONSE_WAIT_SECONDS
         for attempt in range(1, _MAX_RETRY_TIMES + 2):  # attempt: 1..5（第5次才真正抛出）
             try:
                 # 调用 OpenAI API 创建对话（非流式模式）
@@ -163,6 +209,15 @@ class OpenAIProvider(LLMProvider):
 
                 # 检查响应是否为空
                 if response is None:
+                    if attempt <= _MAX_EMPTY_RESPONSE_RETRY_TIMES:
+                        logger.warning(
+                            f"{Fore.YELLOW}[OpenAI] API 返回空响应，"
+                            f"判定为瞬时异常并执行第 {attempt}/{_MAX_EMPTY_RESPONSE_RETRY_TIMES} 次重试，"
+                            f"等待 {empty_response_wait_seconds} 秒后继续...{Style.RESET_ALL}"
+                        )
+                        await asyncio.sleep(empty_response_wait_seconds)
+                        empty_response_wait_seconds *= 2
+                        continue
                     raise ValueError("API 返回空响应")
 
                 # NOTE: 调试用，记录完整响应体（DEBUG 级别，生产环境可关闭）
@@ -179,9 +234,24 @@ class OpenAIProvider(LLMProvider):
                 #       choices 会是 None。必须抛出异常，不能静默返回，
                 #       否则上层（Planning/Reflection）会尝试把错误信息解析为 JSON
                 if choices is None or len(choices) == 0:
-                    status_code = getattr(response, 'status', None)
-                    error_msg = getattr(response, 'msg', None) or getattr(response, 'error', None)
-                    detail = f"status={status_code}, msg={error_msg}" if status_code else str(response)
+                    status_code, error_msg, base_resp = self._extract_response_error_detail(response)
+                    detail = (
+                        f"status={status_code}, msg={error_msg}"
+                        if status_code not in (None, "")
+                        else str(response)
+                    )
+
+                    if self._should_retry_empty_response(response, attempt=attempt):
+                        logger.warning(
+                            f"{Fore.YELLOW}[OpenAI] 检测到无 choices 的空白响应，"
+                            f"缺少明确错误码/错误消息，"
+                            f"执行第 {attempt}/{_MAX_EMPTY_RESPONSE_RETRY_TIMES} 次瞬时重试 | "
+                            f"base_resp={base_resp}{Style.RESET_ALL}"
+                        )
+                        await asyncio.sleep(empty_response_wait_seconds)
+                        empty_response_wait_seconds *= 2
+                        continue
+
                     logger.error(
                         f"{Fore.RED}API 返回错误，无有效回复内容: {detail}{Style.RESET_ALL}"
                     )

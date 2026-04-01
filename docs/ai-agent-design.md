@@ -1,8 +1,8 @@
 # 通用企业级 AI 平台架构设计
 
 ## 文档版本
-- **版本号**: v1.0
-- **最后更新**: 2026-02-11
+- **版本号**: v1.1
+- **最后更新**: 2026-04-01
 - **架构类型**: LLM 完全解耦的通用 AI 能力平台
 
 ---
@@ -188,6 +188,24 @@ class LLMProvider(ABC):
 | AWS Bedrock                | 云服务 | P1     |
 | 本地部署模型 (Ollama/vLLM) | 私有化 | P1     |
 | 企业定制模型               | 私有化 | P2     |
+
+#### 3.3.4 供应商容错与瞬时异常恢复
+
+Provider Adapter Layer 不只负责协议适配，还负责**统一吸收供应商瞬时抖动**，避免把底层网关的短暂异常直接放大成 Planning / Reflection / Answer Synthesis 失败。
+
+当前公共策略包括：
+
+- **429 限流重试**：指数退避重试；
+- **空白响应重试**：当返回 `choices=None/[]`，且没有明确错误码、没有明确错误消息时，判定为“瞬时空白响应”，做短退避自动重试；
+- **明确错误快速失败**：若响应中已有明确 `status/msg/error`，则直接失败，不误吞真实配置、权限或模型能力问题。
+
+这条能力位于 Provider 公共层，因此会同时覆盖：
+
+- 规划阶段调用；
+- 执行后的答案合成；
+- 反思评估；
+- 纯记忆问答兜底合成；
+- 其它所有经 `InferenceEngine -> provider.chat()` 发起的非流式推理。
 
 ### 3.4 Model Registry（模型注册中心）
 
@@ -774,6 +792,44 @@ class MemoryType(Enum):
 
 #### 4.2.2 短期记忆（会话记忆）
 
+当前实现已经从“只保留最近 N 条原始消息窗口”升级为“两层记忆”：
+
+- **运行级记忆（working memory）**：保留单次任务内的规划、工具/技能/委派轨迹、反思结论；
+- **会话级摘要记忆（session memory）**：在任务完成后抽取可复用摘要，并在后续轮次按相关性注入。
+
+其中，会话级记忆不是简单的消息滑窗，而是面向 Agent 编排的结构化摘要模型：
+
+```python
+class TaskSummaryEntry:
+    task_id: str
+    agent_id: str
+    agent_name: str
+    task: str
+    success: bool
+    summary: str
+    key_data: dict
+    tools_used: list[str]
+    iterations: int
+    started_at: float
+    ended_at: float
+    user_actions: list[dict]
+    source_user_task: str      # 当前轮原始用户问题
+    conversation_turn_id: str  # 同一轮主/子 Agent 共享
+    entry_scope: str           # primary / subtask
+```
+
+这 3 个新增元数据字段是当前跨轮记忆链路的关键：
+
+- `conversation_turn_id`：把同一轮主 Agent 与子 Agent 的摘要聚合成一个会话主线；
+- `source_user_task`：无论子任务如何改写，都能回到原始用户提问；
+- `entry_scope`：区分主线任务与子任务，避免后续召回时把子任务误当成用户首问。
+
+因此，当前的短期记忆设计应理解为：
+
+1. **任务内**由 `run_memory` 保留完整轨迹，供 Reflection / 重规划使用；
+2. **任务完成后**由 `extract_summary_from_run_memory()` 提炼会话摘要；
+3. **跨轮查询时**由 `session_memory` 按相关性注入，并在“回顾历史对话/第一个问题/之前说过什么”这类问题上额外构造“会话主线回顾”时间线给 LLM。
+
 ```python
 class ShortTermMemory:
     """短期记忆(会话上下文)"""
@@ -798,6 +854,8 @@ class ShortTermMemory:
         """清空记忆"""
         self.messages = []
 ```
+
+> 说明：上面的 `ShortTermMemory` 示例更适合作为“最小抽象示意”。当前工程中的真实实现已经演进为 `run_memory + session_memory` 双层结构，且支持主/子 Agent 共享同一会话轮次元数据。
 
 #### 4.2.3 长期记忆（向量数据库）
 

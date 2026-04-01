@@ -29,7 +29,11 @@ from app.agents.planning import Plan, PlanStep
 from app.core.config import get_agent_workspace_dir, get_default_model
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
-from app.utils.llm_output_parser import extract_user_visible_result
+from app.utils.llm_output_parser import (
+    extract_user_visible_result,
+    sanitize_model_payload,
+    strip_think_blocks,
+)
 from app.utils.prompt_manager import PromptManager
 from app.utils.resource_path import get_project_root
 
@@ -166,6 +170,139 @@ class ExecutionEngine:
             suffix = f" 等 {len(failed_steps)} 个失败步骤"
 
         return "执行过程中出现错误，任务未完成。失败详情：" + "；".join(details) + suffix
+
+    @staticmethod
+    def _looks_like_markdown(text: str) -> bool:
+        """
+        粗略判断文本是否已经具备 Markdown 结构。
+
+        设计原因：
+        - 最终答案公共收口层需要在“保留已有可读格式”和“补齐结构化 Markdown”之间做平衡；
+        - 这里只做轻量判断，避免为某个 skill/tool 的输出写死分支。
+        """
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return False
+        return bool(
+            re.search(
+                r"(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(^\|.+\|$)|(^```)",
+                cleaned,
+                flags=re.MULTILINE,
+            )
+        )
+
+    @staticmethod
+    def _normalize_markdown_text(text: Any) -> str:
+        """
+        将用户可见正文清洗为稳定的 Markdown 文本。
+
+        设计目标：
+        1. 在公共层统一去掉 `<think>` 与无效包装；
+        2. 兼容历史链路里常见的 `【标题】` 风格文本，将其转成标准 Markdown 标题；
+        3. 保持原始正文尽量不失真，避免只为某个结果格式做特判。
+        """
+        cleaned = strip_think_blocks(str(text or "")).replace("\r\n", "\n").strip()
+        if not cleaned:
+            return ""
+
+        cleaned = re.sub(r"(?m)^【([^】\n]+)】\s*$", r"## \1", cleaned)
+        cleaned = re.sub(r"(?m)^【([^】\n]+)】\s*\n", r"## \1\n\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+        if ExecutionEngine._looks_like_markdown(cleaned):
+            return cleaned
+
+        return cleaned
+
+    def _render_step_result_as_markdown(
+        self,
+        step_result: Dict[str, Any],
+        *,
+        index: int,
+        total: int,
+    ) -> str:
+        """
+        将单个成功步骤稳定渲染为 Markdown 片段。
+
+        设计原因：
+        - LLM 二次合成不是可靠边界，空回复/限流/供应商异常时仍需要稳定输出；
+        - 统一在执行引擎公共收口层渲染，避免把兜底散落到具体 skill、tool 或前端。
+        """
+        label = (
+            step_result.get("skill_id")
+            or step_result.get("tool_name")
+            or step_result.get("agent_id")
+            or step_result.get("action")
+            or f"步骤{index}"
+        )
+        visible_payload = sanitize_model_payload(step_result.get("result"))
+        visible_text = self._normalize_markdown_text(extract_user_visible_result(visible_payload))
+        if not visible_text:
+            visible_text = "（该步骤未返回可展示内容）"
+
+        if total == 1 and self._looks_like_markdown(visible_text):
+            return visible_text
+
+        return f"## {label}\n\n{visible_text}"
+
+    def _render_results_as_markdown(
+        self,
+        *,
+        task: str,
+        tool_results: List[Dict[str, Any]],
+        fallback_reason: str = "",
+    ) -> str:
+        """
+        将执行结果确定性渲染为标准 Markdown。
+
+        适用场景：
+        - 单一上游结果，没必要再发起一次 LLM 总结；
+        - LLM 合成失败，需要稳定、可观测、可复用的统一降级输出。
+        """
+        sections: List[str] = []
+        if task:
+            sections.append(f"# 执行结果\n\n已完成任务：{task}")
+        else:
+            sections.append("# 执行结果")
+
+        if fallback_reason:
+            sections.append(
+                "## 说明\n\n"
+                "最终答案合成阶段未返回可用内容，"
+                "以下结果由框架根据已完成步骤自动整理为 Markdown。"
+            )
+
+        total = len(tool_results or [])
+        for idx, step_result in enumerate(tool_results or [], 1):
+            sections.append(
+                self._render_step_result_as_markdown(
+                    step_result,
+                    index=idx,
+                    total=total,
+                )
+            )
+
+        rendered = "\n\n".join(part for part in sections if part.strip())
+        return self._normalize_markdown_text(rendered)
+
+    def _should_skip_llm_synthesis(
+        self,
+        *,
+        tool_results: List[Dict[str, Any]],
+    ) -> bool:
+        """
+        判断当前结果是否应直接走确定性 Markdown 输出。
+
+        设计原因：
+        - 单一 skill / delegate 结果通常已经是面向用户的内容，再做一次 LLM 合成
+          只会增加时延和供应商空回复风险；
+        - 该判断基于“动作类型 + 结果数量”的公共特征，不绑定某个具体 skill。
+        """
+        if len(tool_results or []) != 1:
+            return False
+
+        action = str((tool_results[0] or {}).get("action") or "").strip().lower()
+        return action in {"skill", "delegate"}
 
     def _truncate_tool_error_text(self, value: Any, limit: int = 240) -> str:
         """
@@ -801,16 +938,26 @@ class ExecutionEngine:
                         final_result = self._build_failed_execution_message(step_results)
                     elif bool(tool_results):
                         # 情况A：有前置工具结果 → 用工具结果驱动 LLM 合成
-                        logger.info(
-                            f"{Fore.BLUE}[执行引擎] 存在工具/委派执行结果，"
-                            f"调用 LLM 合成真实答案...{Style.RESET_ALL}"
-                        )
-                        final_result = await self._synthesize_answer(
-                            agent=agent,
-                            task=context.get("task", "") if context else "",
-                            tool_results=tool_results,
-                            template=template
-                        )
+                        if self._should_skip_llm_synthesis(tool_results=tool_results):
+                            logger.info(
+                                f"{Fore.CYAN}[执行引擎] 检测到单一上游结果，"
+                                f"直接走确定性 Markdown 收口，跳过额外 LLM 合成{Style.RESET_ALL}"
+                            )
+                            final_result = self._render_results_as_markdown(
+                                task=context.get("task", "") if context else "",
+                                tool_results=tool_results,
+                            )
+                        else:
+                            logger.info(
+                                f"{Fore.BLUE}[执行引擎] 存在工具/委派执行结果，"
+                                f"调用 LLM 合成真实答案...{Style.RESET_ALL}"
+                            )
+                            final_result = await self._synthesize_answer(
+                                agent=agent,
+                                task=context.get("task", "") if context else "",
+                                tool_results=tool_results,
+                                template=template
+                            )
                     elif context_messages and _is_intent_description(template):
                         # ══════════════════════════════════════════════════════
                         # 【兜底安全网】情况B：计划只有 final_answer 一步，
@@ -997,17 +1144,16 @@ class ExecutionEngine:
             return answer
 
         except Exception as e:
-            logger.error(
-                f"{Fore.RED}[执行引擎] LLM 答案合成失败，回退到原始数据拼接: {e}{Style.RESET_ALL}"
+            logger.warning(
+                f"{Fore.YELLOW}[执行引擎] LLM 答案合成失败，"
+                f"已切换到确定性 Markdown 降级输出: {e}{Style.RESET_ALL}"
             )
-            # 合成失败时降级：把原始工具结果直接拼接返回
-            return extract_user_visible_result("\n\n".join(
-                f"【{r.get('tool_name') or r.get('action', '')}】\n"
-                + (_json.dumps(r["result"], ensure_ascii=False, indent=2, default=str)
-                   if isinstance(r["result"], dict) else str(r["result"]))
-                for r in tool_results
-                if r.get("result")
-            )) or template or "执行完成，但未能生成最终答案。"
+            fallback_markdown = self._render_results_as_markdown(
+                task=task,
+                tool_results=tool_results,
+                fallback_reason=str(e),
+            )
+            return fallback_markdown or template or "执行完成，但未能生成最终答案。"
 
     async def _synthesize_from_context(
         self,
@@ -3202,6 +3348,21 @@ class ExecutionEngine:
         pending_confirmations = context.get("pending_confirmations") if context else None
         pending_user_inputs = context.get("pending_user_inputs") if context else None
         user_rejected_tools_in = context.get("user_rejected_tools") if context else None
+        conversation_id = context.get("conversation_id") if context else None
+        conversation_turn_id = context.get("conversation_turn_id") if context else None
+        source_user_task = context.get("source_user_task") if context else None
+        inherited_context_messages = context.get("context_messages") if context else None
+
+        child_runtime_context: Dict[str, Any] = {}
+        if conversation_id:
+            child_runtime_context["conversation_id"] = conversation_id
+        if conversation_turn_id:
+            child_runtime_context["conversation_turn_id"] = conversation_turn_id
+        if source_user_task:
+            child_runtime_context["source_user_task"] = source_user_task
+        child_runtime_context["execution_scope"] = "subtask"
+        if inherited_context_messages:
+            child_runtime_context["extra_context_messages"] = inherited_context_messages
 
         if stream_callback:
             logger.info(
@@ -3251,6 +3412,7 @@ class ExecutionEngine:
                 result = await spawn_tool.execute({
                     "agent_id": agent_id,
                     "task":     task,   # 已包含上游结果注入 + 原始需求补充
+                    "context": child_runtime_context or None,
                 })
 
                 _sub_success = result.get("success", False)
@@ -3300,6 +3462,11 @@ class ExecutionEngine:
                 parent_agent_id       = None,
                 child_agent_id       = agent_id,
                 task                 = task,
+                conversation_id      = conversation_id,
+                conversation_turn_id = conversation_turn_id,
+                source_user_task     = source_user_task,
+                execution_scope      = "subtask",
+                extra_context_messages = inherited_context_messages,
                 stream_callback      = stream_callback,
                 pending_confirmations = pending_confirmations,
                 pending_user_inputs   = pending_user_inputs,

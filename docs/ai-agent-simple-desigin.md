@@ -1,7 +1,7 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.9
+- **版本号**: v1.10
 - **最后更新**: 2026-04-01
 - **架构类型**: 轻量级通用 AI Agent 架构
 
@@ -141,6 +141,45 @@ LLM Hub (统一推理)
 - 会话记忆里若已有精确的 `owner/repo@skill` 安装引用，框架会把它提炼为“历史安装候选”注入规划上下文；
 - 但是否直接复用这些候选，不在 LangGraph 公共层写死，而是交由 Planning LLM 结合当前回合任务表述自行判断；
 - 若用户显式要求“先搜索”“从 GitHub 查找”“手动下载/解压/克隆后安装”等过程，规划应优先满足过程性意图，历史候选仅作为参考或后续参数来源。
+- 若进入手动下载/解压类 fallback，后续步骤必须复用上一步工具真实返回的路径（如 `download_path`）以及系统配置的 Agent 工作区；禁止臆造 `/tmp/*.zip`、`/app/skills/skills_md/...` 之类的假路径。
+
+### 2.5 会话记忆到安装候选的数据流（已落地）
+
+```
+第 N 轮：用户先查询/筛选技能（如 find-skills、search、http_request）
+  ↓
+[执行完成] ExecutionResult.final_result + step_results
+  ↓
+[摘要提炼] extract_summary_from_run_memory()
+  ├─ summary：保留本轮可读结论
+  ├─ key_data.structured_result：保留结构化结果摘要
+  ├─ key_data.step_results_summary：保留关键步骤结果预览
+  └─ key_data.actionable_facts：提取 package_ref / 安装命令 / URL / 资源 ID / 文件路径 等精确标识
+  ↓
+[会话记忆写入] TaskSummaryEntry.to_context_message()
+  ├─ 输出“label -> value”形式的人类可读映射文本
+  └─ 同时附带紧凑 JSON，供公共层反向解析
+  ↓
+第 N+1 轮：LangGraphExecutor 读取 session_ctx_messages
+  ↓
+extract_actionable_facts_from_context_messages()
+  ↓
+_build_history_guided_install_context()
+  ├─ 仅在“安装技能”类任务中触发
+  ├─ 按任务文本 / label / skill slug / package_ref 做相关性评分
+  └─ 产出 Top-K `history_install_candidates`
+  ↓
+PlanningEngine._build_trigger_context_summary()
+  ↓
+Planning LLM 决定：
+  - 若当前目标只是完成安装，可直接复用最匹配候选
+  - 若用户明确要求先搜索 / GitHub / 下载 / 解压，则先满足过程，再复用候选
+```
+
+补充说明：
+- 会话记忆不能只依赖 `reflection.summary`；技能搜索、下载、安装类任务里真正可复用的关键事实通常存在于 `final_result.result` 与 `step_results.result`。
+- 跨轮传递时同时保留“人类可读映射文本 + 紧凑 JSON”，前者便于 LLM 直接理解 `AI新闻 -> owner/repo@skill` 之类的映射，后者便于公共层稳定回收结构化事实。
+- `history_install_candidates` 是高价值候选，不是 LangGraph 公共层的硬编码短路；这样既能减少重复搜索，又不会覆盖用户当前回合的过程性意图。
 
 ---
 
@@ -2013,3 +2052,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.8）**：规划阶段工具双层过滤 + Reflection 信息盲区修复。针对"规划 loop 执行副作用工具 → Reflection 误判 → 触发无效重规划 → 副作用工具重复调用"的架构问题，在公共层实施两项修复：**（A）`planning_safe` 双层过滤机制** — `Tool` 基类新增 `planning_safe: bool = True` 属性，有副作用工具（`skill_install`、`shell_exec`、`file_write`、`file_edit`、`python_executor`、`browser`、`send_message`、`spawn_agent`、`archive_compress`、`archive_extract`）覆盖为 `False`；`ToolHub` 新增 `get_planning_safe_names()` 接口；`planning.py` 在 Agent 白名单过滤之后叠加第二层 `planning_safe` 过滤，只读探查工具才能进入规划 tool-calling loop，副作用工具只能通过 Execution Node 执行；**（B）规划阶段工具调用写入 run_memory** — `AgentRunMemory` 新增 `plan_tool_call`/`plan_tool_result` EntryType 及 `write_planning_tool_call()` 方法；`_planning_tool_callback` 闭包升级为双职责（SSE 推送 + run_memory 写入），规划 loop 调用结果同步持久化，Reflection 的 `build_messages_for_reflection()` 因此可完整看到规划阶段所有工具交互，消除信息盲区。两项修复均作用于公共框架层，不绑定任何具体技能或业务逻辑。
 
 > ✅ **已完成（v1.9）**：规划候选决策边界与长结果摘要边界统一收口。针对"会话记忆中的精确安装引用被框架层直接短路复用"与"Reflection / 重规划只看到结果前缀后误判传输截断"这两类公共链路问题，框架层实施两项通用修复：**（A）历史安装引用降级为规划候选** — 会话记忆中提炼出的 `owner/repo@skill` 仅作为 Planning Prompt 的候选上下文，不再在公共层写死为直接安装，由 LLM 根据当前任务表述自主决定是直接复用、还是先搜索 / 先走 GitHub / 先下载压缩包；**（B）长结果统一采用首尾保留摘要** — 新增公共摘要能力 `build_balanced_text_preview()`，供 `ReflectionEngine._build_reflection_result_preview()` 与 Planning 的跨迭代上下文摘要复用，统一输出“开头 + 结尾 + 中间省略说明”，同时在反思规则中明确“首尾节选不等于传输截断”，避免列表、表格、长命令清单等答案在公共层被误判。两项修复均作用于规划/反思公共边界，不绑定任何具体技能、日志文案或单一业务场景。
+
+> ✅ **已完成（v1.10）**：会话记忆到安装候选的数据流显式化。进一步明确 `extract_summary_from_run_memory()` 会从 `final_result` / `step_results` 同时提炼 `actionable_facts`，并以“人类可读映射文本 + 紧凑 JSON”写入 `AgentSessionMemory`；`langgraph_executor._build_history_guided_install_context()` 只在安装类任务中反向提取这些事实、按任务相关性排序为 `history_install_candidates`，再注入 Planning 上下文供 LLM 自主判断是否复用。同时补充安装 fallback 的结果复用约束：手动下载/解压链路必须复用真实 `download_path` 与 `AGENT_WORKSPACE_DIR`，禁止臆造 `/tmp/*.zip`、`/app/...` 等架构外路径。

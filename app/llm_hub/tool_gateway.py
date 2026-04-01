@@ -31,6 +31,7 @@ class ToolCallStatus(Enum):
     SUCCESS = "success"
     FAILURE = "failure"
     NOT_FOUND = "not_found"
+    FORBIDDEN = "forbidden"
     VALIDATION_ERROR = "validation_error"
     TIMEOUT = "timeout"
 
@@ -322,6 +323,29 @@ class ToolCallingGateway:
         )
         
         return results
+
+    def _extract_allowed_tool_names(
+        self,
+        context: Dict[str, Any],
+    ) -> Optional[set[str]]:
+        """
+        从运行时上下文中提取本次允许执行的工具集合。
+
+        设计原因：
+        - 传给模型的 tools schema 只是“提示层白名单”；
+        - 若网关执行前不再做一次硬校验，模型仍可能幻觉出未授权 / 非 planning_safe 的工具调用；
+        - 因此这里在公共网关层统一收口，确保“看不到”和“执行不了”两层边界同时成立。
+        """
+        raw_names = context.get("allowed_tool_names")
+        if raw_names in (None, "", []):
+            return None
+
+        allowed_names = {
+            str(name).strip()
+            for name in raw_names
+            if str(name or "").strip()
+        }
+        return allowed_names or None
     
     def _parse_tool_calls(self, llm_response: Dict[str, Any]) -> List[ToolCall]:
         """
@@ -528,7 +552,22 @@ class ToolCallingGateway:
             f"(call_id={tool_call.call_id}, "
             f"skip_validation={skip_validation}){Style.RESET_ALL}"
         )
-        
+
+        allowed_tool_names = self._extract_allowed_tool_names(context or {})
+        if allowed_tool_names is not None and tool_call.tool_name not in allowed_tool_names:
+            logger.warning(
+                f"{Fore.YELLOW}工具调用被上下文白名单拦截: tool={tool_call.tool_name}, "
+                f"allowed={sorted(allowed_tool_names)}{Style.RESET_ALL}"
+            )
+            elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+            return ToolCallResult(
+                call_id=tool_call.call_id,
+                tool_name=tool_call.tool_name,
+                status=ToolCallStatus.FORBIDDEN,
+                error=f"Tool not allowed in current context: {tool_call.tool_name}",
+                execution_time_ms=elapsed_ms,
+            )
+
         # 步骤 1: 查找工具
         tool = self.get_tool(tool_call.tool_name)
         

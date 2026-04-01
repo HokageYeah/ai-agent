@@ -57,6 +57,54 @@ class TestOpenAIProvider:
             await provider.chat([{"role": "user", "content": "Hi"}])
 
     @pytest.mark.asyncio
+    async def test_chat_should_retry_blank_choices_response(self, provider, mock_client):
+        blank_response = MagicMock()
+        blank_response.id = "chatcmpl-blank"
+        blank_response.model = "MiniMax-M2.7"
+        blank_response.usage = MagicMock(total_tokens=0)
+        blank_response.choices = None
+        blank_response.status = None
+        blank_response.msg = None
+        blank_response.error = None
+        blank_response.base_resp = {"status_code": 0, "status_msg": ""}
+
+        ok_response = MagicMock()
+        ok_response.id = "chatcmpl-ok"
+        ok_response.model = "MiniMax-M2.7"
+        ok_response.usage = MagicMock(total_tokens=12)
+        ok_response.choices = [{"message": {"content": "恢复成功"}}]
+        ok_response.model_dump.return_value = {
+            "id": "chatcmpl-ok",
+            "choices": [{"message": {"content": "恢复成功"}}],
+        }
+
+        mock_client.chat.completions.create.side_effect = [blank_response, ok_response]
+
+        response = await provider.chat([{"role": "user", "content": "Hi"}])
+
+        assert response["id"] == "chatcmpl-ok"
+        assert mock_client.chat.completions.create.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_chat_should_not_retry_when_blank_choices_has_explicit_error(self, provider, mock_client):
+        error_response = MagicMock()
+        error_response.id = "chatcmpl-fail"
+        error_response.model = "MiniMax-M2.7"
+        error_response.usage = MagicMock(total_tokens=0)
+        error_response.choices = None
+        error_response.status = 435
+        error_response.msg = "Model not support"
+        error_response.error = None
+        error_response.base_resp = {"status_code": 435, "status_msg": "Model not support"}
+
+        mock_client.chat.completions.create.return_value = error_response
+
+        with pytest.raises(ValueError, match="无法获取回复内容"):
+            await provider.chat([{"role": "user", "content": "Hi"}])
+
+        assert mock_client.chat.completions.create.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_stream_success(self, provider, mock_client):
         # Mock streaming response
         async def async_generator():

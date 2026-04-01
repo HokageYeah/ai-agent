@@ -5,6 +5,7 @@
 测试基于 LangGraph 的 Agent 执行器
 """
 
+import json
 import pytest
 from types import SimpleNamespace
 from app.agents.langgraph_executor import LangGraphAgentExecutor, AgentState
@@ -15,6 +16,7 @@ from app.core.llm_mock import MockLLM
 from app.llm_hub.inference import InferenceEngine
 from app.llm_hub.registry import ModelRegistry
 from app.memory.agent_run_memory import AgentRunMemory
+from app.memory.session_memory import TaskSummaryEntry, clear_session_memory, get_session_memory
 from app.tools.hub import ToolHub
 from app.skills.manager import SkillManager
 
@@ -36,6 +38,35 @@ def _build_executor() -> LangGraphAgentExecutor:
         llm_hub=inference_engine,
         tool_hub=tool_hub,
         skill_manager=skill_manager
+    )
+
+
+def _make_session_summary_entry(
+    *,
+    task: str,
+    summary: str,
+    key_data: dict | None = None,
+    conversation_turn_id: str = "",
+    source_user_task: str = "",
+    entry_scope: str = "primary",
+) -> TaskSummaryEntry:
+    """构造执行器上下文筛选测试所需的会话摘要条目。"""
+    return TaskSummaryEntry(
+        task_id=f"task-{task}",
+        agent_id="general_agent",
+        agent_name="通用助手",
+        task=task,
+        success=True,
+        summary=summary,
+        key_data=key_data or {},
+        tools_used=["find-skills"],
+        iterations=1,
+        started_at=0.0,
+        ended_at=1.0,
+        conversation_turn_id=conversation_turn_id,
+        source_user_task=source_user_task or task,
+        entry_scope=entry_scope,
+        user_actions=[],
     )
 
 
@@ -661,6 +692,454 @@ def test_build_capability_gap_delegate_plan_should_not_force_delegate_when_agent
     assert plan is None
 
 
+def test_build_capability_gap_delegate_plan_should_delegate_follow_up_task_by_history_capability_trace():
+    """显式续问若命中历史成功能力轨迹，应在规划前直接沿用正确的委派链路。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent", "send_message"],
+        child_agents=["general_agent"],
+    )
+    available_tools = [
+        SimpleNamespace(name="datetime"),
+        SimpleNamespace(name="spawn_agent"),
+        SimpleNamespace(name="send_message"),
+    ]
+    run_memory = AgentRunMemory(
+        task="继续查询 mcp技能",
+        agent_id=agent.agent_id,
+        agent_name=agent.name,
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【历史能力轨迹】\n"
+                    "能力轨迹数据: "
+                    + json.dumps(
+                        {
+                            "source_task": "使用find-skills技能查询 新闻技能",
+                            "delegated_agents": ["general_agent"],
+                            "skills_used": ["find-skills"],
+                            "tools_used": ["shell_exec"],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            }
+        ],
+    )
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="继续查询 mcp技能",
+        available_tools=available_tools,
+        tool_incompatible_skills=[SimpleNamespace(skill_id="find-skills")],
+        run_memory=run_memory,
+    )
+
+    assert plan is not None
+    assert plan.steps[0].action == "delegate"
+    assert plan.steps[0].params["agent_id"] == "general_agent"
+    assert plan.steps[0].params["task"] == "继续查询 mcp技能"
+
+
+def test_build_capability_gap_delegate_plan_should_prefer_history_child_agent_for_adjacent_follow_up():
+    """相邻场景下，续问应优先沿用最近成功的子 Agent，而不是一律回退到 general_agent。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent", "send_message"],
+        child_agents=["order_agent", "general_agent"],
+    )
+    available_tools = [
+        SimpleNamespace(name="datetime"),
+        SimpleNamespace(name="spawn_agent"),
+        SimpleNamespace(name="send_message"),
+    ]
+    run_memory = AgentRunMemory(
+        task="继续查订单 1002 的详情",
+        agent_id=agent.agent_id,
+        agent_name=agent.name,
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【历史能力轨迹】\n"
+                    "能力轨迹数据: "
+                    + json.dumps(
+                        {
+                            "source_task": "查询订单 1001 的状态",
+                            "delegated_agents": ["order_agent"],
+                            "skills_used": [],
+                            "tools_used": ["database_query"],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            }
+        ],
+    )
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="继续查订单 1002 的详情",
+        available_tools=available_tools,
+        tool_incompatible_skills=[],
+        run_memory=run_memory,
+    )
+
+    assert plan is not None
+    assert plan.steps[0].action == "delegate"
+    assert plan.steps[0].params["agent_id"] == "order_agent"
+
+
+def test_build_task_relevant_context_messages_should_append_follow_up_capability_message_when_topic_changes():
+    """换主题续问时，主题摘要可为空，但应追加独立的能力轨迹上下文。"""
+    conversation_id = "conv-followup-capability-context"
+    clear_session_memory(conversation_id)
+    try:
+        executor = _build_executor()
+        session_memory = get_session_memory(conversation_id)
+        entry = _make_session_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+        )
+        entry.capability_trace = {
+            "delegated_agents": ["general_agent"],
+            "skills_used": ["find-skills"],
+            "tools_used": ["shell_exec"],
+        }
+        session_memory.append_task_summary(entry)
+
+        messages = executor._build_task_relevant_context_messages(
+            task="继续查询 mcp技能",
+            conversation_id=conversation_id,
+            conversation_history=None,
+        )
+
+        assert len(messages) == 1
+        assert "【历史能力轨迹】" in messages[0]["content"]
+        assert "find-skills" in messages[0]["content"]
+    finally:
+        clear_session_memory(conversation_id)
+
+
+def test_build_task_relevant_context_messages_should_append_conversation_recall_context_for_history_question():
+    """历史回顾类问题应注入按轮次整理的会话主线，而不是空上下文。"""
+    conversation_id = "conv-history-recall-context"
+    clear_session_memory(conversation_id)
+    try:
+        executor = _build_executor()
+        session_memory = get_session_memory(conversation_id)
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="使用find-skills技能查询 新闻技能",
+                summary="已查到新闻相关技能",
+                conversation_turn_id="turn-1",
+                source_user_task="使用find-skills技能查询 新闻技能",
+                entry_scope="primary",
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="查询关键词“新闻”对应的技能结果，并整理安装量",
+                summary="子任务执行成功，已找到 news-summary",
+                conversation_turn_id="turn-1",
+                source_user_task="使用find-skills技能查询 新闻技能",
+                entry_scope="subtask",
+            )
+        )
+        session_memory._entries[1].capability_trace = {
+            "delegated_agents": ["general_agent"],
+            "skills_used": ["find-skills"],
+            "tools_used": ["shell_exec"],
+        }
+
+        messages = executor._build_task_relevant_context_messages(
+            task="我的第一个问题是什么",
+            conversation_id=conversation_id,
+            conversation_history=None,
+        )
+
+        assert len(messages) == 1
+        assert "【会话主线回顾】" in messages[0]["content"]
+        assert "使用find-skills技能查询 新闻技能" in messages[0]["content"]
+        assert "技能=find-skills" in messages[0]["content"]
+    finally:
+        clear_session_memory(conversation_id)
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_force_delegate_by_history_capability_trace(monkeypatch):
+    """主 Agent 遇到换主题续问时，应在进入 LLM 前沿用历史成功能力链路。"""
+    conversation_id = "conv-plan-followup-capability"
+    clear_session_memory(conversation_id)
+    try:
+        executor = _build_executor()
+        agent = Agent(
+            agent_id="cs_master",
+            name="客服总监",
+            description="协调型 Agent",
+            role="负责委派",
+            available_tools=["datetime", "spawn_agent", "send_message"],
+            child_agents=["general_agent"],
+        )
+        session_memory = get_session_memory(conversation_id)
+        entry = _make_session_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+        )
+        entry.capability_trace = {
+            "delegated_agents": ["general_agent"],
+            "skills_used": ["find-skills"],
+            "tools_used": ["shell_exec"],
+        }
+        session_memory.append_task_summary(entry)
+
+        monkeypatch.setattr(
+            executor.tool_hub,
+            "list_tools",
+            lambda: [
+                SimpleNamespace(name="datetime"),
+                SimpleNamespace(name="spawn_agent"),
+                SimpleNamespace(name="send_message"),
+            ],
+        )
+        monkeypatch.setattr(
+            executor,
+            "_resolve_available_skills",
+            lambda agent, task: ([], [SimpleNamespace(skill_id="find-skills")]),
+        )
+
+        async def fail_create_plan(**kwargs):
+            raise AssertionError("命中历史能力轨迹时不应再进入 LLM 规划")
+
+        monkeypatch.setattr(executor.planning_engine, "create_plan", fail_create_plan)
+
+        context_messages = executor._build_task_relevant_context_messages(
+            task="继续查询 mcp技能",
+            conversation_id=conversation_id,
+            conversation_history=None,
+        )
+        state: AgentState = {
+            "messages": context_messages,
+            "current_plan": None,
+            "tool_outputs": [],
+            "iterations": 0,
+            "final_result": None,
+            "task": "继续查询 mcp技能",
+            "agent": agent,
+            "error_context": [],
+            "error_analysis": None,
+            "reflection_history": [],
+            "pending_confirmations": {},
+            "pending_user_inputs": {},
+            "user_rejected_tools": [],
+            "run_memory": AgentRunMemory(
+                task="继续查询 mcp技能",
+                agent_id=agent.agent_id,
+                agent_name=agent.name,
+                context_messages=context_messages,
+            ),
+        }
+
+        new_state = await executor._plan_node(state, stream_callback=None)
+
+        assert new_state["current_plan"] is not None
+        assert new_state["current_plan"].steps[0].action == "delegate"
+        assert new_state["current_plan"].steps[0].params["agent_id"] == "general_agent"
+    finally:
+        clear_session_memory(conversation_id)
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_direct_answer_from_history_for_repeated_order_question(monkeypatch):
+    """同题重复问时，应优先走历史直答，而不是再次委派查询。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent"],
+        child_agents=["order_agent"],
+    )
+
+    monkeypatch.setattr(
+        executor.tool_hub,
+        "list_tools",
+        lambda: [
+            SimpleNamespace(name="datetime"),
+            SimpleNamespace(name="spawn_agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        executor,
+        "_resolve_available_skills",
+        lambda agent, task: ([], []),
+    )
+
+    async def fail_create_plan(**kwargs):
+        raise AssertionError("命中历史直答时不应再进入 LLM 规划")
+
+    monkeypatch.setattr(executor.planning_engine, "create_plan", fail_create_plan)
+
+    context_messages = [
+        {
+            "role": "user",
+            "content": (
+                "【历史任务摘要】\n"
+                "任务: 订单1002的商品是谁买的\n"
+                "结果: ✅ 成功\n"
+                "结论: 成功查询到订单1002的商品购买者是李娜\n"
+                "关键数据: "
+                + json.dumps(
+                    {
+                        "result_preview": "订单1002的商品是由李娜购买的。",
+                        "structured_result": [
+                            {
+                                "action": "tool",
+                                "name": "database_query",
+                                "result": {"order_id": "1002", "buyer_name": "李娜"},
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        }
+    ]
+    state: AgentState = {
+        "messages": context_messages,
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "订单1002的商品是谁买的",
+        "conversation_id": "conv-repeat-order-question",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": AgentRunMemory(
+            task="订单1002的商品是谁买的",
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            context_messages=context_messages,
+        ),
+    }
+
+    new_state = await executor._plan_node(state, stream_callback=None)
+
+    assert new_state["current_plan"] is not None
+    assert len(new_state["current_plan"].steps) == 1
+    assert new_state["current_plan"].steps[0].action == "final_answer"
+    assert "历史" in new_state["current_plan"].reasoning
+
+
+@pytest.mark.asyncio
+async def test_plan_node_should_pass_history_answer_candidates_to_planning_engine_for_related_task(monkeypatch):
+    """未达到直答阈值时，也应把历史答案候选注入规划上下文供 LLM 决策。"""
+    executor = _build_executor()
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        available_tools=["datetime", "spawn_agent"],
+        child_agents=["order_agent"],
+    )
+
+    monkeypatch.setattr(
+        executor.tool_hub,
+        "list_tools",
+        lambda: [
+            SimpleNamespace(name="datetime"),
+            SimpleNamespace(name="spawn_agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        executor,
+        "_resolve_available_skills",
+        lambda agent, task: ([], []),
+    )
+
+    captured_context = {}
+
+    async def fake_create_plan(**kwargs):
+        captured_context.update(kwargs.get("context", {}))
+        return Plan(
+            steps=[PlanStep("final_answer", content="由规划引擎决定是否复用历史答案")],
+            reasoning="根据上下文自主决策",
+        )
+
+    monkeypatch.setattr(executor.planning_engine, "create_plan", fake_create_plan)
+
+    context_messages = [
+        {
+            "role": "user",
+            "content": (
+                "【历史任务摘要】\n"
+                "任务: 查询订单1002的详细信息\n"
+                "结果: ✅ 成功\n"
+                "结论: 成功查询到订单1002的完整信息，包括买家李娜与订单商品信息\n"
+                "关键数据: "
+                + json.dumps(
+                    {
+                        "result_preview": "订单1002的买家是李娜，商品为华为 Mate 60 Pro 512GB。",
+                        "structured_result": [
+                            {
+                                "action": "tool",
+                                "name": "database_query",
+                                "result": {"order_id": "1002", "buyer_name": "李娜"},
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        }
+    ]
+    state: AgentState = {
+        "messages": context_messages,
+        "current_plan": None,
+        "tool_outputs": [],
+        "iterations": 0,
+        "final_result": None,
+        "task": "订单1002的商品是谁买的",
+        "conversation_id": "conv-related-order-question",
+        "agent": agent,
+        "error_context": [],
+        "error_analysis": None,
+        "reflection_history": [],
+        "pending_confirmations": {},
+        "pending_user_inputs": {},
+        "user_rejected_tools": [],
+        "run_memory": AgentRunMemory(
+            task="订单1002的商品是谁买的",
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            context_messages=context_messages,
+        ),
+    }
+
+    await executor._plan_node(state, stream_callback=None)
+
+    assert "history_answer_candidates" in captured_context
+    assert len(captured_context["history_answer_candidates"]) == 1
+    assert captured_context["history_answer_candidates"][0]["source_task"] == "查询订单1002的详细信息"
+    assert "李娜" in captured_context["history_answer_candidates"][0]["answer_preview"]
+
+
 def test_build_history_guided_install_context_should_collect_ranked_candidates():
     """安装任务应提炼历史 package_ref 候选，供规划 LLM 自主决定是否复用。"""
     executor = _build_executor()
@@ -954,3 +1433,115 @@ def test_resolve_available_skills_should_hide_script_skill_without_shell_exec(mo
     assert "wechat-article-search" not in routed_ids
     assert routed_ids == ["text_writing"]
     assert selected_ids == ["text_writing"]
+
+
+def test_build_task_relevant_context_messages_should_merge_selected_session_summary_and_history():
+    """执行器应统一合并“会话相关摘要 + 对话历史裁剪结果”，而不是全量注入。"""
+    executor = _build_executor()
+    conversation_id = "executor-context-selection"
+    clear_session_memory(conversation_id)
+
+    try:
+        session_memory = get_session_memory(conversation_id)
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="使用find-skills技能查询 新闻技能",
+                summary="已查到新闻相关技能，最高安装量是 news-summary(405次)",
+                key_data={
+                    "actionable_facts": [
+                        {
+                            "kind": "package_ref",
+                            "label": "新闻技能",
+                            "value": "zjfls/zhoujie-claude-skills@news-summary",
+                        }
+                    ]
+                },
+            )
+        )
+        session_memory.append_task_summary(
+            _make_session_summary_entry(
+                task="继续查找查询 浏览器相关技能",
+                summary="已查到浏览器相关技能，最高安装量是 agent-browser(142.8K)",
+                key_data={
+                    "actionable_facts": [
+                        {
+                            "kind": "package_ref",
+                            "label": "浏览器技能",
+                            "value": "vercel-labs/agent-browser@agent-browser",
+                        }
+                    ]
+                },
+            )
+        )
+
+        conversation_history = [
+            {"role": "user", "content": "第一轮：查新闻技能"},
+            {"role": "assistant", "content": "无关铺垫" * 300},
+            {"role": "user", "content": "第二轮：查浏览器技能"},
+            {"role": "assistant", "content": "浏览器技能结果：" + "agent-browser 很热门。 " * 200},
+        ]
+
+        context_messages = executor._build_task_relevant_context_messages(
+            task="继续，告诉我刚才那个浏览器相关技能里安装量最高的是哪个",
+            conversation_id=conversation_id,
+            conversation_history=conversation_history,
+        )
+
+        assert context_messages
+        assert any(
+            "【历史任务摘要】" in str(message.get("content", ""))
+            and "浏览器相关技能" in str(message.get("content", ""))
+            for message in context_messages
+        )
+        assert any(
+            "浏览器技能结果：" in str(message.get("content", ""))
+            and "中间内容仅因控制提示词长度而省略" in str(message.get("content", ""))
+            for message in context_messages
+        )
+        assert not any(
+            "新闻技能" in str(message.get("content", ""))
+            and "【历史任务摘要】" in str(message.get("content", ""))
+            for message in context_messages
+        )
+        assert not any(
+            "第一轮：查新闻技能" in str(message.get("content", ""))
+            or "无关铺垫" in str(message.get("content", ""))
+            for message in context_messages
+        )
+    finally:
+        clear_session_memory(conversation_id)
+
+
+def test_build_task_relevant_context_messages_should_merge_inherited_context_without_duplication():
+    """子 Agent 继承父级上下文时，应与会话检索结果去重合并。"""
+    executor = _build_executor()
+    conversation_id = "executor-inherited-context"
+    clear_session_memory(conversation_id)
+
+    try:
+        session_memory = get_session_memory(conversation_id)
+        entry = _make_session_summary_entry(
+            task="订单1002的商品是谁买的",
+            summary="成功查询到订单1002的商品购买者是李娜",
+            key_data={
+                "result_preview": "订单1002的商品是由李娜购买的。",
+            },
+        )
+        session_memory.append_task_summary(entry)
+        inherited_context_messages = [entry.to_context_message()]
+
+        context_messages = executor._build_task_relevant_context_messages(
+            task="订单1002的商品是谁买的",
+            conversation_id=conversation_id,
+            conversation_history=None,
+            extra_context_messages=inherited_context_messages,
+        )
+
+        matched_messages = [
+            message
+            for message in context_messages
+            if "订单1002的商品购买者是李娜" in str(message.get("content", ""))
+        ]
+        assert len(matched_messages) == 1
+    finally:
+        clear_session_memory(conversation_id)

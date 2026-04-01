@@ -264,12 +264,21 @@ class SpawnAgentTool(Tool):
             )
             return {"success": False, "error": "task 不能为空，请描述需要子 Agent 完成的任务"}
 
-        # ── 合并 context 到任务描述（若 context 非空，附加到 task 末尾）──
-        # NOTE: 子 Agent 无法看到父 Agent 历史，context 是向子 Agent 传递上下文的唯一途径
+        runtime_context = dict(context) if isinstance(context, dict) else {}
+        conversation_id = runtime_context.pop("conversation_id", None)
+        conversation_history = runtime_context.pop("conversation_history", None)
+        extra_context_messages = runtime_context.pop("extra_context_messages", None)
+        conversation_turn_id = runtime_context.pop("conversation_turn_id", None)
+        source_user_task = runtime_context.pop("source_user_task", None)
+        execution_scope = runtime_context.pop("execution_scope", "subtask")
+
+        # ── 合并业务 context 到任务描述（若 context 非空，附加到 task 末尾）──
+        # NOTE: conversation_id / extra_context_messages 属于框架级透传字段，
+        #       不应混进 task 文本；其余业务上下文仍兼容旧逻辑继续附加。
         full_task = task
-        if context:
+        if runtime_context:
             try:
-                ctx_str  = json.dumps(context, ensure_ascii=False, indent=2)
+                ctx_str  = json.dumps(runtime_context, ensure_ascii=False, indent=2)
                 full_task = f"{task}\n\n【补充上下文】\n{ctx_str}"
             except Exception:
                 # context 序列化失败时忽略，不影响主任务
@@ -291,7 +300,13 @@ class SpawnAgentTool(Tool):
                 parent_agent_id       = self._parent_agent_id,
                 child_agent_id       = agent_id,
                 task                 = full_task,
-                context              = context if context else None,
+                conversation_id      = conversation_id,
+                conversation_history = conversation_history,
+                conversation_turn_id = conversation_turn_id,
+                source_user_task     = source_user_task,
+                execution_scope      = execution_scope,
+                extra_context_messages = extra_context_messages,
+                context              = runtime_context if runtime_context else None,
                 stream_callback      = self._stream_callback,
                 pending_confirmations = self._pending_confirmations,
                 pending_user_inputs   = self._pending_user_inputs,

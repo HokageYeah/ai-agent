@@ -19,6 +19,7 @@ LangGraph Agent Executor (基于 LangGraph 的 Agent 执行器)
 import json
 import re
 import time
+import uuid
 from typing import TypedDict, Dict, List, Any, Optional, Annotated, AsyncIterator, Callable
 from typing_extensions import TypedDict as TypedDictExt
 from loguru import logger
@@ -33,9 +34,12 @@ from app.agents.execution import ExecutionEngine, ExecutionResult
 from app.agents.reflection import ReflectionEngine
 from app.memory.agent_run_memory import AgentRunMemory
 from app.memory.session_memory import (
+    extract_follow_up_capability_context_from_messages,
     extract_actionable_facts_from_context_messages,
     extract_summary_from_run_memory,
     get_session_memory,
+    rank_history_answer_candidates,
+    select_relevant_conversation_history,
 )
 import asyncio
 
@@ -67,6 +71,14 @@ class AgentState(TypedDict):
     final_result: Optional[Dict[str, Any]]
     # 任务描述
     task: str
+    # 会话 ID（用于跨主/子 Agent 共享同一会话记忆）
+    conversation_id: Optional[str]
+    # 会话轮次 ID（同一轮主/子 Agent 共享，用于聚合同一用户提问的执行记录）
+    conversation_turn_id: Optional[str]
+    # 原始用户问题（子 Agent 也应挂回到这条主线问题上）
+    source_user_task: Optional[str]
+    # 当前执行记录属于主线任务还是子任务
+    execution_scope: Optional[str]
     # Agent 实例
     agent: Optional[Agent]
     # NOTE: 错误上下文列表，收集本轮所有执行步骤的失败信息
@@ -658,6 +670,253 @@ class LangGraphAgentExecutor:
             "history_install_candidates": top_candidates,
         }
 
+    def _contains_force_history_refresh_hint(self, task: str) -> bool:
+        """
+        判断当前任务是否明确要求“重新查询/获取最新结果”。
+
+        设计原因：
+        - 历史事实复用不应覆盖用户显式要求的“重新查一次/要最新结果”；
+        - 这是框架级保护，不绑定任何业务域，适用于订单、技能、价格、天气等所有任务。
+        """
+        if not task:
+            return False
+
+        task_l = task.lower().strip()
+        refresh_patterns = [
+            r"重新",
+            r"再查",
+            r"重查",
+            r"刷新",
+            r"最新",
+            r"当前",
+            r"实时",
+            r"现在",
+            r"latest",
+            r"current",
+            r"real[- ]?time",
+            r"refresh",
+            r"re[- ]?query",
+            r"query again",
+        ]
+        return any(re.search(pattern, task_l, flags=re.IGNORECASE) for pattern in refresh_patterns)
+
+    def _build_history_answer_context(
+        self,
+        *,
+        task: str,
+        run_memory: Optional[AgentRunMemory],
+    ) -> Dict[str, Any]:
+        """
+        提炼历史答案候选，交给规划层做少执行判断。
+
+        设计目标：
+        - 不直接硬编码某类任务该如何复用，而是统一把“与当前问题高度相关的历史答案候选”
+          暴露给规划 LLM；
+        - 即便没有达到“可以直接短路”的高置信条件，也能辅助模型减少重复委派与重复查库。
+        """
+        if not run_memory:
+            return {}
+
+        ranked_candidates = rank_history_answer_candidates(
+            task=task,
+            context_messages=run_memory.context_messages or [],
+        )
+        if not ranked_candidates:
+            return {}
+
+        serialized_candidates: List[Dict[str, Any]] = []
+        for candidate in ranked_candidates[:3]:
+            key_data = candidate.get("key_data") or {}
+            serialized_candidates.append(
+                {
+                    "source_task": candidate.get("source_task", ""),
+                    "summary": candidate.get("summary", ""),
+                    "answer_preview": candidate.get("answer_preview", ""),
+                    "score": candidate.get("score", 0),
+                    "reasons": candidate.get("reasons", []),
+                    "matched_subject_hints": candidate.get("matched_subject_hints", []),
+                    "exact_task_match": bool(candidate.get("exact_task_match", False)),
+                    "structured_result": key_data.get("structured_result"),
+                    "actionable_facts": (key_data.get("actionable_facts") or [])[:4],
+                }
+            )
+
+        logger.info(
+            f"{Fore.YELLOW}[历史答案候选] 已为当前任务提炼 {len(serialized_candidates)} 个候选，"
+            f"top_task={serialized_candidates[0].get('source_task', '')[:60]!r}{Style.RESET_ALL}"
+        )
+        return {
+            "history_answer_candidates": serialized_candidates,
+        }
+
+    def _build_history_answer_plan(
+        self,
+        *,
+        task: str,
+        run_memory: Optional[AgentRunMemory],
+    ) -> Optional[Plan]:
+        """
+        为“历史已知事实足以回答当前问题”的场景构造纯回答计划。
+
+        设计原则：
+        - 只有高置信命中才短路，避免把历史相关但不足以回答的新问题硬拦成直答；
+        - 直答计划只生成 `final_answer`，真正的自然语言组织仍复用执行引擎现有的
+          `context_fallback_synthesis` 机制，保持全局链路一致。
+        """
+        if not run_memory or self._contains_force_history_refresh_hint(task):
+            return None
+
+        ranked_candidates = rank_history_answer_candidates(
+            task=task,
+            context_messages=run_memory.context_messages or [],
+        )
+        if not ranked_candidates:
+            return None
+
+        top_candidate = ranked_candidates[0]
+        exact_task_match = bool(top_candidate.get("exact_task_match", False))
+        high_conf_follow_up_match = (
+            bool(top_candidate.get("follow_up_task", False))
+            and bool(top_candidate.get("matched_subject_hints"))
+            and int(top_candidate.get("score", 0)) >= 10
+        )
+        if not exact_task_match and not high_conf_follow_up_match:
+            return None
+
+        reasoning = (
+            "当前任务已在会话历史中命中高置信答案候选。"
+            f"历史任务={top_candidate.get('source_task', '')!r}，"
+            f"命中原因={top_candidate.get('reasons', [])}。"
+            "因此本轮优先基于历史摘要与关键数据直接回答用户，避免重复调用工具、技能或再次委派。"
+        )
+        logger.info(
+            f"{Fore.YELLOW}[历史答案直答] 命中高置信历史候选，"
+            f"exact_task_match={exact_task_match} | score={top_candidate.get('score', 0)}"
+            f"{Style.RESET_ALL}"
+        )
+        return Plan(
+            steps=[
+                PlanStep(
+                    action="final_answer",
+                    content="根据历史记录直接回答用户，不要重复调用工具、技能或再次委派。",
+                )
+            ],
+            reasoning=reasoning,
+        )
+
+    def _merge_context_messages(
+        self,
+        *message_groups: Optional[List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        """
+        合并多来源上下文消息并按 role+content 去重。
+
+        设计原因：
+        - 子 Agent 既可能从 conversation_id 再次检索到同一摘要，也可能继承父 Agent 已筛选好的上下文；
+        - 若不统一去重，会让相同历史摘要在规划 Prompt 中重复出现，降低可读性并放大噪声。
+        """
+        merged_messages: List[Dict[str, Any]] = []
+        seen_keys: set[tuple[str, str]] = set()
+
+        for group in message_groups:
+            for message in group or []:
+                if not isinstance(message, dict):
+                    continue
+                role = str(message.get("role", "") or "")
+                content = extract_user_visible_result(message.get("content", ""))
+                dedupe_key = (role, str(content or ""))
+                if dedupe_key in seen_keys:
+                    continue
+                seen_keys.add(dedupe_key)
+                merged_messages.append(message)
+
+        return merged_messages
+
+    def _build_task_relevant_context_messages(
+        self,
+        *,
+        task: str,
+        conversation_id: Optional[str],
+        conversation_history: Optional[List[Dict[str, Any]]],
+        extra_context_messages: Optional[List[Dict[str, Any]]] = None,
+        log_prefix: str = "[会话记忆]",
+    ) -> List[Dict[str, Any]]:
+        """
+        统一构建“按任务相关性筛选后的前置上下文”。
+
+        设计目标：
+        - 不再把会话摘要和外部 conversation_history 整段前置注入；
+        - 改为“会话摘要检索 + 外部对话裁剪”的统一入口，避免三条执行链路各自散落实现；
+        - 保持框架通用性，适用于技能查询、订单查询、安装、追问等所有会话型任务。
+        """
+        selected_session_messages: List[Dict[str, Any]] = []
+        follow_up_capability_messages: List[Dict[str, Any]] = []
+        conversation_recall_messages: List[Dict[str, Any]] = []
+        raw_conversation_history = conversation_history or []
+        inherited_context_messages = extra_context_messages or []
+
+        if conversation_id:
+            session_mem = get_session_memory(conversation_id)
+            selected_session_messages = session_mem.build_relevant_context_messages(task=task)
+            follow_up_capability_messages = session_mem.build_follow_up_capability_context_messages(task=task)
+            conversation_recall_messages = session_mem.build_conversation_recall_context_messages(task=task)
+            if selected_session_messages:
+                logger.info(
+                    f"{Fore.GREEN}{log_prefix} 会话 '{conversation_id}' 相关摘要筛选完成: "
+                    f"selected={len(selected_session_messages)}{Style.RESET_ALL}"
+                )
+                for idx, message in enumerate(selected_session_messages):
+                    preview = str(message.get("content", ""))[:100].replace("\n", " ")
+                    logger.info(
+                        f"{Fore.GREEN}{log_prefix} 摘要[{idx}]: {preview!r}{Style.RESET_ALL}"
+                    )
+            else:
+                logger.info(
+                    f"{Fore.CYAN}{log_prefix} 会话 '{conversation_id}' 无命中当前任务的历史摘要{Style.RESET_ALL}"
+                )
+
+            if follow_up_capability_messages:
+                logger.info(
+                    f"{Fore.GREEN}{log_prefix} 会话 '{conversation_id}' 已追加续问能力轨迹: "
+                    f"selected={len(follow_up_capability_messages)}{Style.RESET_ALL}"
+                )
+                for idx, message in enumerate(follow_up_capability_messages):
+                    preview = str(message.get("content", ""))[:100].replace("\n", " ")
+                    logger.info(
+                        f"{Fore.GREEN}{log_prefix} 能力轨迹[{idx}]: {preview!r}{Style.RESET_ALL}"
+                    )
+
+            if conversation_recall_messages:
+                logger.info(
+                    f"{Fore.GREEN}{log_prefix} 会话 '{conversation_id}' 已追加主线回顾上下文: "
+                    f"selected={len(conversation_recall_messages)}{Style.RESET_ALL}"
+                )
+
+        if inherited_context_messages:
+            logger.info(
+                f"{Fore.CYAN}{log_prefix} 继承上游已筛选上下文: "
+                f"selected={len(inherited_context_messages)}{Style.RESET_ALL}"
+            )
+
+        selected_conversation_history = select_relevant_conversation_history(
+            task=task,
+            conversation_history=raw_conversation_history,
+        )
+        if raw_conversation_history:
+            logger.info(
+                f"{Fore.CYAN}{log_prefix} 外部对话历史筛选完成: "
+                f"total={len(raw_conversation_history)} -> selected={len(selected_conversation_history)}"
+                f"{Style.RESET_ALL}"
+            )
+
+        return self._merge_context_messages(
+            selected_session_messages,
+            follow_up_capability_messages,
+            conversation_recall_messages,
+            inherited_context_messages,
+            selected_conversation_history,
+        )
+
     def _is_explicitly_requesting_skill_by_id(
         self,
         task: str,
@@ -726,6 +985,98 @@ class LangGraphAgentExecutor:
             )
         return matched
 
+    def _build_follow_up_capability_delegate_plan(
+        self,
+        *,
+        agent: Agent,
+        task: str,
+        available_tool_names: "set[str]",
+        child_agents: "set[str]",
+        tool_incompatible_skills: "Optional[List[Any]]",
+        run_memory: Optional[AgentRunMemory],
+    ) -> Optional[Plan]:
+        """
+        基于“最近成功能力轨迹”为显式续问任务生成通用兜底委派计划。
+
+        设计目标：
+        - 解决“主题检索不该带旧结果，但续问仍应沿用上一轮执行链路”的框架级矛盾；
+        - 不绑定具体 skill_id，而是复用会话记忆中结构化保存的委派/技能/工具轨迹；
+        - 优先沿用最近成功的子 Agent，其次按技能/工具缺口回退到 general_agent。
+        """
+        if not run_memory:
+            return None
+
+        capability_candidates = extract_follow_up_capability_context_from_messages(
+            run_memory.context_messages or []
+        )
+        if not capability_candidates:
+            return None
+
+        incompatible_ids = {
+            str(getattr(skill, "skill_id", "")).strip()
+            for skill in (tool_incompatible_skills or [])
+            if getattr(skill, "skill_id", None)
+        }
+
+        for candidate in capability_candidates:
+            delegated_agents = [
+                str(agent_id).strip()
+                for agent_id in (candidate.get("delegated_agents") or [])
+                if str(agent_id).strip()
+            ]
+            skills_used = [
+                str(skill_id).strip()
+                for skill_id in (candidate.get("skills_used") or [])
+                if str(skill_id).strip()
+            ]
+            tools_used = [
+                str(tool_name).strip()
+                for tool_name in (candidate.get("tools_used") or [])
+                if str(tool_name).strip()
+            ]
+
+            target_agent_id = next(
+                (child_id for child_id in delegated_agents if child_id in child_agents),
+                "",
+            )
+            if not target_agent_id:
+                if any(skill_id in incompatible_ids for skill_id in skills_used) and "general_agent" in child_agents:
+                    target_agent_id = "general_agent"
+                elif any(tool_name not in available_tool_names for tool_name in tools_used) and "general_agent" in child_agents:
+                    target_agent_id = "general_agent"
+
+            if not target_agent_id:
+                continue
+
+            logger.info(
+                f"{Fore.YELLOW}[能力兜底委派] 检测到显式续问命中了历史能力轨迹，"
+                f"将沿用委派链路: target={target_agent_id}, "
+                f"skills={skills_used}, tools={tools_used}{Style.RESET_ALL}"
+            )
+            reasoning = (
+                f"当前任务“{task}”属于显式续问。会话记忆显示，最近一次成功完成相邻任务时，"
+                f"系统采用了 delegated_agents={delegated_agents or ['无']}、"
+                f"skills_used={skills_used or ['无']}、tools_used={tools_used or ['无']} 的能力链路。"
+                f"当前 Agent '{agent.name}' 应优先沿用这条成功链路，直接委派给 '{target_agent_id}'，"
+                "避免再次把问题交给 planning_safe 阶段让 LLM 误调受限工具。"
+            )
+            return Plan(
+                steps=[
+                    PlanStep(
+                        action="delegate",
+                        agent_id=target_agent_id,
+                        task=task.strip(),
+                    ),
+                    PlanStep(
+                        action="final_answer",
+                        content="根据以上执行结果回答用户",
+                    ),
+                ],
+                reasoning=reasoning,
+            )
+
+        return None
+
 
     def _build_capability_gap_delegate_plan(
         self,
@@ -733,6 +1084,7 @@ class LangGraphAgentExecutor:
         task: str,
         available_tools: List[Any],
         tool_incompatible_skills: "Optional[List[Any]]" = None,
+        run_memory: Optional[AgentRunMemory] = None,
     ) -> Optional[Plan]:
         """
         为"当前 Agent 缺少关键能力，但可委派给 general_agent"的场景生成强制委派计划。
@@ -749,8 +1101,15 @@ class LangGraphAgentExecutor:
           则应委派给 general_agent（具备完整工具）执行，而不是宣称"该技能不存在"。
         - 此路径覆盖所有协调型 Agent + 所有工具受限技能，不绑定任何具体技能 ID。
 
+        【框架级新增路径】续问能力轨迹委派：
+        - 若当前任务是“继续/刚才那个”类显式续问，且会话记忆里已记录最近一次成功任务的
+          委派/技能/工具轨迹，则应优先沿用该成功链路；
+        - 这样既不会把旧主题结果错误注入新任务，也不会让主 Agent 在 planning_safe
+          里再去尝试被白名单拦截的 spawn_agent。
+
         Args:
             tool_incompatible_skills: 系统中存在但因当前 Agent 工具不足被隐藏的技能列表
+            run_memory: 当前任务运行记忆。其 context_messages 里会包含会话记忆提炼出的续问能力轨迹。
         """
         if not agent or not task:
             return None
@@ -761,9 +1120,10 @@ class LangGraphAgentExecutor:
         }
         available_tool_names.discard("")
 
-        can_delegate = "spawn_agent" in available_tool_names and "general_agent" in child_agents
+        can_delegate = "spawn_agent" in available_tool_names and bool(child_agents)
         if not can_delegate:
             return None
+        has_general_agent = "general_agent" in child_agents
 
         # ── 新增路径：用户明确点名了某个工具不兼容技能 ──
         # 场景：用户说"请使用 find-skills 技能 查找..."，但 find-skills 需要 shell_exec
@@ -778,7 +1138,7 @@ class LangGraphAgentExecutor:
             explicitly_requested = self._is_explicitly_requesting_skill_by_id(
                 task=task, candidate_skill_ids=incompatible_ids
             )
-            if explicitly_requested:
+            if explicitly_requested and has_general_agent:
                 skill_names = sorted(explicitly_requested)
                 reasoning = (
                     f"当前 Agent '{agent.name}' 识别到用户明确点名了技能 {skill_names}。"
@@ -805,9 +1165,22 @@ class LangGraphAgentExecutor:
                     reasoning=reasoning,
                 )
 
+        history_guided_delegate_plan = self._build_follow_up_capability_delegate_plan(
+            agent=agent,
+            task=task,
+            available_tool_names=available_tool_names,
+            child_agents=child_agents,
+            tool_incompatible_skills=tool_incompatible_skills,
+            run_memory=run_memory,
+        )
+        if history_guided_delegate_plan is not None:
+            return history_guided_delegate_plan
+
         is_command_task = self._is_explicit_system_command_task(task)
         is_install_task = self._is_skill_install_request(task)
         if not is_command_task and not is_install_task:
+            return None
+        if not has_general_agent:
             return None
 
         lacks_shell_exec = "shell_exec" not in available_tool_names
@@ -1651,94 +2024,117 @@ class LangGraphAgentExecutor:
                 f"{[s.skill_id for s in tool_incompatible_skills]}{Style.RESET_ALL}"
             )
 
-        forced_delegate_plan = self._build_capability_gap_delegate_plan(
-            agent=agent,
+        history_answer_plan = self._build_history_answer_plan(
             task=task,
-            available_tools=available_tools,
-            tool_incompatible_skills=tool_incompatible_skills,
+            run_memory=state.get("run_memory"),
         )
-        if forced_delegate_plan is not None:
-            plan = forced_delegate_plan
+        if history_answer_plan is not None:
+            plan = history_answer_plan
             logger.info(
-                f"{Fore.YELLOW}[Plan Node] 已命中能力缺口兜底委派，"
-                f"跳过 LLM 规划，直接委派给 general_agent{Style.RESET_ALL}"
+                f"{Fore.YELLOW}[Plan Node] 已命中历史答案直答路径，"
+                f"跳过 LLM 规划与重复执行{Style.RESET_ALL}"
             )
         else:
-            # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
-            # 使 LLM 在重规划时能规避已知失败路径
-            current_error_ctx = state.get("error_context", [])
-            if current_error_ctx:
-                logger.info(
-                    f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
-                    f"本次为错误感知重规划{Style.RESET_ALL}"
-                )
-
-            # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
-            # 这是解决「无效迭代循环」的核心修复点：
-            # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
-            # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
-            current_reflection_history = state.get("reflection_history", [])
-            if current_reflection_history:
-                logger.info(
-                    f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
-                    f"本次为历史感知重规划{Style.RESET_ALL}"
-                )
-
-            # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
-            # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
-            # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
-            planning_context: Dict[str, Any] = {
-                "iteration": iteration,
-                "user_rejected_tools": user_rejected_tools,
-            }
-            history_install_context = self._build_history_guided_install_context(
-                task=task,
-                run_memory=state.get("run_memory"),
-            )
-            if history_install_context:
-                planning_context.update(history_install_context)
-                logger.info(
-                    f"{Fore.YELLOW}[Plan Node] 已将历史安装候选注入 planning_context，"
-                    f"交由 LLM 结合当前任务自主决定后续路径{Style.RESET_ALL}"
-                )
-
-            # 取最近一次 plan/execution 消息，控制体积只保留近一次
-            recent_messages = state.get("messages", []) or []
-            # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
-            #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
-            dict_messages = [m for m in recent_messages if isinstance(m, dict)]
-            last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
-            last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
-            if last_plan_msg:
-                planning_context["last_plan"] = {
-                    "reasoning": last_plan_msg.get("reasoning", ""),
-                    "steps": last_plan_msg.get("steps", [])[:8]
-                }
-            if last_exec_msg:
-                planning_context["last_execution"] = {
-                    "content": last_exec_msg.get("content", ""),
-                    # 仅保留最近步骤，避免 Prompt 爆长
-                    "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
-                }
-            if state.get("final_result") is not None:
-                planning_context["last_final_result"] = state.get("final_result")
-
-            # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
-            # 注意：stream_callback 透传到规划引擎，规划引擎会在规划 LLM 内部工具调用时
-            # 通过该回调向前端推送 SSE 进度事件，解决规划阶段工具调用"前端黑盒"问题。
-            plan = await self.planning_engine.create_plan(
+            forced_delegate_plan = self._build_capability_gap_delegate_plan(
                 agent=agent,
                 task=task,
                 available_tools=available_tools,
-                available_skills=available_skills,
-                context=planning_context,
-                error_context=current_error_ctx if current_error_ctx else None,
-                reflection_history=current_reflection_history if current_reflection_history else None,
-                # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
+                tool_incompatible_skills=tool_incompatible_skills,
                 run_memory=state.get("run_memory"),
-                iteration=iteration,
-                stream_callback=stream_callback,
             )
+            if forced_delegate_plan is not None:
+                plan = forced_delegate_plan
+                logger.info(
+                    f"{Fore.YELLOW}[Plan Node] 已命中能力缺口兜底委派，"
+                    f"跳过 LLM 规划，直接委派给 general_agent{Style.RESET_ALL}"
+                )
+            else:
+                # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
+                # 使 LLM 在重规划时能规避已知失败路径
+                current_error_ctx = state.get("error_context", [])
+                if current_error_ctx:
+                    logger.info(
+                        f"{Fore.YELLOW}[Plan Node] 检测到 {len(current_error_ctx)} 条错误上下文，"
+                        f"本次为错误感知重规划{Style.RESET_ALL}"
+                    )
+
+                # NOTE: 传入历史反思记录，使 LLM 能从之前的失败中学习改进策略。
+                # 这是解决「无效迭代循环」的核心修复点：
+                # 如果 error_context 为空（步骤技术成功但任务未达成），reflection_history
+                # 仍存储了之前轮次的 feedback，能指引 LLM 调整方向或明确告知用户无法完成。
+                current_reflection_history = state.get("reflection_history", [])
+                if current_reflection_history:
+                    logger.info(
+                        f"{Fore.YELLOW}[Plan Node] 携带 {len(current_reflection_history)} 条历史反思记录，"
+                        f"本次为历史感知重规划{Style.RESET_ALL}"
+                    )
+
+                # NOTE: 为跨迭代规划注入“上一轮执行记忆”，避免每轮重复走相同查询路径。
+                # 包含：上一轮计划、上一轮执行步骤结果、上一轮最终结果、用户拒绝工具。
+                # 这是解决“第二轮仍重复委派 order_agent 查询同一订单”的关键上下文。
+                planning_context: Dict[str, Any] = {
+                    "iteration": iteration,
+                    "user_rejected_tools": user_rejected_tools,
+                }
+                history_install_context = self._build_history_guided_install_context(
+                    task=task,
+                    run_memory=state.get("run_memory"),
+                )
+                if history_install_context:
+                    planning_context.update(history_install_context)
+                    logger.info(
+                        f"{Fore.YELLOW}[Plan Node] 已将历史安装候选注入 planning_context，"
+                        f"交由 LLM 结合当前任务自主决定后续路径{Style.RESET_ALL}"
+                    )
+
+                history_answer_context = self._build_history_answer_context(
+                    task=task,
+                    run_memory=state.get("run_memory"),
+                )
+                if history_answer_context:
+                    planning_context.update(history_answer_context)
+                    logger.info(
+                        f"{Fore.YELLOW}[Plan Node] 已将历史答案候选注入 planning_context，"
+                        f"供 LLM 结合当前任务决定是否少执行或直接回答{Style.RESET_ALL}"
+                    )
+
+                # 取最近一次 plan/execution 消息，控制体积只保留近一次
+                recent_messages = state.get("messages", []) or []
+                # NOTE: state["messages"] 可能混入 LangChain BaseMessage（如 SystemMessage）对象，
+                #       这些对象没有 .get 方法。这里仅提取我们自己追加的 dict 结构消息。
+                dict_messages = [m for m in recent_messages if isinstance(m, dict)]
+                last_plan_msg = next((m for m in reversed(dict_messages) if m.get("type") == "plan"), None)
+                last_exec_msg = next((m for m in reversed(dict_messages) if m.get("type") == "execution"), None)
+                if last_plan_msg:
+                    planning_context["last_plan"] = {
+                        "reasoning": last_plan_msg.get("reasoning", ""),
+                        "steps": last_plan_msg.get("steps", [])[:8]
+                    }
+                if last_exec_msg:
+                    planning_context["last_execution"] = {
+                        "content": last_exec_msg.get("content", ""),
+                        # 仅保留最近步骤，避免 Prompt 爆长
+                        "step_results": (last_exec_msg.get("step_results", []) or [])[-6:]
+                    }
+                if state.get("final_result") is not None:
+                    planning_context["last_final_result"] = state.get("final_result")
+
+                # 创建计划（优先使用 run_memory messages 格式，传入 run_memory 时旧的文字拼接自动降级）
+                # 注意：stream_callback 透传到规划引擎，规划引擎会在规划 LLM 内部工具调用时
+                # 通过该回调向前端推送 SSE 进度事件，解决规划阶段工具调用"前端黑盒"问题。
+                plan = await self.planning_engine.create_plan(
+                    agent=agent,
+                    task=task,
+                    available_tools=available_tools,
+                    available_skills=available_skills,
+                    context=planning_context,
+                    error_context=current_error_ctx if current_error_ctx else None,
+                    reflection_history=current_reflection_history if current_reflection_history else None,
+                    # NOTE: 传入 run_memory，优先使用 messages 格式传递历史执行记忆
+                    run_memory=state.get("run_memory"),
+                    iteration=iteration,
+                    stream_callback=stream_callback,
+                )
 
         logger.info(f"{Fore.GREEN}[Plan Node] 计划创建完成{Style.RESET_ALL}")
         
@@ -2218,6 +2614,10 @@ class LangGraphAgentExecutor:
             plan=plan,
             context={
                 "task": state.get("task", ""),
+                "conversation_id": state.get("conversation_id"),
+                "conversation_turn_id": state.get("conversation_turn_id"),
+                "source_user_task": state.get("source_user_task"),
+                "execution_scope": state.get("execution_scope", "primary"),
                 # 透传当前迭代号：供执行引擎在 await_user_input / user_input_received
                 # 事件中打上正确 iteration，避免前端把跨轮事件混在一起。
                 "iteration": state.get("iterations", 0),
@@ -2944,7 +3344,11 @@ class LangGraphAgentExecutor:
         task: str,
         conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
-        user_rejected_tools: Optional[List[str]] = None
+        extra_context_messages: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None,
+        conversation_turn_id: Optional[str] = None,
+        source_user_task: Optional[str] = None,
+        execution_scope: str = "primary",
     ) -> Dict[str, Any]:
         """
         执行 Agent 任务
@@ -2955,6 +3359,7 @@ class LangGraphAgentExecutor:
             conversation_id: 会话 ID（可选）。若提供，则激活会话级记忆（Session Memory），
                              能将过往独立任务的执行摘要注入到本次任务的上下文中。
             conversation_history: 对话历史记录（通常来自于外部对话记录系统）
+            extra_context_messages: 额外透传的已筛选上下文（常用于父 Agent 向子 Agent 继承）
             user_rejected_tools: 用户已拒绝的工具列表（可选）
             
         Returns:
@@ -2964,30 +3369,30 @@ class LangGraphAgentExecutor:
             f"{Fore.BLUE}开始执行 Agent 任务 - Agent: {agent.name}{Style.RESET_ALL}"
         )
         logger.info(f"{Fore.CYAN}任务: {task}{Style.RESET_ALL}")
-        
+
+        effective_turn_id = conversation_turn_id or uuid.uuid4().hex
+        effective_source_user_task = source_user_task or task
+
         try:
-            # ── 提取会话级前置记忆（Session Memory） ──
-            # 从全局的 AgentSessionMemory 获取当前会话以前的任务摘要，作为系统级历史记录前置发送。
-            session_ctx_messages = []
-            if conversation_id:
-                session_mem = get_session_memory(conversation_id)
-                session_ctx_messages = session_mem.build_context_messages()
-                if session_ctx_messages:
-                    logger.info(
-                        f"{Fore.CYAN}[会话记忆] 成功获取会话 '{conversation_id}' 的 {len(session_ctx_messages)} 条历史任务摘要，"
-                        f"将注入为本次任务的前置上下文{Style.RESET_ALL}"
-                    )
-                else:
-                    logger.debug(f"{Fore.CYAN}[会话记忆] 会话 '{conversation_id}' 无历史任务摘要{Style.RESET_ALL}")
+            context_messages = self._build_task_relevant_context_messages(
+                task=task,
+                conversation_id=conversation_id,
+                conversation_history=conversation_history,
+                extra_context_messages=extra_context_messages,
+            )
 
             # 初始化状态
             initial_state: AgentState = {
-                "messages": session_ctx_messages + (conversation_history or []),
+                "messages": context_messages,
                 "current_plan": None,
                 "tool_outputs": [],
                 "iterations": 0,
                 "final_result": None,
                 "task": task,
+                "conversation_id": conversation_id,
+                "conversation_turn_id": effective_turn_id,
+                "source_user_task": effective_source_user_task,
+                "execution_scope": execution_scope,
                 "agent": agent,
                 # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
                 "error_context": [],
@@ -3008,7 +3413,7 @@ class LangGraphAgentExecutor:
                     task=task,
                     agent_id=agent.agent_id,
                     agent_name=agent.name,
-                    context_messages=session_ctx_messages + (conversation_history or [])
+                    context_messages=context_messages
                 )
             }
             
@@ -3051,7 +3456,10 @@ class LangGraphAgentExecutor:
                 try:
                     entry = extract_summary_from_run_memory(
                         run_memory=initial_state["run_memory"],
-                        final_result=final_state.get("final_result", {}) or {}
+                        final_result=final_state.get("final_result", {}) or {},
+                        conversation_turn_id=effective_turn_id,
+                        source_user_task=effective_source_user_task,
+                        entry_scope=execution_scope,
                     )
                     get_session_memory(conversation_id).append_task_summary(entry)
                     logger.info(f"{Fore.GREEN}[会话记忆] 任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")
@@ -3085,7 +3493,11 @@ class LangGraphAgentExecutor:
         stream_callback: Callable,
         conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
-        user_rejected_tools: Optional[List[str]] = None
+        extra_context_messages: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None,
+        conversation_turn_id: Optional[str] = None,
+        source_user_task: Optional[str] = None,
+        execution_scope: str = "subtask",
     ) -> Dict[str, Any]:
         """
         以流式回调模式执行 Agent 任务（供子 Agent 共享父级 SSE 流时调用）
@@ -3104,6 +3516,7 @@ class LangGraphAgentExecutor:
             stream_callback: 父级 SSE 流式回调（异步函数）
             conversation_id: 会话 ID（可选）。子 Agent 通常不需要自己查，这里支持预留以便极端复合情况。
             conversation_history: 对话历史（可选）
+            extra_context_messages: 额外透传的已筛选上下文（可选）
             user_rejected_tools: 用户已拒绝的工具列表（可选）
 
         Returns:
@@ -3117,22 +3530,32 @@ class LangGraphAgentExecutor:
             f"{Fore.CYAN}[子Agent] stream_callback 已绑定，事件将推入父级 SSE 流{Style.RESET_ALL}"
         )
 
+        effective_turn_id = conversation_turn_id or uuid.uuid4().hex
+        effective_source_user_task = source_user_task or task
+
         try:
-            session_ctx_messages = []
-            if conversation_id:
-                session_mem = get_session_memory(conversation_id)
-                session_ctx_messages = session_mem.build_context_messages()
+            context_messages = self._build_task_relevant_context_messages(
+                task=task,
+                conversation_id=conversation_id,
+                conversation_history=conversation_history,
+                extra_context_messages=extra_context_messages,
+                log_prefix="[会话记忆][子Agent]",
+            )
 
             # 构建带流式回调的状态图（与 execute_stream 共用同一图构建逻辑）
             graph = self._build_graph(stream_callback=stream_callback)
 
             initial_state: AgentState = {
-                "messages": session_ctx_messages + (conversation_history or []),
+                "messages": context_messages,
                 "current_plan": None,
                 "tool_outputs": [],
                 "iterations": 0,
                 "final_result": None,
                 "task": task,
+                "conversation_id": conversation_id,
+                "conversation_turn_id": effective_turn_id,
+                "source_user_task": effective_source_user_task,
+                "execution_scope": execution_scope,
                 "agent": agent,
                 "error_context": [],
                 "error_analysis": None,
@@ -3150,7 +3573,7 @@ class LangGraphAgentExecutor:
                     task=task,
                     agent_id=agent.agent_id,
                     agent_name=agent.name,
-                    context_messages=session_ctx_messages + (conversation_history or [])
+                    context_messages=context_messages
                 )
             }
 
@@ -3181,7 +3604,10 @@ class LangGraphAgentExecutor:
                 try:
                     entry = extract_summary_from_run_memory(
                         run_memory=initial_state["run_memory"],
-                        final_result=final_result or {}
+                        final_result=final_result or {},
+                        conversation_turn_id=effective_turn_id,
+                        source_user_task=effective_source_user_task,
+                        entry_scope=execution_scope,
                     )
                     get_session_memory(conversation_id).append_task_summary(entry)
                     logger.info(f"{Fore.GREEN}[会话记忆] 子Agent任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")
@@ -3240,7 +3666,11 @@ class LangGraphAgentExecutor:
         task: str,
         conversation_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
-        user_rejected_tools: Optional[List[str]] = None
+        extra_context_messages: Optional[List[Dict[str, Any]]] = None,
+        user_rejected_tools: Optional[List[str]] = None,
+        conversation_turn_id: Optional[str] = None,
+        source_user_task: Optional[str] = None,
+        execution_scope: str = "primary",
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         流式执行 Agent 任务（使用 asyncio.Queue + 哨兵模式）
@@ -3266,6 +3696,7 @@ class LangGraphAgentExecutor:
             task: 任务描述
             conversation_id: 会话 ID（可选）。如果提供，会自动读取该会话历史任务的摘要作为初始上下文。
             conversation_history: 外部对话系统的多轮历史聊天记录（可选）
+            extra_context_messages: 额外透传的已筛选上下文（可选）
             user_rejected_tools: 用户拒绝过的工具黑名单列表（可选）
             
         Yields:
@@ -3282,6 +3713,9 @@ class LangGraphAgentExecutor:
             f"{Fore.BLUE}开始流式执行 Agent 任务 - Agent: {agent.name}{Style.RESET_ALL}"
         )
         logger.info(f"{Fore.CYAN}任务: {task[:200]}{Style.RESET_ALL}")
+
+        effective_turn_id = conversation_turn_id or uuid.uuid4().hex
+        effective_source_user_task = source_user_task or task
 
         # ─────────────────────────────────────────────────────────────────────
         # 1. 创建 asyncio.Queue 作为事件通道
@@ -3311,41 +3745,31 @@ class LangGraphAgentExecutor:
         # 2. 构建带有流式回调的状态图（每次 execute_stream 创建独立图实例）
         # ─────────────────────────────────────────────────────────────────────
         try:
-            # ── 提取会话级前置记忆（Session Memory） ──
-            session_ctx_messages = []
-            if conversation_id:
-                session_mem = get_session_memory(conversation_id)
-                session_ctx_messages = session_mem.build_context_messages()
-                if session_ctx_messages:
-                    logger.info(
-                        f"{Fore.GREEN}[会话记忆] (流式) 会话 '{conversation_id}' 中读取到 "
-                        f"{len(session_ctx_messages)} 条历史任务摘要，即将注入 AgentRunMemory{Style.RESET_ALL}"
-                    )
-                    # 逐条打印摘要内容摘要，方便确认注入内容是否正确
-                    for idx, sm in enumerate(session_ctx_messages):
-                        preview = str(sm.get("content", ""))[:100].replace("\n", " ")
-                        logger.info(
-                            f"{Fore.GREEN}[会话记忆] (流式) 摘要[{idx}]: {preview!r}{Style.RESET_ALL}"
-                        )
-                else:
-                    logger.info(
-                        f"{Fore.CYAN}[会话记忆] (流式) 会话 '{conversation_id}' 暂无历史任务摘要"
-                        f"（这是该会话的第一次任务）{Style.RESET_ALL}"
-                    )
+            context_messages = self._build_task_relevant_context_messages(
+                task=task,
+                conversation_id=conversation_id,
+                conversation_history=conversation_history,
+                extra_context_messages=extra_context_messages,
+                log_prefix="[会话记忆] (流式)",
+            )
         except Exception as e:
             logger.error(f"{Fore.RED}[会话记忆] 读取历史任务摘要失败: {e}{Style.RESET_ALL}")
-            session_ctx_messages = []
+            context_messages = []
 
         graph = self._build_graph(stream_callback=stream_callback)
 
         # 初始化 Agent 状态
         initial_state: AgentState = {
-            "messages": session_ctx_messages + (conversation_history or []),
+            "messages": context_messages,
             "current_plan": None,
             "tool_outputs": [],
             "iterations": 0,
             "final_result": None,
             "task": task,
+            "conversation_id": conversation_id,
+            "conversation_turn_id": effective_turn_id,
+            "source_user_task": effective_source_user_task,
+            "execution_scope": execution_scope,
             "agent": agent,
             # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
             "error_context": [],
@@ -3374,11 +3798,11 @@ class LangGraphAgentExecutor:
                 task=task,
                 agent_id=agent.agent_id,
                 agent_name=agent.name,
-                context_messages=session_ctx_messages + (conversation_history or [])
+                context_messages=context_messages
                 # 📌 解释：
-                #   session_ctx_messages → 来自 AgentSessionMemory 的跨任务历史摘要
-                #   conversation_history → 来自外部对话系统的多轮聊天记录（可选）
-                #   两者合并后作为整次任务的「前置上下文背景」，优先于当前任务目标展示给 LLM
+                #   context_messages → 已经过“任务相关性检索 + 长度裁剪”的前置上下文
+                #   统一包含：会话级任务摘要 + 外部对话历史（若相关）
+                #   避免长会话把全部旧消息原样灌入 Prompt
             )
         }
 
@@ -3537,7 +3961,10 @@ class LangGraphAgentExecutor:
                 run_memory_obj = state_snapshot.get("run_memory") or initial_state["run_memory"]
                 entry = extract_summary_from_run_memory(
                     run_memory=run_memory_obj,
-                    final_result=final_result or {}
+                    final_result=final_result or {},
+                    conversation_turn_id=effective_turn_id,
+                    source_user_task=effective_source_user_task,
+                    entry_scope=execution_scope,
                 )
                 get_session_memory(conversation_id).append_task_summary(entry)
                 logger.info(f"{Fore.GREEN}[会话记忆] 流式任务摘要已追加至会话 {conversation_id}{Style.RESET_ALL}")

@@ -72,6 +72,12 @@ class ChildAgentManager:
         parent_agent_id: Optional[str],
         child_agent_id: str,
         task: str,
+        conversation_id: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        conversation_turn_id: Optional[str] = None,
+        source_user_task: Optional[str] = None,
+        execution_scope: str = "subtask",
+        extra_context_messages: Optional[List[Dict[str, Any]]] = None,
         context: Optional[Dict[str, Any]] = None,
         stream_callback: Optional[Callable] = None,
         pending_confirmations: Optional[Dict[str, Any]] = None,
@@ -85,6 +91,12 @@ class ChildAgentManager:
             parent_agent_id: 父 Agent ID（可选，用于循环检测）
             child_agent_id: 子 Agent ID
             task: 任务描述
+            conversation_id: 会话 ID（可选）。传入后子 Agent 与父 Agent 共享同一会话记忆。
+            conversation_history: 外部对话历史（可选）
+            conversation_turn_id: 当前会话轮次 ID（可选）。主/子 Agent 使用同一 ID 聚合同轮摘要。
+            source_user_task: 当前轮的原始用户问题（可选）。子 Agent 摘要会挂回这条主线问题。
+            execution_scope: 当前执行记录的范围，默认 `subtask`。
+            extra_context_messages: 父 Agent 已筛选好的额外上下文（可选）
             context: 任务上下文
             stream_callback: 父级 SSE 流式回调（可选）。
                              传入后子 Agent 的执行事件（包括 user_confirm_required）
@@ -263,6 +275,12 @@ class ChildAgentManager:
                     agent=child_agent,
                     task=task,
                     stream_callback=_sub_agent_callback,  # 用包装后的 callback
+                    conversation_id=conversation_id,
+                    conversation_history=conversation_history,
+                    conversation_turn_id=conversation_turn_id,
+                    source_user_task=source_user_task,
+                    execution_scope=execution_scope,
+                    extra_context_messages=extra_context_messages,
                     user_rejected_tools=user_rejected_tools
                 )
 
@@ -296,6 +314,12 @@ class ChildAgentManager:
                 result = await executor.execute(
                     agent=child_agent,
                     task=task,
+                    conversation_id=conversation_id,
+                    conversation_history=conversation_history,
+                    conversation_turn_id=conversation_turn_id,
+                    source_user_task=source_user_task,
+                    execution_scope=execution_scope,
+                    extra_context_messages=extra_context_messages,
                     user_rejected_tools=user_rejected_tools
                 )
 

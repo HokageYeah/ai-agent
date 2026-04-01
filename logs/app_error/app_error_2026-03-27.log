@@ -1,9 +1,0 @@
-2026-03-28 00:03:40 | ERROR    | app.agents.planning:_parse_plan:653 - [31mJSON 解析失败: Invalid \escape: line 44 column 171 (char 1266)[0m
-2026-03-28 00:03:40 | ERROR    | app.agents.planning:_parse_plan:654 - [31mLLM 输出: <think>
-The user wants me to plan the next attempt based on historical records. Let me analyze what went wrong and what to try next.
-
-Key issues from previous attempts:
-1. Sogou WeChat search page cou...[0m
-2026-03-28 00:04:23 | ERROR    | app.agents.planning:_parse_plan:653 - [31mJSON 解析失败: Expecting property name enclosed in double quotes: line 1 column 1606 (char 1605)[0m
-2026-03-28 00:04:23 | ERROR    | app.agents.planning:_parse_plan:654 - [31mLLM 输出: <think>
-Based on the history, the Sogou WeChat search blocked our attempts to extract article URLs from the HTML. The plan for this round should use the browser tool with JavaScript rendering capabili...[0m
