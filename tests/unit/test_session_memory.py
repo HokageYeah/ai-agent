@@ -11,6 +11,7 @@ from app.memory.agent_run_memory import AgentRunMemory
 from app.memory.session_memory import (
     AgentSessionMemory,
     TaskSummaryEntry,
+    _extract_conversation_recall_targets,
     extract_summary_from_run_memory,
     rank_history_answer_candidates,
     select_relevant_conversation_history,
@@ -585,6 +586,50 @@ def test_build_conversation_recall_context_messages_should_support_multi_target_
     assert "当前定位轮次数据列表:" in content
 
 
+def test_extract_conversation_recall_targets_should_support_repeated_ordinal_question_phrasing():
+    """历史目标解析应兼容“第二个、第三个问题”这类重复序数表达。"""
+    targets = _extract_conversation_recall_targets("我的第二个、第三个问题是什么")
+
+    assert [target["turn_index"] for target in targets] == [2, 3]
+    assert [target["label"] for target in targets] == ["第2个问题", "第3个问题"]
+
+
+def test_build_conversation_recall_context_messages_should_support_repeated_ordinal_question_lookup():
+    """会话主线回顾应支持“第二个、第三个问题”这类自然表述，而不是只命中最后一个。"""
+    session_memory = AgentSessionMemory("conv-recall-repeated-ordinal")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品详情，并且找到订单客户",
+            summary="已查到订单1002的商品与客户信息",
+            conversation_turn_id="turn-2",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品是谁买的",
+            summary="已查到订单1002的购买者",
+            conversation_turn_id="turn-3",
+        )
+    )
+
+    messages = session_memory.build_conversation_recall_context_messages(
+        task="我的第二个、第三个问题是什么",
+    )
+
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert "当前定位问题: 第2个问题 -> 订单1002的商品详情，并且找到订单客户" in content
+    assert "当前定位问题: 第3个问题 -> 订单1002的商品是谁买的" in content
+    assert "当前定位轮次数据列表:" in content
+
+
 def test_rank_history_answer_candidates_should_keep_multi_target_recall_candidates():
     """多目标会话回顾应生成与目标数一致的历史候选，供覆盖度校验使用。"""
     session_memory = AgentSessionMemory("conv-recall-multi-candidate")
@@ -635,6 +680,45 @@ def test_rank_history_answer_candidates_should_keep_multi_target_recall_candidat
 
     assert len(candidates) == 2
     assert {candidate["target_label"] for candidate in candidates} == {"第4个问题", "第5个问题"}
+    assert all(candidate["target_count"] == 2 for candidate in candidates)
+
+
+def test_rank_history_answer_candidates_should_keep_repeated_ordinal_multi_target_candidates():
+    """“第二个、第三个问题”应产出完整多目标候选，避免历史直答只回答最后一个。"""
+    session_memory = AgentSessionMemory("conv-recall-repeated-ordinal-candidate")
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="使用find-skills技能查询 新闻技能",
+            summary="已查到新闻相关技能",
+            conversation_turn_id="turn-1",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品详情，并且找到订单客户",
+            summary="已查到订单1002的商品与客户信息",
+            conversation_turn_id="turn-2",
+        )
+    )
+    session_memory.append_task_summary(
+        _make_summary_entry(
+            task="订单1002的商品是谁买的",
+            summary="已查到订单1002的购买者",
+            conversation_turn_id="turn-3",
+        )
+    )
+
+    context_messages = session_memory.build_conversation_recall_context_messages(
+        task="我的第二个、第三个问题是什么",
+    )
+    candidates = rank_history_answer_candidates(
+        task="我的第二个、第三个问题是什么",
+        context_messages=context_messages,
+        max_candidates=4,
+    )
+
+    assert len(candidates) == 2
+    assert [candidate["target_label"] for candidate in candidates] == ["第3个问题", "第2个问题"]
     assert all(candidate["target_count"] == 2 for candidate in candidates)
 
 

@@ -81,6 +81,8 @@ class AgentState(TypedDict):
     source_user_task: Optional[str]
     # 当前执行记录属于主线任务还是子任务
     execution_scope: Optional[str]
+    # 当前运行时不可再次委派的子 Agent（通常来自正在进行中的委派调用链）
+    blocked_child_agents: List[str]
     # Agent 实例
     agent: Optional[Agent]
     # NOTE: 错误上下文列表，收集本轮所有执行步骤的失败信息
@@ -158,7 +160,12 @@ class LangGraphAgentExecutor:
         self.tool_gateway = tool_gateway
         
         # 创建各个引擎
-        self.planning_engine = PlanningEngine(llm_hub=llm_hub, tool_hub=tool_hub)
+        agent_registry = getattr(child_agent_manager, "agent_registry", None)
+        self.planning_engine = PlanningEngine(
+            llm_hub=llm_hub,
+            tool_hub=tool_hub,
+            agent_registry=agent_registry,
+        )
         self.execution_engine = ExecutionEngine(
             tool_hub=tool_hub,
             skill_manager=skill_manager,
@@ -1246,6 +1253,14 @@ class LangGraphAgentExecutor:
         if history_guided_delegate_plan is not None:
             return history_guided_delegate_plan
 
+        specialist_delegate_plan = self._build_specialist_child_delegate_plan(
+            agent=agent,
+            task=task,
+            child_agents=child_agents,
+        )
+        if specialist_delegate_plan is not None:
+            return specialist_delegate_plan
+
         is_command_task = self._is_explicit_system_command_task(task)
         is_install_task = self._is_skill_install_request(task)
         if not is_command_task and not is_install_task:
@@ -1301,6 +1316,230 @@ class LangGraphAgentExecutor:
             ],
             reasoning=reasoning,
         )
+
+    def _build_specialist_child_delegate_plan(
+        self,
+        *,
+        agent: Agent,
+        task: str,
+        child_agents: "set[str]",
+    ) -> Optional[Plan]:
+        """
+        基于子 Agent 的能力画像，为“明显属于专业域”的任务生成优先委派计划。
+
+        设计原因：
+        - 旧框架只在“命令执行 / 技能安装 / 工具不兼容技能”场景下强制委派；
+        - 对“订单查询”“退款进度”这类专业业务任务，如果当前 Agent 自己也有通用工具，
+          模型容易误用 python_executor 等兜底能力模拟数据，而不是委派给具备真实业务入口的专家 Agent；
+        - 这里在规划前增加一层通用的“专业域优先”判定，匹配逻辑完全基于子 Agent 配置元数据，
+          不绑定 order/refund/general 等具体 Agent ID。
+        """
+        if not task or not child_agents:
+            return None
+
+        registry = getattr(self.child_agent_manager, "agent_registry", None)
+        if registry is None:
+            return None
+
+        blocked_child_agents = self._get_runtime_blocked_child_agents(agent.agent_id)
+
+        try:
+            registry_map = {
+                registered_agent.agent_id: registered_agent
+                for registered_agent in registry.list_agents()
+            }
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[专业域委派] 读取 Agent 注册表失败，跳过专业域强制委派。"
+                f"错误: {exc}{Style.RESET_ALL}"
+            )
+            return None
+
+        scored_candidates: List[Dict[str, Any]] = []
+        for child_agent_id in sorted(child_agents):
+            if child_agent_id in blocked_child_agents:
+                logger.info(
+                    f"{Fore.YELLOW}[专业域委派] 跳过已在当前调用链中的子 Agent: "
+                    f"current={agent.agent_id} | blocked={child_agent_id}{Style.RESET_ALL}"
+                )
+                continue
+            child_agent = registry_map.get(child_agent_id)
+            if child_agent is None or child_agent.agent_id == agent.agent_id:
+                continue
+            score_payload = self._score_child_agent_specialization(task=task, child_agent=child_agent)
+            if score_payload["score"] <= 0:
+                continue
+            scored_candidates.append(score_payload)
+
+        if not scored_candidates:
+            return None
+
+        scored_candidates.sort(
+            key=lambda item: (
+                item["score"],
+                len(item["matched_keywords"]),
+                item["agent"].agent_id,
+            ),
+            reverse=True,
+        )
+
+        best = scored_candidates[0]
+        second_score = scored_candidates[1]["score"] if len(scored_candidates) > 1 else 0
+        if best["score"] < 4:
+            return None
+        if second_score and (best["score"] - second_score) < 2:
+            logger.info(
+                f"{Fore.YELLOW}[专业域委派] 检测到多个子 Agent 与任务匹配度接近，"
+                f"暂不做框架级强制委派，交由 LLM 自主规划。"
+                f"task={task} | candidates="
+                f"{[(item['agent'].agent_id, item['score']) for item in scored_candidates[:3]]}"
+                f"{Style.RESET_ALL}"
+            )
+            return None
+
+        target_agent = best["agent"]
+        matched_keywords = best["matched_keywords"]
+        reasoning = (
+            f"当前任务明显命中了子 Agent '{target_agent.name}' 的专业域，"
+            f"命中关键词: {matched_keywords}。为了避免当前 Agent 使用通用工具臆造专业业务结果，"
+            f"应优先通过 spawn_agent 将完整任务委派给更匹配的子 Agent '{target_agent.agent_id}'。"
+        )
+        logger.info(
+            f"{Fore.YELLOW}[专业域委派] 命中专业子 Agent，自动委派: "
+            f"current={agent.agent_id} -> target={target_agent.agent_id} | "
+            f"score={best['score']} | matched={matched_keywords}{Style.RESET_ALL}"
+        )
+        return Plan(
+            steps=[
+                PlanStep(
+                    action="delegate",
+                    agent_id=target_agent.agent_id,
+                    task=task.strip(),
+                ),
+                PlanStep(
+                    action="final_answer",
+                    content="根据以上执行结果回答用户",
+                ),
+            ],
+            reasoning=reasoning,
+        )
+
+    def _score_child_agent_specialization(
+        self,
+        *,
+        task: str,
+        child_agent: Agent,
+    ) -> Dict[str, Any]:
+        """
+        计算子 Agent 与当前任务的专业匹配度。
+
+        评分策略：
+        - `name + capabilities` 视为高置信专业信号，命中一次计 4 分；
+        - `description` 视为中置信补充信号，命中一次计 2 分；
+        - 若多个子 Agent 分数接近，则不做强制委派，回退给 LLM 结合完整上下文判断。
+        """
+        normalized_task = str(task or "").lower().strip()
+        high_signal_keywords = self._extract_agent_routing_keywords(
+            [
+                child_agent.name,
+                *(child_agent.capabilities or []),
+            ]
+        )
+        medium_signal_keywords = self._extract_agent_routing_keywords(
+            [
+                child_agent.description,
+            ]
+        ) - high_signal_keywords
+
+        matched_keywords: List[str] = []
+        score = 0
+
+        for keyword in sorted(high_signal_keywords):
+            if keyword in normalized_task:
+                matched_keywords.append(keyword)
+                score += 4
+
+        for keyword in sorted(medium_signal_keywords):
+            if keyword in normalized_task:
+                matched_keywords.append(keyword)
+                score += 2
+
+        return {
+            "agent": child_agent,
+            "score": score,
+            "matched_keywords": matched_keywords,
+        }
+
+    def _extract_agent_routing_keywords(self, texts: List[Any]) -> set[str]:
+        """
+        从 Agent 元数据里提取可用于专业域路由的关键词。
+
+        设计原因：
+        - 需要同时兼容中文短语（如“订单查询”“退款审核”）和英文 token；
+        - 又要避免“专业”“处理”“查询”这类泛化词把所有任务都打高分；
+        - 因此这里统一做“提取 + 去噪”，让路由依据来自 Agent 自身配置而非硬编码映射。
+        """
+        stopwords = {
+            "专业", "处理", "专员", "相关", "问题", "助手", "通用", "负责", "支持", "所有",
+            "能力", "任务", "请求", "操作", "服务", "当前", "以及", "进行", "用于", "更多",
+            "查询", "分析", "更新", "进度", "状态", "申请", "审核", "执行", "功能", "数据",
+            "客户", "信息", "详情", "帮助", "管理", "协调", "工具", "总监", "继续", "完成",
+            "agent", "child", "task", "support", "assistant", "general", "specialist",
+        }
+
+        keywords: set[str] = set()
+        for raw_text in texts:
+            text = str(raw_text or "").strip().lower()
+            if not text:
+                continue
+
+            keywords.update(
+                token
+                for token in re.findall(r"[a-z0-9_/-]{3,}", text)
+                if token not in stopwords
+            )
+
+            for chunk in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+                if len(chunk) <= 4:
+                    candidates = {chunk}
+                else:
+                    candidates = {
+                        chunk[start:start + width]
+                        for width in range(2, 5)
+                        for start in range(0, len(chunk) - width + 1)
+                    }
+                for candidate in candidates:
+                    if candidate in stopwords:
+                        continue
+                    if len(candidate) < 2 or len(candidate) > 8:
+                        continue
+                    keywords.add(candidate)
+
+        return keywords
+
+    def _get_runtime_blocked_child_agents(self, current_agent_id: Optional[str]) -> set[str]:
+        """
+        获取当前运行时不可再次委派的子 Agent 集合。
+
+        设计原因：
+        - 多 Agent 嵌套委派时，`ChildAgentManager._call_stack` 已经维护了当前活动调用链；
+        - 若强制委派规则或规划 LLM 继续选择链路中已存在的 Agent，会形成
+          `A -> B -> C -> B` 这类回环，并在执行阶段才被循环检测拒绝；
+        - 因此这里统一把“当前调用链中的其他 Agent”抽成公共运行时约束，
+          供框架级强制委派与规划上下文共同复用。
+        """
+        if not self.child_agent_manager:
+            return set()
+
+        call_stack = getattr(self.child_agent_manager, "_call_stack", None) or set()
+        blocked = {
+            str(agent_id).strip()
+            for agent_id in call_stack
+            if str(agent_id).strip()
+        }
+        if current_agent_id:
+            blocked.discard(str(current_agent_id).strip())
+        return blocked
 
     def _is_explicit_dynamic_probe_request(self, task: str) -> bool:
         """
@@ -2114,9 +2353,14 @@ class LangGraphAgentExecutor:
             )
             if forced_delegate_plan is not None:
                 plan = forced_delegate_plan
+                target_agent_id = (
+                    plan.steps[0].params.get("agent_id")
+                    if plan.steps and plan.steps[0].action == "delegate"
+                    else "子 Agent"
+                )
                 logger.info(
                     f"{Fore.YELLOW}[Plan Node] 已命中能力缺口兜底委派，"
-                    f"跳过 LLM 规划，直接委派给 general_agent{Style.RESET_ALL}"
+                    f"跳过 LLM 规划，直接委派给 {target_agent_id}{Style.RESET_ALL}"
                 )
             else:
                 # NOTE: 如果是重规划场景（迭代 > 0 且有错误上下文），将错误信息传入规划引擎
@@ -2146,6 +2390,15 @@ class LangGraphAgentExecutor:
                     "iteration": iteration,
                     "user_rejected_tools": user_rejected_tools,
                 }
+                blocked_child_agents = sorted(
+                    self._get_runtime_blocked_child_agents(agent.agent_id)
+                )
+                if blocked_child_agents:
+                    planning_context["blocked_child_agents"] = blocked_child_agents
+                    logger.info(
+                        f"{Fore.YELLOW}[Plan Node] 当前调用链中的子 Agent 已临时禁委派: "
+                        f"{blocked_child_agents}{Style.RESET_ALL}"
+                    )
                 history_install_context = self._build_history_guided_install_context(
                     task=task,
                     run_memory=state.get("run_memory"),
@@ -2688,6 +2941,7 @@ class LangGraphAgentExecutor:
                 "conversation_turn_id": state.get("conversation_turn_id"),
                 "source_user_task": state.get("source_user_task"),
                 "execution_scope": state.get("execution_scope", "primary"),
+                "blocked_child_agents": state.get("blocked_child_agents", []),
                 # 透传当前迭代号：供执行引擎在 await_user_input / user_input_received
                 # 事件中打上正确 iteration，避免前端把跨轮事件混在一起。
                 "iteration": state.get("iterations", 0),
@@ -3463,6 +3717,7 @@ class LangGraphAgentExecutor:
                 "conversation_turn_id": effective_turn_id,
                 "source_user_task": effective_source_user_task,
                 "execution_scope": execution_scope,
+                "blocked_child_agents": [],
                 "agent": agent,
                 # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
                 "error_context": [],
@@ -3626,6 +3881,7 @@ class LangGraphAgentExecutor:
                 "conversation_turn_id": effective_turn_id,
                 "source_user_task": effective_source_user_task,
                 "execution_scope": execution_scope,
+                "blocked_child_agents": [],
                 "agent": agent,
                 "error_context": [],
                 "error_analysis": None,
@@ -3840,6 +4096,7 @@ class LangGraphAgentExecutor:
             "conversation_turn_id": effective_turn_id,
             "source_user_task": effective_source_user_task,
             "execution_scope": execution_scope,
+            "blocked_child_agents": [],
             "agent": agent,
             # NOTE: 初始为空列表，执行阶段会收集失败步骤信息并往这里写入
             "error_context": [],

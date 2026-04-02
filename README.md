@@ -169,6 +169,7 @@ flowchart TD
 - **主/子 Agent 统一挂回同一轮主线**：会话摘要新增 `conversation_turn_id`、`source_user_task`、`entry_scope`。同一轮里的主 Agent 与子 Agent 摘要会被聚合到同一个“用户主线问题”下，而不是把子任务误记成新的用户问题。
 - **历史追问走会话主线回顾**：当用户问“我的第一个问题是什么”“之前说过什么”“继续刚才那个”“第四、第五个问题分别是什么”“前 3 轮做了什么”这类元历史问题时，公共层会按 `conversation_turn_id` 构造 `【会话主线回顾】` 时间线给 LLM，而不是只靠关键词匹配某一条零散摘要。
 - **历史追问目标已升级为目标集合**：公共层不再把历史追问只建模成单个 `target`，而是统一解析为 `targets[]`，支持单目标、多目标与范围目标（如“第 4、5 个问题”“第 2 到第 5 轮”“前 3 个问题”）。`【会话主线回顾】` 除完整时间线外，还会额外注入“当前定位轮次数据列表”，便于主 Agent 与子 Agent 共享同一组结构化历史目标。
+- **重复序数表达也能稳定解析**：历史追问解析不仅支持“第 4、5 个问题”，也支持“第二个、第三个问题”“第二轮、第三轮结果”这类自然表达，避免公共层在首轮解析时把多目标误降成单目标。
 - **历史直答必须通过覆盖度校验**：历史问答候选若来自 `conversation_recall_target`，框架层只有在“用户请求的全部历史目标均已解析并命中”时才允许直接走 `final_answer` 短路；若只命中部分目标，则必须回退到常规规划链路，禁止用单目标结果冒充多目标答案。
 - **反思用于抑制错误短路重复发生**：若上一轮反思已经指出“漏答了某个历史目标”，下一轮规划仍会携带该反思轨迹与会话主线继续规划；历史直答短路器不能绕过这一事实，避免出现“反思知道答案不完整，但规划仍反复输出同一半截答案”的伪闭环。
 - **仅在安装类任务中激活候选提炼**：当新一轮任务属于“安装技能”时，`langgraph_executor._build_history_guided_install_context()` 会从会话摘要中提取并打分历史事实，生成 `history_install_candidates` 注入 Planning 上下文。
@@ -299,7 +300,7 @@ interface AgentState {
 - **客服主 Agent（`cs_master`，客服总监）**
   - 职责：只做**问题分类、任务委派、结果整合与对话输出**。
   - 工具权限：仅授权 `datetime`，**没有** `database_query` 等业务工具。
-  - 协作策略：遇到订单 / 配送 / 退款等问题时，必须委派给对应子 Agent（`order_agent`、`refund_agent`），自己只负责向用户说明与总结。
+  - 协作策略：遇到订单 / 配送 / 退款等问题时，优先委派给对应专业子 Agent；若用户需求同时包含“查业务数据 + 通用加工（如保存本地文件）”，允许沿子 Agent 链继续接力完成。
 
 - **订单子 Agent（`order_agent`，订单专员）**
   - 职责：订单详情查询、订单状态、配送跟踪、商品明细等；若任务含“写入本地”等自身工具无法完成的部分，会通过 **spawn_agent** 委派给 `general_agent` 完成。
@@ -310,8 +311,18 @@ interface AgentState {
   - 工具权限：授权 `database_query`、`calculator`、`datetime`。
 
 - **通用助手（`general_agent`）**
-  - 职责：处理搜索、文件写入、代码执行、翻译等通用任务；常被 `order_agent` / `refund_agent` 委派完成“写入本地”“搜索参数”等衍生需求。
-  - 工具权限：授权 `search`、`http_request`、`python_executor`、`file_read`/`file_write`/`file_edit`、`list_dir`、`archive_extract`/`archive_compress`、`skill_install`、`shell_exec`、`calculator`、`datetime`、`send_message` 等，无 `spawn_agent`。
+  - 职责：处理搜索、文件写入、代码执行、翻译等通用任务；既可承接 `order_agent` / `refund_agent` 的通用加工任务，也可继续把明显属于专业域的部分再委派回更匹配的子 Agent。
+  - 工具权限：授权 `search`、`http_request`、`python_executor`、`file_read`/`file_write`/`file_edit`、`list_dir`、`archive_extract`/`archive_compress`、`skill_install`、`shell_exec`、`calculator`、`datetime`、`send_message`、**spawn_agent** 等。
+
+- **子 Agent 可见性与专业域路由**
+  - 规划层不再只给 `child_agents` 的 ID，而是会把允许访问的子 Agent 展开为“名称 + 描述 + 核心能力 + 可用工具”的能力画像。
+  - 主 Agent 可以看见全部已配置子 Agent 的能力摘要；子 Agent 也能看见配置中允许访问的其他子 Agent 能力摘要，是否可见完全由配置驱动，不写死到 Prompt。
+  - 当任务明显命中某个专业域时，框架会优先生成 delegate 计划，避免当前 Agent 使用 `python_executor` 等通用能力臆造专业业务结果。
+  - 若某个子 Agent 已在当前运行时调用链中，则本轮会被自动标记为“禁止再次委派”，避免出现 `A -> B -> C -> B` 这类回环。
+
+- **规划合法性自动收敛**
+  - 若协调型 Agent 的计划中已经存在合法 `delegate`，但尾部又误夹带了自己无权执行的本地步骤（如 `file_write`），规划公共层会自动收敛为“保留合法 delegate + final_answer”。
+  - 这样可以避免主 Agent 因一个非法尾步骤把整条本可完成的子 Agent 链路直接打断。
 
 - **内存订单数据库 + `DatabaseQueryTool`**
   - 启动时自动构建 SQLite 内存库，包含 `customers / products / orders / order_items / refunds` 等表，并注入 1001–1010 号订单等测试数据。
@@ -320,6 +331,7 @@ interface AgentState {
     - `[工具初始化] 订单测试数据已注入内存数据库，Schema 已同步到工具描述，Agent 现在可以查询订单 1001-1010`
 
 - **委派机制**：子 Agent 委派**统一经 SpawnAgentTool（`spawn_agent`）** 执行：规划中的 `action: "delegate"` 由执行引擎转为调用该工具，并注入 `stream_callback`、`pending_confirmations`、`pending_user_inputs`、`run_memory`（含 `user_inputs_cache`）等，保证子 Agent 的 SSE 轨迹、用户确认与用户输入行为与主 Agent 一致；失败时兜底为直接调用 ChildAgentManager。
+  - 执行前，框架会基于当前 `ChildAgentManager._call_stack` 生成运行时禁委派集合，供规划与强制委派逻辑复用，从源头减少循环依赖重试。
 
 - **典型调用示例**
   - 请求：`POST /api/v1/agents/cs_master/execute` 或 `POST /api/v1/agents/cs_master/execute/stream`
@@ -332,7 +344,8 @@ interface AgentState {
   - 执行流程（简化）：
     1. `cs_master` 识别为订单类问题 → 通过 **spawn_agent** 委派给 `order_agent`（任务描述含“写入本地”）
     2. `order_agent` 使用 `database_query` 查询订单 + 客户 + 商品明细，再通过 **spawn_agent** 委派给 `general_agent` 将结果写入本地文件
-    3. 执行引擎将各层结果传回，由 LLM 合成带真实字段值与文件路径的最终回复
+    3. 若 `general_agent` 的任务中再次包含明显订单域内容，框架会先检查调用链；若 `order_agent` 已在链路中，则禁止再委派回去，避免回环
+    4. 执行引擎将各层结果传回，由 LLM 合成带真实字段值与文件路径的最终回复
 
 ## 🚀 外界真实系统调用全流程解密
 

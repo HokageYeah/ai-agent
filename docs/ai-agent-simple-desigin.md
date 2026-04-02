@@ -1,8 +1,8 @@
 # AI Agent 架构设计（简化版）
 
 ## 文档版本
-- **版本号**: v1.11
-- **最后更新**: 2026-04-01
+- **版本号**: v1.12
+- **最后更新**: 2026-04-02
 - **架构类型**: 轻量级通用 AI Agent 架构
 
 ---
@@ -194,6 +194,7 @@ Planning LLM 决定：
 第 N+1 轮：用户提出历史追问
   例如：
   - “我的第三个问题是什么”
+  - “我的第二个、第三个问题是什么”
   - “第四、第五个问题分别是什么”
   - “前 3 轮做了什么”
   - “第 2 到第 5 轮的结果”
@@ -221,9 +222,48 @@ Planning LLM 决定：
 
 补充说明：
 - 历史追问的公共抽象不再是“某一个目标轮次”，而是“目标集合”；这样“第 4、5 个问题”“前 3 轮”“第 2 到第 5 轮”都能复用同一条框架链路。
+- 目标解析不仅支持“第 4、5 个问题”这类紧凑写法，也支持“第二个、第三个问题”“第二轮、第三轮结果”这类重复序数表达，避免公共层在首轮解析时就把多目标误降成单目标。
 - `conversation_recall_target` 只是历史候选的一种来源，不能因为命中了其中一个目标就提前认定整轮任务可直接回答。
 - 多目标历史追问若只命中部分目标，框架层必须显式判定“覆盖不足”，禁止短路直答，避免出现“只回答第 5 个、漏掉第 4 个”的伪完成状态。
 - 反思若已经指出“历史答案不完整”，下一轮规划仍需携带该反思轨迹与会话主线共同决策；历史直答短路器不能绕过这一事实重复输出同一半截答案。
+
+### 2.7 多 Agent 委派可见性与防回环数据流（已落地）
+
+```
+Agent 配置（child_agents + capabilities + available_tools）
+  ↓
+[规划入口] PlanningEngine(agent_registry=...)
+  ↓
+[_format_child_agents()]
+  ├─ 将 child_agents 从“纯 ID 列表”展开为“名称 + 描述 + 核心能力 + 可用工具”的能力画像
+  ├─ 主 Agent 可看到自己允许委派的全部子 Agent 能力摘要
+  └─ 子 Agent 也只会看到配置里允许访问的其他子 Agent 能力摘要（配置驱动，非硬编码）
+  ↓
+[专业域优先委派] LangGraphExecutor._build_specialist_child_delegate_plan()
+  ├─ 基于子 Agent metadata（name / description / capabilities）提取路由关键词
+  ├─ 当任务明显命中某个专业域时，优先生成 delegate 计划
+  └─ 避免当前 Agent 使用 python_executor 等通用工具臆造专业业务结果
+  ↓
+[运行时调用链约束] _get_runtime_blocked_child_agents()
+  ├─ 读取 ChildAgentManager._call_stack
+  ├─ 将当前调用链中的其他 Agent 视为 blocked_child_agents
+  └─ 同时供“专业域优先委派”和“规划上下文”复用
+  ↓
+[规划校验] _validate_plan_capabilities()
+  ├─ blocked_child_agents 不允许再次出现在 delegate 目标中
+  ├─ 若存在合法 delegate + 非法本地尾步骤，则自动收敛为 delegate-only
+  └─ 其余非法计划统一阻断并要求重规划
+  ↓
+执行阶段
+  ├─ 合法委派继续沿子 Agent 链路完成
+  └─ `A -> B -> C -> B` 这类回环在规划前就被公共层规避，而不是等执行时报循环依赖
+```
+
+补充说明：
+- 可见性完全由配置驱动：框架不再假设“只有主 Agent 才知道其他子 Agent 做什么”，也不把 `general_agent` / `order_agent` / `refund_agent` 写死在规划 Prompt 中。
+- 专业域优先委派是通用规则，不绑定订单、退款等具体业务；真正的路由线索来自 Agent 自身 metadata，而不是固定 ID 映射表。
+- `blocked_child_agents` 不是新的一套委派系统，而是对现有 `ChildAgentManager._call_stack` 的公共运行时投影，目的是在规划前提前消除回环风险。
+- “合法 delegate + 非法本地尾步骤自动收敛”为的是支持协调型 Agent：若主 Agent 已经找对了下游执行者，就不应因为自己误追加了越权步骤而打断整条可行链路。
 
 ---
 
@@ -993,7 +1033,7 @@ class PlanningEngine:
 {self._format_skills(available_skills)}
 
 子 Agent:
-{agent.child_agents}
+{self._format_child_agents(agent)}
 
 请制定详细的执行计划，以 JSON 格式返回:
 {{
@@ -1006,6 +1046,12 @@ class PlanningEngine:
   "reasoning": "你的推理过程"
 }}
 ```
+
+**当前实现补充**：
+
+- `child_agents` 在规划 Prompt 中不再只展示 ID，而是尽量展开为“`agent_id（名称）: 描述 | 核心能力 | 可用工具`”的能力画像摘要，便于 LLM 做更稳定的委派选择。
+- 若某个子 Agent 已在当前运行时调用链中，则能力画像后会追加“本轮禁止再次委派”提示，避免规划阶段继续生成回环委派。
+- 规划公共层会统一校验 `tool / skill / delegate` 是否在当前 Agent 的授权边界内；若计划中已存在合法 delegate，但又夹带当前 Agent 无权执行的本地步骤（如 `file_write`），会自动收敛为“保留合法委派 + final_answer”的 delegate-only 计划，而不是整份计划直接失败。
 
 **规划修正规则 (Interactive Pause Logic)**:
 - **原则**: 除了交互场景外，最后一步必须是 `final_answer`。
@@ -1173,6 +1219,15 @@ class ChildAgentManager:
 - **SpawnAgentTool**（`app/tools/builtin/spawn.py`）：在 ToolHub 中注册为 `spawn_agent`，内部调用 `ChildAgentManager.delegate_task`。支持 **update_context(stream_callback, pending_confirmations, user_rejected_tools)**，在每次执行前由执行引擎注入当前运行时上下文，确保子 Agent 的 SSE 事件与用户确认行为与主 Agent 一致。
 - **执行引擎**：`_execute_tool` 对带有 `update_context` 方法的工具（如 SpawnAgentTool、MessageAgentTool）在调用前注入 `context` 中的 `stream_callback`、`pending_confirmations`、`user_rejected_tools`；`_delegate_to_agent` 从 ToolHub 获取 `spawn_agent` 并先对其执行 `update_context` 再调用 `execute()`，实现委派路径统一。
 - **兜底**：若 SpawnAgentTool 未注册或执行异常，`_delegate_to_agent` 会回退为直接调用 `ChildAgentManager.delegate_task`，仍能完成委派，但建议保持 SpawnAgentTool 可用以保证流式与确认透传。
+
+#### 8.6.3 调用链防回环与专业域优先委派
+
+- **专业域优先委派**：在进入 LLM 规划前，`LangGraphExecutor._build_specialist_child_delegate_plan()` 会基于子 Agent 的 `name / description / capabilities` 计算任务匹配度。若明显命中某个更专业的子 Agent，则优先生成 delegate 计划，避免当前 Agent 用通用工具伪造专业业务结果。
+- **调用链防回环**：框架复用 `ChildAgentManager._call_stack` 生成 `blocked_child_agents`，代表“当前调用链中已存在、此轮禁止再次委派”的子 Agent。该约束同时作用于：
+  - 专业域优先委派候选过滤；
+  - Planning Prompt 中的子 Agent 能力画像提示；
+  - 规划结果的 delegate 合法性校验。
+- **设计目标**：把 `A -> B -> C -> B` 这类回环问题前移到规划公共层处理，而不是等执行阶段再由循环依赖检测报错。
 
 ### 8.7 主子 Agent 示例
 
@@ -2100,3 +2155,5 @@ httpx = "^0.26.0"
 > ✅ **已完成（v1.10）**：会话记忆到安装候选的数据流显式化。进一步明确 `extract_summary_from_run_memory()` 会从 `final_result` / `step_results` 同时提炼 `actionable_facts`，并以“人类可读映射文本 + 紧凑 JSON”写入 `AgentSessionMemory`；`langgraph_executor._build_history_guided_install_context()` 只在安装类任务中反向提取这些事实、按任务相关性排序为 `history_install_candidates`，再注入 Planning 上下文供 LLM 自主判断是否复用。同时补充安装 fallback 的结果复用约束：手动下载/解压链路必须复用真实 `download_path` 与 `AGENT_WORKSPACE_DIR`，禁止臆造 `/tmp/*.zip`、`/app/...` 等架构外路径。
 
 > ✅ **已完成（v1.11）**：会话主线回顾升级为“目标集合 + 覆盖度校验”模型。针对"单目标历史追问可回答，但多目标/范围历史追问被错误短路成单目标答案"这一公共架构问题，框架层实施两项通用修复：**（A）历史追问目标集合化** — `_extract_conversation_recall_targets()` 将“第 N 个问题 / 第 4、5 个问题 / 第 2 到第 5 轮 / 前 3 个问题”等统一解析为 `targets[]`，`build_conversation_recall_context_messages()` 在完整 `【会话主线回顾】` 之外额外注入 `当前定位轮次数据列表`，供主 Agent / 子 Agent / 规划 / 反思共享同一组结构化历史目标；**（B）历史直答增加覆盖度校验** — `rank_history_answer_candidates()` 可从 `当前定位轮次数据列表` 回收多个 `conversation_recall_target` 候选，`langgraph_executor._build_history_answer_plan()` 只有在“用户请求的全部历史目标均已解析并命中”时才允许直接 `final_answer` 短路，否则必须回退到常规规划链路，避免出现“只回答第 5 个、漏掉第 4 个”的伪完成状态。两项修复均作用于会话记忆 / 规划公共边界，不绑定任何具体技能、订单场景或固定问法。
+>
+> ✅ **已完成（v1.12）**：多 Agent 规划边界升级为“子 Agent 能力画像可见 + 专业域优先委派 + 调用链防回环 + 合法委派自动收敛”模型。针对"协调型 Agent 看不见其他子 Agent 功能、容易误用通用工具臆造专业结果、嵌套委派出现 `A -> B -> C -> B` 回环、主 Agent 因越权尾步骤把整条合法委派链打死"这一组公共架构问题，框架层实施四项通用修复：**（A）子 Agent 能力画像展开** — `PlanningEngine` 基于 `agent_registry` 将 `child_agents` 从纯 ID 渲染为“描述 + 能力 + 工具”摘要，使主 Agent 与子 Agent 都能按配置看到允许访问的其他子 Agent 功能；**（B）专业域优先委派** — `langgraph_executor._build_specialist_child_delegate_plan()` 基于子 Agent metadata 自动识别更匹配的专业执行者，优先生成 delegate 计划，避免用通用工具伪造业务结果；**（C）调用链防回环** — 框架复用 `ChildAgentManager._call_stack` 投影为 `blocked_child_agents`，统一作用于强制委派和规划校验，提前阻断回环；**（D）delegate-only 自动收敛** — 规划公共校验层在“已有合法 delegate，但尾部混入当前 Agent 无权执行步骤”时，自动收敛为“delegate + final_answer”，避免协调型 Agent 因一个非法尾步骤中断本可完成的下游链路。上述修复均落在规划/委派公共层，不绑定任何具体 Agent ID 或单一业务案例。

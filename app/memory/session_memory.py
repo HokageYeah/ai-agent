@@ -339,7 +339,12 @@ def _expand_recall_ordinal_segment(raw_segment: str) -> List[int]:
     - 解析阶段就应得到结构化索引集合，而不是到后续链路再让 LLM 自己拆分。
     """
     normalized_segment = _normalize_whitespace(raw_segment or "").replace(" ", "")
+    # 兼容“第二个、第三个问题”“第二轮、第三轮结果”这类重复携带量词的表达：
+    # 解析公共层应先统一剥离 `第 / 个 / 轮` 再做目标展开，
+    # 这样后续主线回顾、候选排序、覆盖度校验都能共享同一份目标集合。
     normalized_segment = normalized_segment.replace("第", "")
+    normalized_segment = normalized_segment.replace("个", "")
+    normalized_segment = normalized_segment.replace("轮", "")
     normalized_segment = re.sub(r"(分别|以及|还有)", "、", normalized_segment)
     normalized_segment = re.sub(r"[至到~～—－-]+", "-", normalized_segment)
 
@@ -394,8 +399,8 @@ def _extract_conversation_recall_targets(task: str) -> List[Dict[str, Any]]:
         target_kind = "timeline"
 
     ordinal_patterns = (
-        r"第\s*([0-9一二两三四五六七八九十〇零、,，和及与跟到至~～—－\-\s第]+)\s*个(?:问题|提问|请求|任务)",
-        r"第\s*([0-9一二两三四五六七八九十〇零、,，和及与跟到至~～—－\-\s第]+)\s*轮(?:对话|问题|提问|任务|请求)?",
+        r"第\s*([0-9一二两三四五六七八九十〇零个、,，和及与跟到至~～—－\-\s第]+)\s*个(?:问题|提问|请求|任务)",
+        r"第\s*([0-9一二两三四五六七八九十〇零轮、,，和及与跟到至~～—－\-\s第]+)\s*轮(?:对话|问题|提问|任务|请求)?",
     )
     for pattern in ordinal_patterns:
         match = re.search(pattern, normalized_task, flags=re.IGNORECASE)

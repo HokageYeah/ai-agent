@@ -10,7 +10,7 @@
 可用技能:
 {{ skills_text }}
 
-子 Agent:
+子 Agent（已按配置展开能力画像）:
 {{ child_agents_text }}
 
 当前 Agent 工作区绝对路径:
@@ -74,5 +74,8 @@
    - 若确实无法使用 `skill_install`，才允许退回 `http_request` / `archive_extract` / `file_write` 等结构化工具，并在最终步骤校验 `SKILL.md` 存在。
    - 如果下载结果是 `.zip` 压缩包，必须先调用 `archive_extract` 解压，再将解压内容放入工作区 `<workspace>/<skill_id>/`，最后校验 `SKILL.md` 是否存在；禁止把 zip 文件本身当作已安装完成。
    - 若上一步刚通过 `http_request` 下载了压缩包，后续 `archive_extract.archive_path` 必须优先使用 {% raw %}`{{last_tool_result.download_path}}` 或 `{{last_tool_result.content}}`{% endraw %}，禁止重新猜测 `/tmp/*.zip` 路径。
+15. 【专业子 Agent 优先约束】若上方子 Agent 能力画像中存在明显更匹配当前任务专业域的对象：
+   - 优先规划 `delegate` 给该子 Agent，而不是留在当前 Agent 内用 `python_executor`、文件工具或通用脚本去模拟专业业务数据。
+   - 特别是订单、退款、审批、财务、物流等具备明确业务边界的任务，如当前 Agent 不是最匹配的专业执行者，应先委派给更专业的子 Agent 获取真实结果，再继续后续通用加工。
 
 请只返回 JSON，不要包含其他文本。

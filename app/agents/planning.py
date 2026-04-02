@@ -93,16 +93,18 @@ class PlanningEngine:
     使用 LLM 为 Agent 生成执行计划
     """
 
-    def __init__(self, llm_hub, tool_hub=None):
+    def __init__(self, llm_hub, tool_hub=None, agent_registry=None):
         """
         初始化规划引擎
 
         Args:
             llm_hub: LLM Hub 实例 (InferenceEngine)
             tool_hub: 工具中心实例（可选），用于获取工具定义
+            agent_registry: Agent 注册表（可选），用于把子 Agent ID 展开为能力画像
         """
         self.llm_hub = llm_hub
         self.tool_hub = tool_hub
+        self.agent_registry = agent_registry
         # NOTE: 规划提示词统一放在 prompt/plan 目录。
         self.prompt_manager = PromptManager(prompt_dir="app/prompt/plan")
         logger.info(f"{Fore.GREEN}规划引擎初始化完成{Style.RESET_ALL}")
@@ -306,7 +308,13 @@ class PlanningEngine:
             )
 
             if run_memory is not None:
-                system_prompt = self._build_system_prompt(agent, available_tools, available_skills)
+                blocked_child_agents = (context or {}).get("blocked_child_agents", [])
+                system_prompt = self._build_system_prompt(
+                    agent,
+                    available_tools,
+                    available_skills,
+                    blocked_child_agent_ids=blocked_child_agents,
+                )
                 trigger_prompt = self._build_trigger_prompt(
                     context=context,
                     user_rejected_tools=context.get("user_rejected_tools", []) if context else [],
@@ -378,6 +386,7 @@ class PlanningEngine:
                 plan=plan,
                 available_tools=available_tools,
                 available_skills=available_skills,
+                blocked_child_agent_ids=(context or {}).get("blocked_child_agents", []),
             )
 
             logger.info(f"{Fore.GREEN}计划创建成功，共 {len(plan.steps)} 个步骤{Style.RESET_ALL}")
@@ -400,6 +409,7 @@ class PlanningEngine:
         agent: Agent,
         available_tools: List[Tool],
         available_skills: List[Skill],
+        blocked_child_agent_ids: Optional[List[str]] = None,
     ) -> str:
         """
         构建规划的系统提示词（system role）
@@ -416,7 +426,10 @@ class PlanningEngine:
             agent_role=agent.role,
             tools_text=self._format_tools(available_tools),
             skills_text=self._format_skills(available_skills),
-            child_agents_text=", ".join(agent.child_agents) if agent.child_agents else "无",
+            child_agents_text=self._format_child_agents(
+                agent,
+                blocked_child_agent_ids=blocked_child_agent_ids,
+            ),
             agent_workspace_dir=str(get_agent_workspace_dir()),
         )
 
@@ -554,7 +567,10 @@ class PlanningEngine:
             task=task,
             tools_text=self._format_tools(available_tools),
             skills_text=self._format_skills(available_skills),
-            child_agents_text=", ".join(agent.child_agents) if agent.child_agents else "无",
+            child_agents_text=self._format_child_agents(
+                agent,
+                blocked_child_agent_ids=(context or {}).get("blocked_child_agents", []),
+            ),
             agent_workspace_dir=str(get_agent_workspace_dir()),
         )
 
@@ -705,6 +721,81 @@ class PlanningEngine:
 
         return "\n".join(lines)
 
+    def _format_child_agents(
+        self,
+        agent: Agent,
+        blocked_child_agent_ids: Optional[List[str]] = None,
+    ) -> str:
+        """
+        格式化子 Agent 列表，并尽量展开为“可委派对象的能力画像”。
+
+        设计原因：
+        - 旧实现只把 `child_agents` 渲染成逗号分隔的 ID，模型只能“看到名字”，
+          看不到对方擅长什么，导致明明可委派却仍在本 Agent 内臆造结果；
+        - 这里统一在规划公共层把配置里的子 Agent 解析成描述/能力/工具摘要，
+          让“谁能看见谁的功能”完全由 YAML 配置驱动，而不是散落在角色提示词里硬编码。
+        """
+        blocked_ids = {
+            str(agent_id).strip()
+            for agent_id in (blocked_child_agent_ids or [])
+            if str(agent_id).strip()
+        }
+
+        child_agent_ids = [
+            str(agent_id).strip()
+            for agent_id in (agent.child_agents or [])
+            if isinstance(agent_id, str) and str(agent_id).strip()
+        ]
+        if not child_agent_ids:
+            return "无"
+
+        if not self.agent_registry:
+            return "\n".join(f"- {agent_id}" for agent_id in child_agent_ids)
+
+        try:
+            registry_map = {
+                registered_agent.agent_id: registered_agent
+                for registered_agent in self.agent_registry.list_agents()
+            }
+        except Exception as exc:
+            logger.warning(
+                f"{Fore.YELLOW}[规划引擎] 获取 Agent 注册表失败，将退回仅展示子 Agent ID。"
+                f"错误: {exc}{Style.RESET_ALL}"
+            )
+            return "\n".join(f"- {agent_id}" for agent_id in child_agent_ids)
+
+        def _preview(items: List[str], *, limit: int = 6) -> str:
+            values = [str(item).strip() for item in (items or []) if str(item).strip()]
+            if not values:
+                return "未配置"
+            preview = values[:limit]
+            text = "、".join(preview)
+            if len(values) > limit:
+                text += " ..."
+            return text
+
+        lines: List[str] = []
+        for child_agent_id in child_agent_ids:
+            child_agent = registry_map.get(child_agent_id)
+            blocked_note = ""
+            if child_agent_id in blocked_ids:
+                blocked_note = " | 当前调用链已包含该 Agent，本轮禁止再次委派"
+            if child_agent is None:
+                lines.append(
+                    f"- {child_agent_id}: 未在注册表中找到该 Agent，当前仅保留 ID。{blocked_note}"
+                )
+                continue
+
+            description = str(child_agent.description or "").strip() or "未填写描述"
+            lines.append(
+                f"- {child_agent.agent_id}（{child_agent.name}）: {description} | "
+                f"核心能力: {_preview(child_agent.capabilities)} | "
+                f"可用工具: {_preview(child_agent.available_tools)}"
+                f"{blocked_note}"
+            )
+
+        return "\n".join(lines)
+
     def _validate_plan_capabilities(
         self,
         *,
@@ -712,6 +803,7 @@ class PlanningEngine:
         plan: Plan,
         available_tools: List[Tool],
         available_skills: List[Skill],
+        blocked_child_agent_ids: Optional[List[str]] = None,
     ) -> Plan:
         """
         对规划结果做能力边界校验与轻量标准化。
@@ -737,6 +829,12 @@ class PlanningEngine:
             for agent_id in (agent.child_agents or [])
             if isinstance(agent_id, str) and str(agent_id).strip()
         }
+        blocked_agent_ids = {
+            str(agent_id).strip()
+            for agent_id in (blocked_child_agent_ids or [])
+            if str(agent_id).strip()
+        }
+        allowed_agent_ids -= blocked_agent_ids
 
         normalized_steps: List[PlanStep] = []
         invalid_reasons: List[str] = []
@@ -801,6 +899,11 @@ class PlanningEngine:
                 if not agent_id:
                     invalid_reasons.append(f"第{index}步缺少 agent_id")
                     continue
+                if agent_id in blocked_agent_ids:
+                    invalid_reasons.append(
+                        f"第{index}步子 Agent '{agent_id}' 已在当前委派调用链中，禁止再次委派"
+                    )
+                    continue
                 if agent_id not in allowed_agent_ids:
                     invalid_reasons.append(
                         f"第{index}步子 Agent '{agent_id}' 不在当前可委派列表中"
@@ -810,6 +913,17 @@ class PlanningEngine:
             normalized_steps.append(PlanStep(action=action, **params))
 
         if invalid_reasons:
+            salvaged_plan = self._try_salvage_delegate_only_plan(
+                normalized_steps=normalized_steps,
+                invalid_reasons=invalid_reasons,
+            )
+            if salvaged_plan is not None:
+                logger.warning(
+                    f"{Fore.YELLOW}[规划引擎] 检测到本地步骤越权，但已存在合法委派步骤，"
+                    f"自动收敛为 delegate-only 计划继续执行 | "
+                    f"agent={agent.name} | reasons={invalid_reasons}{Style.RESET_ALL}"
+                )
+                return salvaged_plan
             logger.warning(
                 f"{Fore.YELLOW}[规划引擎] 计划校验失败，将阻断无效计划执行 | "
                 f"agent={agent.name} | reasons={invalid_reasons}{Style.RESET_ALL}"
@@ -829,6 +943,54 @@ class PlanningEngine:
             )
 
         return Plan(steps=normalized_steps, reasoning=plan.reasoning)
+
+    def _try_salvage_delegate_only_plan(
+        self,
+        *,
+        normalized_steps: List[PlanStep],
+        invalid_reasons: List[str],
+    ) -> Optional[Plan]:
+        """
+        当规划中已存在合法 delegate，但后续夹带了当前 Agent 无权执行的本地步骤时，
+        自动收敛为 delegate-only 计划。
+
+        设计原因：
+        - 协调型 Agent 经常会先委派专业子 Agent，再错误地在本层追加 `file_write` /
+          `database_query` 等自己无权执行的步骤；
+        - 若直接把整份计划打成 final_answer 失败，会中断本可继续沿子 Agent 链路完成的任务；
+        - 这里统一在公共校验层把这类计划降解成“保留合法委派 + 追加 final_answer”，
+          让下游 Agent 结合完整原始需求继续接力。
+        """
+        if not normalized_steps or not invalid_reasons:
+            return None
+
+        first_delegate = next(
+            (step for step in normalized_steps if step.action == "delegate"),
+            None,
+        )
+        if first_delegate is None:
+            return None
+
+        unauthorized_markers = (
+            "不在当前 Agent 授权范围内",
+            "当前不可用",
+            "不在当前可委派列表中",
+            "已在当前委派调用链中",
+            "禁止再次委派",
+        )
+        if not all(any(marker in reason for marker in unauthorized_markers) for reason in invalid_reasons):
+            return None
+
+        return Plan(
+            steps=[
+                first_delegate,
+                PlanStep(
+                    action="final_answer",
+                    content="根据以上执行结果回答用户",
+                ),
+            ],
+            reasoning="计划校验收敛：保留合法委派步骤，移除当前 Agent 无权执行的本地步骤",
+        )
 
     def _normalize_capability_reference_drift(
         self,

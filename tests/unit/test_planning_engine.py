@@ -7,6 +7,7 @@
 
 import pytest
 from app.agents.base import Agent, AgentConfig
+from app.agents.registry import AgentRegistry
 from app.agents.planning import PlanningEngine, Plan, PlanStep
 from app.tools.base import Tool, ToolSchema
 from app.skills.base import Skill
@@ -591,6 +592,81 @@ async def test_planning_engine_should_block_unauthorized_tool_from_plan():
     assert plan.steps[0].action == "final_answer"
     assert plan.reasoning == "计划校验失败"
     assert "不在当前 Agent 授权范围内" in plan.steps[0].params["content"]
+
+
+def test_planning_engine_should_expand_child_agent_profiles_in_system_prompt():
+    """规划 Prompt 应把子 Agent 从纯 ID 展开为能力画像，便于模型做委派决策。"""
+    registry = AgentRegistry()
+    registry.register_agent(
+        Agent(
+            agent_id="order_agent",
+            name="订单专员",
+            description="专业处理订单查询与配送跟踪",
+            role="负责订单领域任务",
+            capabilities=["订单查询", "配送跟踪"],
+            available_tools=["database_query", "http_request"],
+        )
+    )
+
+    planning_engine = PlanningEngine(llm_hub=None, agent_registry=registry)
+    parent_agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="负责通用任务",
+        role="负责委派和执行",
+        child_agents=["order_agent"],
+    )
+
+    system_prompt = planning_engine._build_system_prompt(
+        agent=parent_agent,
+        available_tools=[],
+        available_skills=[],
+    )
+
+    assert "子 Agent（已按配置展开能力画像）" in system_prompt
+    assert "order_agent（订单专员）" in system_prompt
+    assert "核心能力: 订单查询、配送跟踪" in system_prompt
+    assert "可用工具: database_query、http_request" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_planning_engine_should_salvage_delegate_when_local_tail_is_unauthorized():
+    """已有合法 delegate 时，后续本地越权步骤应被收敛为 delegate-only 计划。"""
+    llm_hub = _SequenceLLMHub(
+        [
+            _StubInferenceResult(
+                """{
+  "steps": [
+    {"action": "delegate", "agent_id": "order_agent", "task": "查询订单1002详情"},
+    {"action": "tool", "tool_name": "file_write", "params": {"file_path": "/Users/yuye/Desktop/a.txt", "content": "{{last_delegate_result}}"}}
+  ],
+  "reasoning": "先委派查询，再本地写文件"
+}"""
+            )
+        ]
+    )
+    planning_engine = PlanningEngine(llm_hub=llm_hub)
+    agent = Agent(
+        agent_id="cs_master",
+        name="客服总监",
+        description="协调型 Agent",
+        role="负责委派",
+        child_agents=["order_agent"],
+        agent_config=AgentConfig(planning_model="mock-model"),
+    )
+
+    plan = await planning_engine.create_plan(
+        agent=agent,
+        task="查询订单1002的订单详情，保存在桌面上",
+        available_tools=[],
+        available_skills=[],
+    )
+
+    assert len(plan.steps) == 2
+    assert plan.steps[0].action == "delegate"
+    assert plan.steps[0].params["agent_id"] == "order_agent"
+    assert plan.steps[1].action == "final_answer"
+    assert "delegate-only" in plan.reasoning
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ import pytest
 from types import SimpleNamespace
 from app.agents.langgraph_executor import LangGraphAgentExecutor, AgentState
 from app.agents.base import Agent
+from app.agents.registry import AgentRegistry
 from app.agents.planning import Plan, PlanStep
 from app.agents.execution import ExecutionResult
 from app.core.llm_mock import MockLLM
@@ -799,6 +800,104 @@ def test_build_capability_gap_delegate_plan_should_prefer_history_child_agent_fo
     assert plan.steps[0].params["agent_id"] == "order_agent"
 
 
+def test_build_capability_gap_delegate_plan_should_delegate_to_specialist_child_agent():
+    """专业域明显命中时，应在规划前优先委派给最匹配的子 Agent。"""
+    executor = _build_executor()
+    registry = AgentRegistry()
+    registry.register_agent(
+        Agent(
+            agent_id="order_agent",
+            name="订单专员",
+            description="专业处理订单查询、订单详情和配送跟踪",
+            role="负责订单任务",
+            capabilities=["订单查询", "配送跟踪"],
+            available_tools=["database_query", "http_request"],
+        )
+    )
+    registry.register_agent(
+        Agent(
+            agent_id="refund_agent",
+            name="退款专员",
+            description="专业处理退款申请、退款审核和退款进度",
+            role="负责退款任务",
+            capabilities=["退款申请", "退款审核"],
+            available_tools=["database_query", "calculator"],
+        )
+    )
+    executor.child_agent_manager = SimpleNamespace(agent_registry=registry)
+
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="负责通用任务",
+        role="负责委派和执行",
+        available_tools=["python_executor", "spawn_agent", "send_message"],
+        child_agents=["order_agent", "refund_agent"],
+    )
+    available_tools = [
+        SimpleNamespace(name="python_executor"),
+        SimpleNamespace(name="spawn_agent"),
+        SimpleNamespace(name="send_message"),
+    ]
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="查询订单1002的订单详情",
+        available_tools=available_tools,
+        tool_incompatible_skills=[],
+        run_memory=None,
+    )
+
+    assert plan is not None
+    assert plan.steps[0].action == "delegate"
+    assert plan.steps[0].params["agent_id"] == "order_agent"
+    assert "订单" in plan.reasoning
+
+
+def test_build_capability_gap_delegate_plan_should_skip_agent_already_in_call_stack():
+    """专业域强制委派应自动避开当前调用链中的 Agent，防止回环。"""
+    executor = _build_executor()
+    registry = AgentRegistry()
+    registry.register_agent(
+        Agent(
+            agent_id="order_agent",
+            name="订单专员",
+            description="专业处理订单查询和订单状态",
+            role="负责订单任务",
+            capabilities=["订单查询"],
+            available_tools=["database_query"],
+        )
+    )
+    executor.child_agent_manager = SimpleNamespace(
+        agent_registry=registry,
+        _call_stack={"order_agent", "general_agent"},
+    )
+
+    agent = Agent(
+        agent_id="general_agent",
+        name="通用助手",
+        description="负责通用任务",
+        role="负责委派和执行",
+        available_tools=["python_executor", "spawn_agent", "send_message"],
+        child_agents=["order_agent"],
+    )
+    available_tools = [
+        SimpleNamespace(name="python_executor"),
+        SimpleNamespace(name="spawn_agent"),
+        SimpleNamespace(name="send_message"),
+    ]
+
+    plan = executor._build_capability_gap_delegate_plan(
+        agent=agent,
+        task="查询订单1002的订单详情并保存到桌面",
+        available_tools=available_tools,
+        tool_incompatible_skills=[],
+        run_memory=None,
+    )
+
+    assert plan is None
+
+
 def test_build_task_relevant_context_messages_should_append_follow_up_capability_message_when_topic_changes():
     """换主题续问时，主题摘要可为空，但应追加独立的能力轨迹上下文。"""
     conversation_id = "conv-followup-capability-context"
@@ -972,6 +1071,41 @@ def test_build_task_relevant_context_messages_should_keep_multi_target_recall_co
         assert "当前定位轮次数据列表:" in messages[0]["content"]
     finally:
         clear_session_memory(conversation_id)
+
+
+def test_build_history_answer_plan_should_keep_repeated_ordinal_multi_target_answer():
+    """历史直答应支持“第二个、第三个问题”并完整输出多个目标。"""
+    executor = _build_executor()
+    run_memory = AgentRunMemory(
+        task="我的第二个、第三个问题是什么",
+        agent_id="general_agent",
+        agent_name="通用助手",
+        context_messages=[
+            {
+                "role": "user",
+                "content": (
+                    "【会话主线回顾】\n"
+                    "1. 用户问题: 使用find-skills技能查询 新闻技能\n"
+                    "2. 用户问题: 订单1002的商品详情，并且找到订单客户\n"
+                    "3. 用户问题: 订单1002的商品是谁买的\n"
+                    "当前定位问题: 第2个问题 -> 订单1002的商品详情，并且找到订单客户\n"
+                    "当前定位问题: 第3个问题 -> 订单1002的商品是谁买的\n"
+                    '当前定位轮次数据列表: [{"turn_index": 2, "target_kind": "question", "target_label": "第2个问题", "source_user_task": "订单1002的商品详情，并且找到订单客户", "summary": "已查到订单1002的商品与客户信息"}, {"turn_index": 3, "target_kind": "question", "target_label": "第3个问题", "source_user_task": "订单1002的商品是谁买的", "summary": "已查到订单1002的购买者"}]'
+                ),
+            }
+        ],
+    )
+
+    plan = executor._build_history_answer_plan(
+        task="我的第二个、第三个问题是什么",
+        run_memory=run_memory,
+    )
+
+    assert plan is not None
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "final_answer"
+    assert "您的第2个问题是：订单1002的商品详情，并且找到订单客户" in plan.steps[0].params["content"]
+    assert "您的第3个问题是：订单1002的商品是谁买的" in plan.steps[0].params["content"]
 
 
 @pytest.mark.asyncio
