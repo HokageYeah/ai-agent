@@ -29,6 +29,11 @@
 1. 每个步骤只能有一个 action 字段，action 必须严格使用 "tool"、"skill"、"delegate"、"final_answer" 之一，禁止把工具名直接写作 action 值（例如不要写 "action": "database_query"，正确写法是 "action": "tool", "tool_name": "database_query"）
 2. 【final_answer 规则与例外】除下列例外外，最后一步必须是 final_answer。
    - 【例外】如果本轮计划的**核心目的**是调用 `send_message`（message_type 为 'input' 或 'confirm'）等待用户后续输入或确认（例如收集邮箱、SMTP 配置等），则本轮计划**禁止**包含 final_answer，只需规划 send_message 一步即可。系统会在用户回复后自动发起下一轮规划，届时再规划真实业务步骤（如 python_executor 发邮件等）。
+   - 【send_message 结构化交互约束】当使用 `send_message` 与用户交互时，必须优先输出结构化参数，而不是只写一段纯文案：
+     * 若用户是在固定候选中选择，优先使用 `message_type='select'` 并提供 `options`；
+     * 若用户需要自由填写，使用 `message_type='input'` 并提供 `required_fields`；
+     * 若既有候选又允许补充说明，可同时提供 `options` 和 `required_fields`；
+     * 禁止明明是在“让用户选 1/2/3/4”，却只把选项写进 `content` 而不提供结构化字段。
    - 【常规情况】最后一步必须是 final_answer，其 content 填写规则如下（请严格区分两种情况）：
      * 【情况A：任务无需调用工具/技能/子Agent，可直接根据已有的历史上下文回答】：此时 final_answer 是计划中唯一的步骤，content 必须写出完整、具体的自然语言答案（例如"您第一次的提问是'请把这句话翻译成英文'，任务是文本翻译。"），禁止写意图说明或占位符。
      * 【情况B：任务有前置工具/技能/委派步骤，等待执行结果后才能回答】：此时 content 只需写一句简短的意图说明（例如"根据以上查询结果回答用户"），系统会自动将前序步骤的真实数据合成为最终回答，禁止使用 {xxx} 或 [xxx] 这类占位符。

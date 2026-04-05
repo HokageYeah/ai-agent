@@ -109,6 +109,34 @@ class PlanningEngine:
         self.prompt_manager = PromptManager(prompt_dir="app/prompt/plan")
         logger.info(f"{Fore.GREEN}规划引擎初始化完成{Style.RESET_ALL}")
 
+    def _build_framework_error_plan(
+        self,
+        *,
+        content: str,
+        reasoning: str,
+        error_type: str,
+        error_detail: str = "",
+    ) -> Plan:
+        """
+        构造“框架内部错误”计划。
+
+        这类结果需要沿既有 Plan -> Execute -> Reflect 主链路传递，
+        但不应被当作正常业务 final_answer 直接暴露给用户。
+        因此统一在公共层打上框架错误元数据，供执行层和最终收口层识别。
+        """
+        return Plan(
+            steps=[
+                PlanStep(
+                    action="final_answer",
+                    content=content,
+                    _framework_error_type=error_type,
+                    _framework_error_message=content,
+                    _framework_error_detail=error_detail or content,
+                )
+            ],
+            reasoning=reasoning,
+        )
+
     async def create_plan(
         self,
         agent: Agent,
@@ -928,18 +956,16 @@ class PlanningEngine:
                 f"{Fore.YELLOW}[规划引擎] 计划校验失败，将阻断无效计划执行 | "
                 f"agent={agent.name} | reasons={invalid_reasons}{Style.RESET_ALL}"
             )
-            return Plan(
-                steps=[
-                    PlanStep(
-                        action="final_answer",
-                        content=(
-                            "当前规划结果不合法，需要重新规划。原因："
-                            + "；".join(invalid_reasons)
-                            + "。如需使用受限能力，请改为委派给具备对应权限的子 Agent。"
-                        ),
-                    )
-                ],
+            user_message = (
+                "当前规划结果不合法，需要重新规划。原因："
+                + "；".join(invalid_reasons)
+                + "。如需使用受限能力，请改为委派给具备对应权限的子 Agent。"
+            )
+            return self._build_framework_error_plan(
+                content=user_message,
                 reasoning="计划校验失败",
+                error_type="plan_validation_failed",
+                error_detail="；".join(invalid_reasons),
             )
 
         return Plan(steps=normalized_steps, reasoning=plan.reasoning)
@@ -1230,26 +1256,20 @@ class PlanningEngine:
         except json.JSONDecodeError as exc:
             logger.error(f"{Fore.RED}JSON 解析失败: {exc}{Style.RESET_ALL}")
             logger.error(f"{Fore.RED}LLM 输出: {llm_output[:200]}...{Style.RESET_ALL}")
-            return Plan(
-                steps=[
-                    PlanStep(
-                        action="final_answer",
-                        content="解析计划失败，LLM 返回的不是有效的 JSON 格式",
-                    )
-                ],
+            return self._build_framework_error_plan(
+                content="解析计划失败，LLM 返回的不是有效的 JSON 格式",
                 reasoning="JSON 解析失败",
+                error_type="plan_json_parse_failed",
+                error_detail=str(exc),
             )
 
         except Exception as exc:
             logger.error(f"{Fore.RED}解析计划时发生错误: {exc}{Style.RESET_ALL}")
-            return Plan(
-                steps=[
-                    PlanStep(
-                        action="final_answer",
-                        content=f"解析计划时发生错误: {str(exc)}",
-                    )
-                ],
+            return self._build_framework_error_plan(
+                content=f"解析计划时发生错误: {str(exc)}",
                 reasoning="解析错误",
+                error_type="plan_parse_error",
+                error_detail=str(exc),
             )
 
     def _extract_plan_dict(self, llm_output: str) -> Dict[str, Any]:
@@ -1477,14 +1497,11 @@ class PlanningEngine:
                 f"{Fore.RED}[规划引擎] 截断重试发生异常: {exc}"
                 f"{Style.RESET_ALL}"
             )
-            return Plan(
-                steps=[
-                    PlanStep(
-                        action="final_answer",
-                        content="解析计划失败，且重试生成短计划时发生异常",
-                    )
-                ],
+            return self._build_framework_error_plan(
+                content="解析计划失败，且重试生成短计划时发生异常",
                 reasoning="JSON 解析失败",
+                error_type="plan_retry_after_length_failed",
+                error_detail=str(exc),
             )
 
     async def _retry_plan_after_invalid_json(
@@ -1543,14 +1560,11 @@ class PlanningEngine:
             logger.error(
                 f"{Fore.RED}[规划引擎] JSON 修复重试发生异常: {exc}{Style.RESET_ALL}"
             )
-            return Plan(
-                steps=[
-                    PlanStep(
-                        action="final_answer",
-                        content="解析计划失败，且 JSON 修复重试时发生异常",
-                    )
-                ],
+            return self._build_framework_error_plan(
+                content="解析计划失败，且 JSON 修复重试时发生异常",
                 reasoning="JSON 解析失败",
+                error_type="plan_retry_after_invalid_json_failed",
+                error_detail=str(exc),
             )
 
 

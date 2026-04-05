@@ -125,6 +125,20 @@ class ExecutionEngine:
             )
 
     @staticmethod
+    def _is_framework_error_step_result(step_result: Dict[str, Any]) -> bool:
+        """
+        判断步骤结果是否属于框架内部错误。
+
+        设计原因：
+        - 规划阶段的 JSON 解析失败、计划校验失败等会沿用 final_answer 容器继续传递；
+        - 这些结果不应被当作“业务成功答案”，但又需要进入反思与最终收口层；
+        - 因此在执行公共层统一识别这类元数据，而不是靠文案做脆弱判断。
+        """
+        if not isinstance(step_result, dict):
+            return False
+        return bool(str(step_result.get("_framework_error_type") or "").strip())
+
+    @staticmethod
     def _collect_failed_step_results(step_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         收集本轮失败步骤（排除 final_answer 自身）。
@@ -138,8 +152,17 @@ class ExecutionEngine:
             step_result
             for step_result in (step_results or [])
             if isinstance(step_result, dict)
-            and step_result.get("action") != "final_answer"
-            and step_result.get("success") is False
+            and (
+                (
+                    step_result.get("action") != "final_answer"
+                    and step_result.get("success") is False
+                )
+                or (
+                    step_result.get("action") == "final_answer"
+                    and step_result.get("success") is False
+                    and ExecutionEngine._is_framework_error_step_result(step_result)
+                )
+            )
         ]
 
     @staticmethod
@@ -890,6 +913,21 @@ class ExecutionEngine:
                 # 如果是 final_answer，先合成再返回
                 if step.action == "final_answer":
                     template = step.params.get("content", "")
+                    if self._is_framework_error_step_result(step_result):
+                        final_result = step_result.get("result") or step_result.get("error") or template
+                        step_result["result"] = final_result
+                        logger.warning(
+                            f"{Fore.YELLOW}[执行引擎] 检测到框架内部错误计划，"
+                            f"跳过 final_answer 合成，保留失败结果供反思与最终收口层处理"
+                            f"{Style.RESET_ALL}"
+                        )
+                        if on_step_complete:
+                            logger.debug(
+                                f"{Fore.CYAN}[执行引擎] framework_error final_answer 已完成，触发实时事件回调 "
+                                f"(step={i}/{step_total}){Style.RESET_ALL}"
+                            )
+                            await on_step_complete(step_result, i, step_total)
+                        break
                     failed_step_results = self._collect_failed_step_results(step_results)
                     
                     # 收集本轮所有成功的工具/技能/委派结果（排除 final_answer 步骤本身）
@@ -1578,6 +1616,22 @@ class ExecutionEngine:
                         )
                 return await self._delegate_to_agent(step, context, prev_results, remaining_steps)
             elif step.action == "final_answer":
+                framework_error_type = str(step.params.get("_framework_error_type", "") or "").strip()
+                if framework_error_type:
+                    framework_error_message = (
+                        str(step.params.get("_framework_error_message") or "").strip()
+                        or str(step.params.get("content") or "").strip()
+                        or "规划阶段出现框架内部错误，当前步骤无法按正常业务答案执行。"
+                    )
+                    return {
+                        "success": False,
+                        "result": framework_error_message,
+                        "action": "final_answer",
+                        "error": framework_error_message,
+                        "_framework_error_type": framework_error_type,
+                        "_framework_error_message": framework_error_message,
+                        "_framework_error_detail": step.params.get("_framework_error_detail", ""),
+                    }
                 return {
                     "success": True,
                     "result": step.params.get("content", ""),

@@ -150,20 +150,45 @@ class ReflectionEngine:
             # 若传入禁用工具的定义，LLM 可能在 feedback 中建议使用禁用工具，误导重规划。
             tools = []
             if self.tool_hub:
+                authorized_tools = []
                 if available_tools:
                     allowed_tool_names = {t.name for t in available_tools}
                     all_schemas = self.tool_hub.get_schemas()
-                    tools = [
+                    authorized_tools = [
                         s for s in all_schemas
                         if s.get("function", {}).get("name") in allowed_tool_names
                     ]
                     logger.debug(
                         f"{Fore.CYAN}[反思引擎] 工具定义已过滤: "
-                        f"授权 {len(tools)}/{len(all_schemas)} 个{Style.RESET_ALL}"
+                        f"授权 {len(authorized_tools)}/{len(all_schemas)} 个{Style.RESET_ALL}"
                     )
                 else:
-                    tools = self.tool_hub.get_schemas()
-                    logger.debug(f"{Fore.CYAN}[反思引擎] 已注册 {len(tools)} 个工具定义{Style.RESET_ALL}")
+                    authorized_tools = self.tool_hub.get_schemas()
+                    logger.debug(
+                        f"{Fore.CYAN}[反思引擎] 已注册 {len(authorized_tools)} 个工具定义{Style.RESET_ALL}"
+                    )
+
+                # 反思阶段复用 planning_safe 过滤，仅保留只读/探查类工具进入 tool loop。
+                # 设计原因：
+                # - 反思职责是评估与归因，不应通过 send_message / spawn_agent / file_write
+                #   等副作用工具偷偷推进任务，否则会污染运行态与调用链；
+                # - 这里复用现有 Tool.planning_safe 语义，不新增并行配置，保持最小复杂度。
+                planning_safe_names = self.tool_hub.get_planning_safe_names()
+                tools = [
+                    schema
+                    for schema in authorized_tools
+                    if schema.get("function", {}).get("name") in planning_safe_names
+                ]
+                filtered_out = [
+                    schema.get("function", {}).get("name")
+                    for schema in authorized_tools
+                    if schema.get("function", {}).get("name") not in planning_safe_names
+                ]
+                logger.info(
+                    f"{Fore.YELLOW}[反思引擎] planning_safe 过滤完成: "
+                    f"授权={len(authorized_tools)} 个 → 反思可调用={len(tools)} 个 "
+                    f"| 已屏蔽副作用工具({len(filtered_out)}个): {filtered_out}{Style.RESET_ALL}"
+                )
             
             config = InferenceConfig(
                 model=agent.agent_config.execution_model,

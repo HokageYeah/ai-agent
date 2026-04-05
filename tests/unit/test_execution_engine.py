@@ -204,6 +204,52 @@ async def test_execution_engine_execute_tool():
 
 
 @pytest.mark.asyncio
+async def test_execution_engine_should_mark_framework_error_final_answer_as_failed():
+    """框架内部错误计划不应被当作成功 final_answer 执行。"""
+    tool_hub = ToolHub()
+    skill_manager = SkillManager(auto_discover=False)
+
+    mock_llm = MockLLM()
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+
+    execution_engine = ExecutionEngine(
+        tool_hub=tool_hub,
+        skill_manager=skill_manager,
+        llm_hub=inference_engine
+    )
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role"
+    )
+
+    plan = Plan(
+        steps=[
+            PlanStep(
+                action="final_answer",
+                content="当前规划结果不合法，需要重新规划。",
+                _framework_error_type="plan_validation_failed",
+                _framework_error_message="当前规划结果不合法，需要重新规划。",
+                _framework_error_detail="第1步子 Agent 不在当前可委派列表中",
+            )
+        ],
+        reasoning="计划校验失败",
+    )
+
+    result = await execution_engine.execute_plan(agent, plan)
+
+    assert result.success is False
+    assert result.error is not None
+    assert len(result.step_results) == 1
+    assert result.step_results[0]["action"] == "final_answer"
+    assert result.step_results[0]["success"] is False
+    assert result.step_results[0]["_framework_error_type"] == "plan_validation_failed"
+
+
+@pytest.mark.asyncio
 async def test_execution_engine_execute_skill():
     """测试技能执行"""
     # 创建工具中心

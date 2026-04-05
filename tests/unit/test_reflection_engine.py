@@ -5,6 +5,9 @@
 测试反思引擎的各项功能
 """
 
+from types import SimpleNamespace
+from typing import Any, Dict
+
 import pytest
 from app.agents.base import Agent, AgentConfig
 from app.agents.execution import ExecutionResult
@@ -12,6 +15,31 @@ from app.agents.reflection import ReflectionEngine, ReflectionResult
 from app.core.llm_mock import MockLLM
 from app.llm_hub.inference import InferenceEngine
 from app.llm_hub.registry import ModelRegistry
+from app.tools.base import Tool, ToolSchema
+from app.tools.hub import ToolHub
+
+
+class _ReflectionTestTool(Tool):
+    """供反思测试使用的最小工具实现。"""
+
+    def __init__(self, name: str, *, planning_safe: bool):
+        self._name = name
+        self.planning_safe = planning_safe
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name=self._name,
+            description=f"test tool: {self._name}",
+            parameters={"type": "object", "properties": {}},
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Any:
+        return {"success": True}
 
 
 @pytest.mark.asyncio
@@ -130,6 +158,56 @@ async def test_reflection_engine_failure_scenario():
     # 验证反思结果
     assert reflection.success is False
     assert reflection.needs_replanning is True
+
+
+@pytest.mark.asyncio
+async def test_reflection_engine_should_filter_out_non_planning_safe_tools(monkeypatch):
+    """反思阶段的 tool loop 只应暴露 planning_safe 工具，避免副作用能力误执行。"""
+    mock_llm = MockLLM(responses={}, delay=0.01)
+    registry = ModelRegistry()
+    inference_engine = InferenceEngine(provider=mock_llm, model_registry=registry)
+    tool_hub = ToolHub()
+    safe_tool = _ReflectionTestTool("database_query", planning_safe=True)
+    unsafe_tool = _ReflectionTestTool("spawn_agent", planning_safe=False)
+    tool_hub.register_tool(safe_tool)
+    tool_hub.register_tool(unsafe_tool)
+    reflection_engine = ReflectionEngine(llm_hub=inference_engine, tool_hub=tool_hub)
+
+    captured = {}
+
+    async def fake_infer(*, messages, config):
+        captured["tool_names"] = [
+            tool_schema.get("function", {}).get("name")
+            for tool_schema in (config.tools or [])
+        ]
+        return SimpleNamespace(
+            content='{"success": false, "needs_replanning": false, "feedback": "任务失败", "summary": "任务未完成"}'
+        )
+
+    monkeypatch.setattr(inference_engine, "infer", fake_infer)
+
+    agent = Agent(
+        agent_id="test_agent",
+        name="Test Agent",
+        description="A test agent",
+        role="Test role",
+    )
+    execution_result = ExecutionResult(
+        success=False,
+        result=None,
+        step_results=[],
+        error="task failed",
+    )
+
+    reflection = await reflection_engine.reflect(
+        agent=agent,
+        task="继续处理退款申请",
+        execution_result=execution_result,
+        available_tools=[safe_tool, unsafe_tool],
+    )
+
+    assert reflection.success is False
+    assert captured["tool_names"] == ["database_query"]
 
 
 @pytest.mark.asyncio

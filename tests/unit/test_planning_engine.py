@@ -592,6 +592,8 @@ async def test_planning_engine_should_block_unauthorized_tool_from_plan():
     assert plan.steps[0].action == "final_answer"
     assert plan.reasoning == "计划校验失败"
     assert "不在当前 Agent 授权范围内" in plan.steps[0].params["content"]
+    assert plan.steps[0].params["_framework_error_type"] == "plan_validation_failed"
+    assert "http_request" in plan.steps[0].params["_framework_error_detail"]
 
 
 def test_planning_engine_should_expand_child_agent_profiles_in_system_prompt():

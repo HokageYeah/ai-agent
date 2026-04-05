@@ -131,7 +131,7 @@
                   <span class="user-input-title">需要您提供以下信息</span>
                   <span class="mono-tag user-input-tag">{{ node.event?.data?.tool_name || '工具' }}</span>
                 </div>
-                <p class="user-input-desc">{{ (pendingInputRequest || node.event?.data)?.message || '请提供以下信息' }}</p>
+                <p class="user-input-desc">{{ getInputRequestMessage(node) }}</p>
                 <div v-if="!isActiveInputNode(node)" class="input-waiting-tip">
                   <el-icon><Check /></el-icon>
                   <span>该输入请求已处理，等待后续执行结果</span>
@@ -183,22 +183,93 @@
                     </el-button>
                   </div>
                 </div>
-                <!-- 通用输入布局（其他类型的用户输入） -->
-                <div v-else class="inline-input-form">
+                <!-- 结构化选项布局（如单选/多选原因） -->
+                <div v-else-if="hasSelectableOptions(node)" class="inline-input-form">
                   <el-form label-position="top" size="small" class="inline-form">
+                    <el-form-item label="请选择" class="inline-form-item">
+                      <el-checkbox-group
+                        v-if="getInputRequest(node)?.allow_multiple"
+                        v-model="selectedOptionIds"
+                      >
+                        <el-checkbox
+                          v-for="option in (getInputRequest(node)?.options || [])"
+                          :key="option.id"
+                          :label="option.id"
+                        >
+                          <div class="option-line">
+                            <span>{{ option.label }}</span>
+                            <span v-if="option.description" class="option-desc">{{ option.description }}</span>
+                          </div>
+                        </el-checkbox>
+                      </el-checkbox-group>
+                      <el-radio-group
+                        v-else
+                        v-model="inputForm['selected_option_id']"
+                        class="option-radio-group"
+                      >
+                        <el-radio
+                          v-for="option in (getInputRequest(node)?.options || [])"
+                          :key="option.id"
+                          :label="option.id"
+                        >
+                          <div class="option-line">
+                            <span>{{ option.label }}</span>
+                            <span v-if="option.description" class="option-desc">{{ option.description }}</span>
+                          </div>
+                        </el-radio>
+                      </el-radio-group>
+                    </el-form-item>
                     <el-form-item
-                      v-for="field in (pendingInputRequest?.required_fields || node.event?.data?.required_fields || [])"
+                      v-for="field in getExtraInputFields(node)"
                       :key="field.name"
                       :label="field.label"
                       class="inline-form-item"
                     >
                       <el-input
-                        v-if="field.type === 'number'"
+                        v-if="field.type === 'textarea'"
+                        type="textarea"
+                        size="small"
+                        :rows="3"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                      />
+                      <el-input
+                        v-else
+                        size="small"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                      />
+                    </el-form-item>
+                  </el-form>
+                  <div class="inline-input-actions">
+                    <el-button type="primary" size="small" :loading="userInputLoading === pendingInputRequest?.input_request_id" @click.stop="submitUserInput">
+                      提交
+                    </el-button>
+                  </div>
+                </div>
+                <!-- 通用输入布局（其他类型的用户输入） -->
+                <div v-else class="inline-input-form">
+                  <el-form label-position="top" size="small" class="inline-form">
+                    <el-form-item
+                      v-for="field in (getInputRequest(node)?.required_fields || [])"
+                      :key="field.name"
+                      :label="field.label"
+                      class="inline-form-item"
+                    >
+                      <el-input
+                        v-if="field.type === 'textarea'"
+                        type="textarea"
+                        size="small"
+                        :rows="4"
+                        v-model="inputForm[field.name]"
+                        :placeholder="field.placeholder || ''"
+                      />
+                      <el-input
+                        v-else-if="field.type === 'number'"
                         type="number"
                         size="small"
                         v-model="inputForm[field.name]"
                         :placeholder="field.placeholder || ''"
-                        :default="field.default"
                       />
                       <el-input
                         v-else-if="field.secret"
@@ -295,13 +366,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, toRefs } from 'vue'
+import { computed, ref, toRefs, watch } from 'vue'
 import {
   DataLine, Aim, Promotion, ChatDotRound, Finished, CaretRight, User, Check,
   WarningFilled, CopyDocument, Warning, List, Bottom, InfoFilled, Fold, Expand, DocumentCopy, Loading
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import type { StreamEvent, ExecutionPhase, TrajectoryNode } from '@/types/stream'
+import type { StreamEvent, ExecutionPhase, TrajectoryNode, PendingInputRequest } from '@/types/stream'
 import type { AgentInfo } from '@/types/agent'
 import { useTrajectory } from '../hooks/useTrajectory'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
@@ -316,19 +387,7 @@ const props = defineProps<{
   confirmedIds: string[]
   confirmActionMap: Record<string, string>
   userInputLoading: string | null
-  pendingInputRequest: {
-    input_request_id: string
-    tool_name: string
-    required_fields: Array<{
-      name: string
-      label: string
-      type: string
-      placeholder?: string
-      default?: string
-      secret?: boolean
-    }>
-    message: string
-  } | null
+  pendingInputRequest: PendingInputRequest | null
 }>()
 
 const emit = defineEmits<{
@@ -355,12 +414,51 @@ const {
 const isAllExpanded = ref(true)
 
 // 用户输入表单相关
-const inputForm = ref<Record<string, string>>({})
+const inputForm = ref<Record<string, any>>({})
+const selectedOptionIds = computed<string[]>({
+  get: () => {
+    const value = (inputForm.value as any).selected_option_ids
+    return Array.isArray(value) ? value : []
+  },
+  set: (value) => {
+    ;(inputForm.value as any).selected_option_ids = value
+  }
+})
+
+watch(
+  () => props.pendingInputRequest?.input_request_id,
+  () => {
+    const request = props.pendingInputRequest
+    const nextForm: Record<string, any> = {}
+    if (request) {
+      for (const field of request.required_fields || []) {
+        nextForm[field.name] = field.default || ''
+      }
+      if (request.allow_multiple) {
+        nextForm.selected_option_ids = []
+      } else {
+        nextForm.selected_option_id = ''
+      }
+    }
+    inputForm.value = nextForm
+  },
+  { immediate: true }
+)
+
+function getInputRequest(node: TrajectoryNode): PendingInputRequest | null {
+  const data = props.pendingInputRequest || node.event?.data
+  if (!data?.input_request_id) return null
+  return data as PendingInputRequest
+}
+
+function getInputRequestMessage(node: TrajectoryNode): string {
+  return getInputRequest(node)?.message || '请提供以下信息'
+}
 
 // 判断当前节点是否属于「邮件服务配置」类型输入
 function isMailInputNode(node: TrajectoryNode): boolean {
   // 优先使用挂起的 pendingInputRequest，其次回退到当前节点事件数据
-  const data: any = props.pendingInputRequest || node.event?.data
+  const data = getInputRequest(node)
   const fields: Array<{ name: string }> = data?.required_fields || []
   if (!fields.length) return false
 
@@ -370,9 +468,55 @@ function isMailInputNode(node: TrajectoryNode): boolean {
   return REQUIRED_SMTP_FIELDS.every(key => names.includes(key))
 }
 
+function hasSelectableOptions(node: TrajectoryNode): boolean {
+  const request = getInputRequest(node)
+  return Boolean(request?.options?.length)
+}
+
+function getExtraInputFields(node: TrajectoryNode) {
+  const request = getInputRequest(node)
+  if (!request?.options?.length) return []
+  return request.required_fields || []
+}
+
 function submitUserInput() {
   if (!props.pendingInputRequest) return
-  emit('submitInput', props.pendingInputRequest.input_request_id, inputForm.value)
+  const request = props.pendingInputRequest
+  let payload: Record<string, any> = { ...inputForm.value }
+
+  if (request.options.length > 0) {
+    if (request.allow_multiple) {
+      const selectedIds = Array.isArray((inputForm.value as any).selected_option_ids)
+        ? (inputForm.value as any).selected_option_ids
+        : []
+      const selectedOptions = request.options.filter(option => selectedIds.includes(option.id))
+      payload = {
+        ...inputForm.value,
+        selected_option_ids: selectedIds,
+        selected_option_labels: selectedOptions.map(option => option.label)
+      }
+    } else {
+      const selectedId = (inputForm.value as any).selected_option_id || ''
+      const selectedOption = request.options.find(option => option.id === selectedId)
+      payload = {
+        ...inputForm.value,
+        selected_option_id: selectedId,
+        selected_option_label: selectedOption?.label || ''
+      }
+    }
+  } else if (
+    request.required_fields.length === 1 &&
+    request.required_fields[0].name === 'text' &&
+    request.message_type === 'input'
+  ) {
+    const text = inputForm.value.text || ''
+    payload = {
+      text,
+      value: text
+    }
+  }
+
+  emit('submitInput', request.input_request_id, payload)
   // 清空表单
   inputForm.value = {}
 }
@@ -1024,5 +1168,24 @@ function getAgentDisplayName(eventData: any): string {
   justify-content: flex-end;
   margin-top: 10px;
   padding-top: 4px;
+}
+
+.option-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.option-desc {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.option-radio-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 </style>

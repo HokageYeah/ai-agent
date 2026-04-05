@@ -1108,6 +1108,48 @@ def test_build_history_answer_plan_should_keep_repeated_ordinal_multi_target_ans
     assert "您的第3个问题是：订单1002的商品是谁买的" in plan.steps[0].params["content"]
 
 
+def test_build_history_answer_plan_should_skip_action_execution_task():
+    """动作执行型任务不应被历史直答短路，避免跳过真实执行/交互步骤。"""
+    executor = _build_executor()
+    run_memory = AgentRunMemory(
+        task="把订单1002的单子查看订单详情，然后给这个单子退款",
+        agent_id="refund_agent",
+        agent_name="退款专员",
+        context_messages=[
+            {
+                "role": "assistant",
+                "content": (
+                    "【历史任务摘要】\n"
+                    "任务: 把订单1002的单子查看订单详情，然后给这个单子退款\n"
+                    "结果: ❌ 未完成\n"
+                    "结论: 已成功查询订单1002详情，并已启动退款流程，但仍需继续执行退款申请提交。\n"
+                    "关键数据: "
+                    + json.dumps(
+                        {
+                            "result_preview": "订单1002金额为7499元，退款流程待继续提交。",
+                            "structured_result": [
+                                {
+                                    "action": "delegate",
+                                    "agent_id": "order_agent",
+                                    "result": "已成功查询订单详情",
+                                }
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            }
+        ],
+    )
+
+    plan = executor._build_history_answer_plan(
+        task="把订单1002的单子查看订单详情，然后给这个单子退款",
+        run_memory=run_memory,
+    )
+
+    assert plan is None
+
+
 @pytest.mark.asyncio
 async def test_plan_node_should_force_delegate_by_history_capability_trace(monkeypatch):
     """主 Agent 遇到换主题续问时，应在进入 LLM 前沿用历史成功能力链路。"""
@@ -1371,6 +1413,71 @@ async def test_plan_node_should_pass_history_answer_candidates_to_planning_engin
     assert len(captured_context["history_answer_candidates"]) == 1
     assert captured_context["history_answer_candidates"][0]["source_task"] == "查询订单1002的详细信息"
     assert "李娜" in captured_context["history_answer_candidates"][0]["answer_preview"]
+
+
+def test_resolve_user_facing_final_result_should_prefer_reflection_feedback_for_framework_errors():
+    """最终对外结果在框架内部错误场景下应优先展示反思反馈。"""
+    executor = _build_executor()
+
+    final_result = {
+        "success": False,
+        "result": "当前规划结果不合法，需要重新规划。原因：第1步子 Agent 'refund_agent' 不在当前可委派列表中。",
+        "step_results": [
+            {
+                "action": "final_answer",
+                "success": False,
+                "result": "当前规划结果不合法，需要重新规划。",
+                "_framework_error_type": "plan_validation_failed",
+                "_framework_error_message": "当前规划结果不合法，需要重新规划。",
+            }
+        ],
+        "reflection": {
+            "success": False,
+            "needs_replanning": False,
+            "feedback": "订单1002详情查询已成功，但退款操作无法完成。原因：当前执行环境的database_query工具被限制为只读模式，且refund_agent存在循环依赖无法再次调用。",
+            "summary": "退款操作超出当前工具能力范围。",
+        },
+    }
+
+    resolved = executor._resolve_user_facing_final_result(final_result)
+
+    assert resolved is not None
+    assert "database_query工具被限制为只读模式" in resolved["result"]
+    assert "不在当前可委派列表中" not in resolved["result"]
+
+
+def test_resolve_user_facing_final_result_should_downgrade_success_when_reflection_failed():
+    """反思已判定任务失败时，不应继续把交互中间结果当成成功完成。"""
+    executor = _build_executor()
+
+    final_result = {
+        "success": True,
+        "result": "用户已反馈确认决定: confirm",
+        "step_results": [
+            {
+                "action": "tool",
+                "tool_name": "send_message",
+                "success": True,
+                "result": {
+                    "success": True,
+                    "message_preview": "用户已反馈确认决定: confirm",
+                },
+            }
+        ],
+        "reflection": {
+            "success": False,
+            "needs_replanning": False,
+            "feedback": "退款申请虽已获得用户确认，但退款记录写入失败：database_query工具不支持INSERT操作，任务未完成。",
+            "summary": "退款写入失败，当前环境缺少写权限。",
+        },
+    }
+
+    resolved = executor._resolve_user_facing_final_result(final_result)
+
+    assert resolved is not None
+    assert resolved["success"] is False
+    assert "database_query工具不支持INSERT操作" in resolved["result"]
+    assert "用户已反馈确认决定: confirm" not in resolved["result"]
 
 
 @pytest.mark.asyncio

@@ -29,6 +29,31 @@ export interface ReflectionResult {
   summary: string;
 }
 
+export interface UserInputField {
+  name: string
+  label: string
+  type: string
+  placeholder?: string
+  default?: string
+  secret?: boolean
+}
+
+export interface UserInputOption {
+  id: string
+  label: string
+  description?: string
+}
+
+export interface PendingInputRequest {
+  input_request_id: string
+  tool_name: string
+  message_type: 'input' | 'select'
+  required_fields: UserInputField[]
+  options: UserInputOption[]
+  allow_multiple: boolean
+  message: string
+}
+
 export interface ParsedExecuteResult {
   step_results?: StepResult[];
   reflection?: ReflectionResult;

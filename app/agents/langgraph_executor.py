@@ -778,6 +778,12 @@ class LangGraphAgentExecutor:
         """
         if not run_memory or self._contains_force_history_refresh_hint(task):
             return None
+        if not self._is_history_answer_shortcut_eligible(task):
+            logger.info(
+                f"{Fore.YELLOW}[历史答案直答] 当前任务属于动作执行型请求，"
+                f"回退到常规规划链路以保留真实执行/交互步骤{Style.RESET_ALL}"
+            )
+            return None
 
         ranked_candidates = rank_history_answer_candidates(
             task=task,
@@ -880,6 +886,70 @@ class LangGraphAgentExecutor:
             ],
             reasoning=reasoning,
         )
+
+    def _is_history_answer_shortcut_eligible(self, task: str) -> bool:
+        """
+        判断当前任务是否适合走“历史直答”短路。
+
+        设计原因：
+        - 历史直答适用于“会话回顾 / 事实问答 / 历史结果复述”；
+        - 若任务本质上仍需要继续执行真实动作（写入、提交、发送、确认、退款、安装等），
+          直接复用历史回答会跳过 send_message / spawn_agent / tool 执行等关键链路，
+          导致前端看起来“已经在问用户”，但实际上并未真正发出结构化交互事件。
+        - 这里采用保守策略：显式历史回顾请求始终允许；其余任务只要明显带有事务执行语义，
+          就回退到常规规划链路。
+        """
+        normalized_task = str(task or "").strip().lower()
+        if not normalized_task:
+            return False
+
+        if _extract_conversation_recall_targets(task):
+            return True
+
+        action_markers = (
+            "申请",
+            "提交",
+            "处理",
+            "办理",
+            "执行",
+            "写入",
+            "保存",
+            "修改",
+            "更新",
+            "删除",
+            "发送",
+            "安装",
+            "导出",
+            "生成",
+            "运行",
+            "退款",
+            "退货",
+            "下单",
+            "取消",
+            "确认",
+            "补充",
+            "填写",
+            "审批",
+            "approve",
+            "apply",
+            "cancel",
+            "confirm",
+            "create",
+            "delete",
+            "execute",
+            "export",
+            "generate",
+            "install",
+            "process",
+            "refund",
+            "run",
+            "save",
+            "send",
+            "submit",
+            "update",
+            "write",
+        )
+        return not any(marker in normalized_task for marker in action_markers)
 
     def _merge_context_messages(
         self,
@@ -1995,6 +2065,75 @@ class LangGraphAgentExecutor:
             normalized["reflection"] = sanitize_model_payload(normalized.get("reflection"))
         if normalized.get("error") is not None:
             normalized["error"] = extract_user_visible_result(normalized.get("error"))
+        return normalized
+
+    def _resolve_user_facing_final_result(
+        self,
+        final_result: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        为最终对外展示结果选择更合适的用户可见正文。
+
+        设计原因：
+        - 框架内部错误（如计划校验失败）需要保留在 step_results 中供调试和反思使用；
+        - 但最终给用户展示时，应优先使用反思层已经总结出的真实失败原因，
+          而不是把内部诊断文案直接当成业务答案返回。
+        """
+        if not isinstance(final_result, dict):
+            return final_result
+
+        normalized = dict(final_result)
+        step_results = normalized.get("step_results", []) or []
+        reflection = normalized.get("reflection") or {}
+        reflection_success = reflection.get("success")
+        has_framework_error = any(
+            isinstance(step_result, dict)
+            and str(step_result.get("_framework_error_type") or "").strip()
+            for step_result in step_results
+        )
+
+        # 反思层已经明确判定“任务未完成”时，对外 success 也应保守收敛为 False。
+        # 否则会出现“技术步骤成功（如 send_message.confirm 已收到）”但任务语义上失败
+        # 仍被父层当成 success=True 的问题。
+        if reflection_success is False:
+            normalized["success"] = False
+            if normalized.get("error") in (None, ""):
+                reflection_error = (
+                    extract_user_visible_result(reflection.get("feedback"))
+                    or extract_user_visible_result(reflection.get("summary"))
+                )
+                if reflection_error:
+                    normalized["error"] = reflection_error
+
+        should_prefer_reflection_result = (
+            reflection_success is False
+            or (has_framework_error and not normalized.get("success", False))
+        )
+        if not should_prefer_reflection_result:
+            return normalized
+
+        reflection_feedback = extract_user_visible_result(reflection.get("feedback"))
+        reflection_summary = extract_user_visible_result(reflection.get("summary"))
+
+        if reflection_feedback:
+            normalized["result"] = reflection_feedback
+        elif reflection_summary:
+            normalized["result"] = reflection_summary
+        elif step_results:
+            first_framework_error = next(
+                (
+                    step_result for step_result in step_results
+                    if isinstance(step_result, dict)
+                    and str(step_result.get("_framework_error_type") or "").strip()
+                ),
+                None,
+            )
+            if first_framework_error is not None:
+                normalized["result"] = extract_user_visible_result(
+                    first_framework_error.get("_framework_error_message")
+                    or first_framework_error.get("error")
+                    or first_framework_error.get("result")
+                )
         return normalized
 
     def _summarize_nested_stream_step_result(
@@ -3792,8 +3931,10 @@ class LangGraphAgentExecutor:
                     logger.error(f"{Fore.RED}[会话记忆] 提取/写入任务摘要失败: {e}{Style.RESET_ALL}")
 
             # 返回最终结果
-            normalized_final_result = self._normalize_final_result_payload(
+            normalized_final_result = self._resolve_user_facing_final_result(
+                self._normalize_final_result_payload(
                 final_state.get("final_result")
+                )
             )
 
             return {
@@ -3916,8 +4057,10 @@ class LangGraphAgentExecutor:
             )
 
             total_iterations = final_state.get("iterations", 0)
-            final_result = self._normalize_final_result_payload(
+            final_result = self._resolve_user_facing_final_result(
+                self._normalize_final_result_payload(
                 final_state.get("final_result")
+                )
             )
 
             logger.info(
@@ -4244,7 +4387,9 @@ class LangGraphAgentExecutor:
         
         # 获取最终状态和结果
         final_state = final_state_holder.get("result", {})
-        final_result = self._normalize_final_result_payload(final_state.get("final_result"))
+        final_result = self._resolve_user_facing_final_result(
+            self._normalize_final_result_payload(final_state.get("final_result"))
+        )
         total_iterations = final_state.get("iterations", 0)
         
         logger.info(

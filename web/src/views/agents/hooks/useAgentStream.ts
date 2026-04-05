@@ -2,7 +2,7 @@ import { ref, computed, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { executeAgentStream, confirmAgentAction, submitUserInput } from '@/api/modules/agents'
 import type { AgentInfo, AgentExecuteResponse } from '@/types/agent'
-import type { StreamEvent, ExecutionPhase, ParsedExecuteResult } from '@/types/stream'
+import type { StreamEvent, ExecutionPhase, ParsedExecuteResult, PendingInputRequest, UserInputField } from '@/types/stream'
 
 export function useAgentStream(options: { 
   selectedAgent: Ref<AgentInfo | null>
@@ -25,19 +25,7 @@ export function useAgentStream(options: {
 
   // 用户输入请求相关的状态
   const userInputLoading = ref<string | null>(null)
-  const pendingInputRequest = ref<{
-    input_request_id: string
-    tool_name: string
-    required_fields: Array<{
-      name: string
-      label: string
-      type: string
-      placeholder?: string
-      default?: string
-      secret?: boolean
-    }>
-    message: string
-  } | null>(null)
+  const pendingInputRequest = ref<PendingInputRequest | null>(null)
 
   // 进度指示器
   const currentPhase = computed<ExecutionPhase>(() => {
@@ -70,6 +58,38 @@ export function useAgentStream(options: {
     return executeResult.value.result as ParsedExecuteResult
   })
 
+  function buildFallbackFreeTextField(rawData: any): UserInputField[] {
+    const rawContent = String(rawData?.content || rawData?.message || '').trim()
+    const placeholder = rawContent.includes('退款')
+      ? '请输入退款原因，例如：不想要了 / 商品有质量问题 / 发货太慢'
+      : '请输入需要补充的信息'
+
+    return [{
+      name: 'text',
+      label: '补充信息',
+      type: 'textarea',
+      placeholder
+    }]
+  }
+
+  function normalizePendingInputRequest(rawData: any): PendingInputRequest {
+    const messageType = rawData?.message_type === 'select' ? 'select' : 'input'
+    const requiredFields = Array.isArray(rawData?.required_fields) ? rawData.required_fields : []
+    const options = Array.isArray(rawData?.options) ? rawData.options : []
+
+    return {
+      input_request_id: rawData?.input_request_id || '',
+      tool_name: rawData?.tool_name || '',
+      message_type: messageType,
+      required_fields: requiredFields.length > 0
+        ? requiredFields
+        : (messageType === 'input' && options.length === 0 ? buildFallbackFreeTextField(rawData) : []),
+      options,
+      allow_multiple: Boolean(rawData?.allow_multiple),
+      message: rawData?.content || rawData?.message || '请提供以下信息'
+    }
+  }
+
   // 处理单个流事件的核心分发
   function handleStreamEvent(rawEvent: StreamEvent) {
     if (options.onStreamEvent) {
@@ -84,7 +104,7 @@ export function useAgentStream(options: {
           event.event = msgData.progress.stage
           event.iteration = msgData.progress.iteration ?? event.iteration
           if (msgData.progress.total) event.step_total = msgData.progress.total
-       } else if (msgData.message_type === 'input') {
+       } else if (msgData.message_type === 'input' || msgData.message_type === 'select') {
           event.event = 'await_user_input'
           // input 消息通常没有 progress.iteration，回退到当前流上下文迭代，避免错误归到 iteration=0
           event.iteration = msgData.progress?.iteration ?? event.iteration ?? currentStreamEvent.value?.iteration ?? 0
@@ -104,12 +124,7 @@ export function useAgentStream(options: {
         break
       case 'await_user_input':
         // 收到用户输入请求事件，显示输入框（不设置 userInputLoading，避免提交按钮一直转圈）
-        pendingInputRequest.value = {
-          input_request_id: event.data?.input_request_id || '',
-          tool_name: event.data?.tool_name || '',
-          required_fields: event.data?.required_fields || [],
-          message: event.data?.message || '请提供以下信息'
-        }
+        pendingInputRequest.value = normalizePendingInputRequest(event.data)
         ElMessage.info('请提供所需信息')
         break
       case 'user_input_received':
